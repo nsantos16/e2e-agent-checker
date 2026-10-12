@@ -1,12 +1,15 @@
 import { execFile, execFileSync } from 'node:child_process';
-import { createReadStream, existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { createReadStream, existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { extname, join, resolve } from 'node:path';
 import { config, requireFrontendRepo } from '../config.ts';
 import { runDoctor } from '../doctor.ts';
-import { getJob, listJobs, submitJob } from '../jobs.ts';
+import { cancelJob, getJob, listJobs, replayJob, submitBatch } from '../jobs.ts';
 import { loadCaseWithRelated, type QaseCase } from '../qase.ts';
 import { baseUrl, isHealthy, listSlots } from '../slots.ts';
+
+import { listProviders } from '../providers/index.ts';
+import { ZodError } from 'zod';
 
 // Local app: list Qase cases, pick a worktree, run cases in parallel with agents, watch progress and replay videos.
 
@@ -19,7 +22,15 @@ const listCases = () =>
   readdirSync(fixturesDir)
     .filter((f) => /^[A-Z0-9_]+-\d+\.json$/.test(f))
     .map((f) => JSON.parse(readFileSync(join(fixturesDir, f), 'utf8')) as QaseCase)
-    .map((c) => ({ project: c.project, id: c.id, title: c.title, suite: c.suite_path ?? '', priority: c.priority, steps: c.steps.length, url: c.url }))
+    .map((c) => ({
+      project: c.project,
+      id: c.id,
+      title: c.title,
+      suite: c.suite_path ?? '',
+      priority: c.priority,
+      steps: c.steps.length,
+      url: c.url,
+    }))
     .sort((a, b) => a.suite.localeCompare(b.suite) || a.id - b.id);
 
 const listWorktrees = () => {
@@ -28,7 +39,11 @@ const listWorktrees = () => {
     .trim()
     .split('\n\n')
     .map((block) => {
-      const get = (k: string) => block.split('\n').find((l) => l.startsWith(`${k} `))?.slice(k.length + 1);
+      const get = (k: string) =>
+        block
+          .split('\n')
+          .find((l) => l.startsWith(`${k} `))
+          ?.slice(k.length + 1);
       const path = get('worktree')!;
       const branch = get('branch')?.replace('refs/heads/', '');
       const head = get('HEAD')?.slice(0, 10);
@@ -45,41 +60,81 @@ const json = (res: ServerResponse, status: number, body: unknown) => {
 
 const readBody = async (req: IncomingMessage) => {
   let data = '';
-  for await (const chunk of req) data += chunk;
+  for await (const chunk of req) {
+    data += chunk;
+    if (data.length > 64_000) throw new Error('Request is too large');
+  }
   return data ? JSON.parse(data) : {};
 };
 
-const TYPES: Record<string, string> = { '.mp4': 'video/mp4', '.webm': 'video/webm', '.png': 'image/png', '.md': 'text/markdown; charset=utf-8', '.ts': 'text/plain; charset=utf-8', '.json': 'application/json' };
+const TYPES: Record<string, string> = {
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+  '.png': 'image/png',
+  '.md': 'text/markdown; charset=utf-8',
+  '.ts': 'text/plain; charset=utf-8',
+  '.json': 'application/json',
+};
 
 // Serves run artifacts only (videos, screenshots, comments, specs), never anything outside runs/ or e2e/generated/.
 const serveFile = (req: IncomingMessage, res: ServerResponse, requested: string) => {
-  const path = resolve(requested);
+  if (!existsSync(requested)) return json(res, 404, { error: 'not found' });
+  const path = realpathSync(requested);
   const allowed = [join(root, 'runs') + '/', join(root, 'e2e/generated') + '/'];
-  if (!allowed.some((dir) => path.startsWith(dir)) || !existsSync(path) || path.endsWith('trace.zip')) return json(res, 404, { error: 'not found' });
+  if (
+    !allowed.some((dir) => path.startsWith(dir)) ||
+    !existsSync(path) ||
+    !/(?:verification\.mp4|pr-comment\.md|[^/]+\.spec\.ts)$/.test(path)
+  )
+    return json(res, 404, { error: 'not found' });
   const size = statSync(path).size;
   const type = TYPES[extname(path)] ?? 'application/octet-stream';
-  const range = req.headers.range?.match(/bytes=(\d*)-(\d*)/);
+  const range = req.headers.range?.match(/^bytes=(\d*)-(\d*)$/);
   if (range) {
-    const start = range[1] ? Number(range[1]) : 0;
-    const end = range[2] ? Number(range[2]) : size - 1;
-    res.writeHead(206, { 'content-type': type, 'content-range': `bytes ${start}-${end}/${size}`, 'accept-ranges': 'bytes', 'content-length': end - start + 1 });
-    createReadStream(path, { start, end }).pipe(res);
+    const start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]));
+    const end = range[1] && range[2] ? Math.min(Number(range[2]), size - 1) : size - 1;
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start > end || start >= size || (!range[1] && !range[2])) {
+      res.writeHead(416, { 'content-range': `bytes */${size}` });
+      return res.end();
+    }
+    res.writeHead(206, {
+      'content-type': type,
+      'content-range': `bytes ${start}-${end}/${size}`,
+      'accept-ranges': 'bytes',
+      'content-length': end - start + 1,
+    });
+    createReadStream(path, { start, end })
+      .on('error', () => res.destroy())
+      .pipe(res);
   } else {
     res.writeHead(200, { 'content-type': type, 'content-length': size, 'accept-ranges': 'bytes' });
-    createReadStream(path).pipe(res);
+    createReadStream(path)
+      .on('error', () => res.destroy())
+      .pipe(res);
   }
 };
 
 const titles = () => new Map(listCases().map((c) => [`${c.project}-${c.id}`, c.title]));
 
 const server = createServer(async (req, res) => {
+  if (![`localhost:${PORT}`, `127.0.0.1:${PORT}`].includes(req.headers.host ?? '')) return json(res, 403, { error: 'Host not allowed' });
   const url = new URL(req.url ?? '/', `http://localhost:${PORT}`);
   try {
+    if (
+      req.method === 'POST' &&
+      req.headers.origin &&
+      req.headers.origin !== `http://localhost:${PORT}` &&
+      req.headers.origin !== `http://127.0.0.1:${PORT}`
+    )
+      return json(res, 403, { error: 'Origin not allowed' });
     if (req.method === 'GET' && url.pathname === '/') {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       return res.end(readFileSync(join(root, 'src/app/ui.html')));
     }
-    if (req.method === 'GET' && url.pathname === '/api/config') return json(res, 200, { roles: ROLES, frontendRepo: requireFrontendRepo() });
+    if (req.method === 'GET' && url.pathname === '/api/config')
+      return json(res, 200, { roles: ROLES, frontendRepo: requireFrontendRepo() });
+    if (req.method === 'GET' && url.pathname === '/api/providers')
+      return json(res, 200, await listProviders(url.searchParams.get('fresh') === '1'));
     if (req.method === 'GET' && url.pathname === '/api/doctor') return json(res, 200, await runDoctor());
     if (req.method === 'GET' && url.pathname === '/api/cases') return json(res, 200, listCases());
     if (req.method === 'POST' && url.pathname === '/api/cases') {
@@ -89,30 +144,64 @@ const server = createServer(async (req, res) => {
     }
     if (req.method === 'GET' && url.pathname === '/api/worktrees') {
       const slots = await Promise.all(listSlots().map(async (s) => ({ ...s, url: baseUrl(s), healthy: await isHealthy(s) })));
-      return json(res, 200, listWorktrees().map((w) => ({ ...w, slot: slots.find((s) => s.worktree === w.path) })));
+      return json(
+        res,
+        200,
+        listWorktrees().map((w) => ({ ...w, slot: slots.find((s) => s.worktree === w.path) })),
+      );
     }
     if (req.method === 'POST' && url.pathname === '/api/jobs') {
-      const { cases, worktree, role = ROLES[0] } = await readBody(req);
-      if (!worktree || !Array.isArray(cases) || !cases.length) return json(res, 400, { error: 'worktree and cases are required' });
-      const jobs = cases.map((c: { project: string; id: number }) => submitJob({ project: c.project, caseId: Number(c.id), worktree, role }));
-      return json(res, 200, jobs.map((j) => j.id));
+      return json(
+        res,
+        200,
+        (await submitBatch(await readBody(req))).map((j) => j.id),
+      );
     }
     if (req.method === 'GET' && url.pathname === '/api/jobs') {
       const t = titles();
-      return json(res, 200, listJobs().slice(0, 60).map((j) => ({ ...j, title: t.get(`${j.project}-${j.caseId}`), log: j.log.slice(-6) })));
+      return json(
+        res,
+        200,
+        listJobs()
+          .slice(0, Math.min(1000, Math.max(1, Number(url.searchParams.get('limit') ?? 60) || 60)))
+          .map((j) => ({
+            ...j,
+            title: t.get(`${j.project}-${j.caseId}`),
+            log: j.log.slice(-6),
+            canReplay: !!j.runDir && existsSync(join(j.runDir, 'codify', `${j.project}-${j.caseId}.spec.ts`)),
+          })),
+      );
     }
+    const actionMatch = url.pathname.match(/^\/api\/jobs\/([\w-]+)\/(cancel|replay)$/);
+    if (req.method === 'POST' && actionMatch)
+      return json(res, 200, actionMatch[2] === 'cancel' ? cancelJob(actionMatch[1]) : replayJob(actionMatch[1]));
     const jobMatch = url.pathname.match(/^\/api\/jobs\/([\w-]+)$/);
     if (req.method === 'GET' && jobMatch) {
       const job = getJob(jobMatch[1]);
-      if (!job) return json(res, 404, { error: 'unknown job' });
+      if (!job) return json(res, 404, { error: 'unknown job', code: 'NOT_FOUND' });
       const comment = job.prComment && existsSync(job.prComment) ? readFileSync(job.prComment, 'utf8') : undefined;
-      const summary = job.runDir && existsSync(join(job.runDir, 'summary.json')) ? JSON.parse(readFileSync(join(job.runDir, 'summary.json'), 'utf8')) : undefined;
-      return json(res, 200, { ...job, comment, spec: summary?.spec, notes: job.runDir && existsSync(join(job.runDir, 'explore/report.json')) ? JSON.parse(readFileSync(join(job.runDir, 'explore/report.json'), 'utf8')).notes : undefined });
+      const summary =
+        job.runDir && existsSync(join(job.runDir, 'summary.json'))
+          ? JSON.parse(readFileSync(join(job.runDir, 'summary.json'), 'utf8'))
+          : undefined;
+      return json(res, 200, {
+        ...job,
+        comment,
+        spec: summary?.spec,
+        notes:
+          job.runDir && existsSync(join(job.runDir, 'explore/report.json'))
+            ? JSON.parse(readFileSync(join(job.runDir, 'explore/report.json'), 'utf8')).notes
+            : undefined,
+      });
     }
     if (req.method === 'GET' && url.pathname === '/files') return serveFile(req, res, url.searchParams.get('path') ?? '');
     json(res, 404, { error: 'not found' });
   } catch (error) {
-    json(res, 500, { error: String(error) });
+    const e = error as Error & { code?: string };
+    json(res, error instanceof ZodError ? 400 : e.code ? 422 : 500, {
+      error: e.message,
+      code: e.code ?? (error instanceof ZodError ? 'INVALID_INPUT' : 'INTERNAL_ERROR'),
+    });
   }
 });
 

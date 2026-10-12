@@ -1,11 +1,14 @@
 #!/bin/sh
-# Runs a run's codified spec against that run's slot. Used by the codify agent (its only shell access) and by replay.
+# Execute one stabilization attempt and retain its true exit code and output.
 set -eu
 RUN_DIR="${1:?usage: try-spec.sh <run dir>}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 . "$RUN_DIR/replay.env"
-ATTEMPT_DIR="$RUN_DIR/codify/attempts/$(date +%H%M%S)"
-mkdir -p "$ATTEMPT_DIR"
+mkdir -p "$RUN_DIR/codify/attempts"
+ATTEMPT_DIR="$(mktemp -d "$RUN_DIR/codify/attempts/attempt.XXXXXX")"
 cd "$ROOT/e2e"
+RESULT=0
 E2E_OUTPUT_DIR="$ATTEMPT_DIR" E2E_SPEC_DIR="$E2E_SPEC_DIR" E2E_BASE_URL="$E2E_BASE_URL" E2E_STORAGE_STATE="$E2E_STORAGE_STATE" E2E_SLOWMO=0 \
-  npx playwright test -c playwright.config.ts --reporter=line "$E2E_SPEC_FILE" 2>&1 | grep -v -E '^\s*$' | tail -60
+  npx playwright test -c playwright.config.ts "$E2E_SPEC_FILE" > "$ATTEMPT_DIR.log" 2>&1 || RESULT=$?
+tail -80 "$ATTEMPT_DIR.log"
+exit "$RESULT"

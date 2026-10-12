@@ -1,16 +1,13 @@
-import { execFile } from 'node:child_process';
+import { command } from './process.ts';
+import { readTestResult } from './test-results.ts';
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 import { writeReplayEnv } from './codify.ts';
 import { config } from './config.ts';
 
 // Stage 3: run the codified spec deterministically with video, then package an MP4 small enough for a PR.
 
-const exec = promisify(execFile);
 const root = new URL('..', import.meta.url).pathname;
-
-type PwResults = { suites: { specs: { tests: { results: { status: string; duration: number; steps?: { title: string; error?: unknown }[]; error?: { message?: string } }[] }[] }[]; suites?: PwResults['suites'] }[] };
 
 const findVideo = (dir: string): string | undefined => {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -23,34 +20,72 @@ const findVideo = (dir: string): string | undefined => {
   return undefined;
 };
 
-export const toPrMp4 = async (webm: string, mp4: string) => {
+export const toPrMp4 = async (webm: string, mp4: string, signal?: AbortSignal) => {
   // H.264 + faststart so it plays inline on GitHub; capped at 1280 wide and CRF 30 to stay well under 10 MB.
-  await exec(config.ffmpeg, ['-y', '-loglevel', 'error', '-i', webm, '-vf', 'scale=1280:-2', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '30', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-an', mp4]);
+  const converted = await command(
+    config.ffmpeg,
+    [
+      '-y',
+      '-loglevel',
+      'error',
+      '-i',
+      webm,
+      '-vf',
+      'scale=1280:-2',
+      '-c:v',
+      'libx264',
+      '-preset',
+      'veryfast',
+      '-crf',
+      '30',
+      '-pix_fmt',
+      'yuv420p',
+      '-movflags',
+      '+faststart',
+      '-an',
+      mp4,
+    ],
+    { signal },
+  );
+  if (converted.code !== 0) throw new Error('Video conversion failed');
   return statSync(mp4).size;
 };
 
-export const replay = async (opts: { runDir: string; label: string; specDir: string; specFile: string; base: string; slot: string; role: string; slowMo?: number }) => {
+export const replay = async (opts: {
+  runDir: string;
+  label: string;
+  specDir: string;
+  specFile: string;
+  base: string;
+  slot: string;
+  role: string;
+  slowMo?: number;
+  signal?: AbortSignal;
+  onPackage?: () => void;
+}) => {
   const outDir = join(opts.runDir, `replay-${opts.label}`);
   mkdirSync(outDir, { recursive: true });
   writeReplayEnv(opts.runDir, opts.specDir, opts.specFile, opts.base, opts.slot, opts.role);
   const started = Date.now();
-  const { stdout } = await exec(
-    'npx',
-    ['playwright', 'test', '-c', 'playwright.config.ts', opts.specFile],
-    {
-      cwd: join(root, 'e2e'),
-      env: { ...process.env, E2E_SPEC_DIR: opts.specDir, E2E_OUTPUT_DIR: outDir, E2E_BASE_URL: opts.base, E2E_STORAGE_STATE: join(root, '.state', `slot${opts.slot}-${opts.role}.json`), E2E_SLOWMO: String(opts.slowMo ?? 250) },
-      maxBuffer: 20 * 1024 * 1024,
+  const { stdout } = await command('npx', ['playwright', 'test', '-c', 'playwright.config.ts', opts.specFile], {
+    cwd: join(root, 'e2e'),
+    env: {
+      ...process.env,
+      E2E_SPEC_DIR: opts.specDir,
+      E2E_OUTPUT_DIR: outDir,
+      E2E_BASE_URL: opts.base,
+      E2E_STORAGE_STATE: join(root, '.state', `slot${opts.slot}-${opts.role}.json`),
+      E2E_SLOWMO: String(opts.slowMo ?? 250),
     },
-  ).catch((e: { stdout?: string }) => ({ stdout: e.stdout ?? '' }));
+    signal: opts.signal,
+  });
 
-  const results: PwResults | undefined = existsSync(join(outDir, 'results.json')) ? JSON.parse(readFileSync(join(outDir, 'results.json'), 'utf8')) : undefined;
-  const flatten = (suites: PwResults['suites'] = []): PwResults['suites'][number]['specs'] => suites.flatMap((s) => [...(s.specs ?? []), ...flatten(s.suites)]);
-  const testResult = results ? flatten(results.suites)[0]?.tests[0]?.results[0] : undefined;
-  const failedStep = testResult?.steps?.find((s) => s.error)?.title;
+  const testResult = readTestResult(outDir);
+  const failedStep = testResult?.failedStep;
   const webm = findVideo(outDir);
   const mp4 = join(outDir, 'verification.mp4');
-  const mp4Bytes = webm ? await toPrMp4(webm, mp4) : undefined;
+  opts.onPackage?.();
+  const mp4Bytes = webm ? await toPrMp4(webm, mp4, opts.signal) : undefined;
   return {
     status: testResult?.status ?? 'unknown',
     failedStep,

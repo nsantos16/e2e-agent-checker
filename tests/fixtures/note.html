@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+  <head>
+    <title>QA runtime fixture</title>
+  </head>
+  <body>
+    <h1>Disposable QA note</h1>
+    <label>Note <textarea id="note" aria-label="Note"></textarea></label> <button id="save">Save</button><button id="reopen">Reopen</button
+    ><button id="clear">Clear</button>
+    <p role="status" id="status"></p>
+    <script>
+      const note = document.querySelector('#note');
+      document.querySelector('#save').onclick = () => {
+        localStorage.setItem('note', note.value);
+        document.querySelector('#status').textContent = 'Saved';
+      };
+      document.querySelector('#reopen').onclick = () => {
+        const value = localStorage.getItem('note') || '';
+        note.value = location.search.includes('broken') ? value.replaceAll('\n', ' ') : value;
+      };
+      document.querySelector('#clear').onclick = () => {
+        localStorage.removeItem('note');
+        note.value = '';
+        document.querySelector('#status').textContent = 'Cleared';
+      };
+    </script>
+  </body>
+</html>

@@ -34,11 +34,38 @@ const markTwoFactorModalSeen = (page: Page) =>
       }),
   );
 
-export const loginSlot = async ({ base, role, slot, headed = false }: { base: string; role: string; slot: string; headed?: boolean }) => {
-  const creds = await resolveRole(role);
+export const loginSlot = async ({
+  base,
+  role,
+  slot,
+  headed = false,
+  signal,
+}: {
+  base: string;
+  role: string;
+  slot: string;
+  headed?: boolean;
+  signal?: AbortSignal;
+}) => {
+  signal?.throwIfAborted();
+  const creds = await (signal
+    ? new Promise<Awaited<ReturnType<typeof resolveRole>>>((resolve, reject) => {
+        const abort = () => reject(signal.reason);
+        signal.addEventListener('abort', abort, { once: true });
+        resolveRole(role, signal)
+          .then(resolve, reject)
+          .finally(() => signal.removeEventListener('abort', abort));
+      })
+    : resolveRole(role, signal));
+  signal?.throwIfAborted();
   const browser = await chromium.launch({ headless: !headed });
+  const abort = () => {
+    void browser.close();
+  };
+  signal?.addEventListener('abort', abort, { once: true });
   const page = await browser.newPage();
   try {
+    signal?.throwIfAborted();
     await page.goto(`${base}/login`);
     await page.getByPlaceholder('Email').fill(creds.username);
     await page.getByPlaceholder('Password').fill(creds.password);
@@ -46,7 +73,10 @@ export const loginSlot = async ({ base, role, slot, headed = false }: { base: st
 
     const outcome = await Promise.any([
       page.waitForURL((url) => !url.pathname.startsWith('/login'), { timeout: 30_000 }).then(() => 'in' as const),
-      page.getByPlaceholder('Verification code').waitFor({ timeout: 30_000 }).then(() => 'mfa' as const),
+      page
+        .getByPlaceholder('Verification code')
+        .waitFor({ timeout: 30_000 })
+        .then(() => 'mfa' as const),
     ]);
     if (outcome === 'mfa') {
       if (!creds.totp) throw new Error(`Role "${role}" requires MFA but has no totp reference`);
@@ -69,6 +99,7 @@ export const loginSlot = async ({ base, role, slot, headed = false }: { base: st
     console.error(`Login failed at ${page.url()}. Screenshot: .state/login-failure.png`);
     throw error;
   } finally {
+    signal?.removeEventListener('abort', abort);
     await browser.close();
   }
 };

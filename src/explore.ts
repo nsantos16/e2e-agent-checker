@@ -1,14 +1,25 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
-import { lastJsonObject, runClaude, type ClaudeOutcome } from './claude.ts';
+import { lastJsonObject, type ClaudeOutcome } from './claude.ts';
 import { statePath } from './login.ts';
 import { loadCaseWithRelated, summarizeRelated, type QaseCase } from './qase.ts';
+
+import { runAgent } from './runner.ts';
+import type { Target } from './providers/index.ts';
+import type { RunMetrics } from './usage.ts';
+import { z } from 'zod';
 
 // Stage 1: an agent verifies a Qase case step by step in a live browser (Playwright MCP) and reports evidence.
 
 export type StepVerdict = { position: number; verdict: 'pass' | 'fail' | 'blocked'; evidence: string; inferred?: boolean; check?: string };
-export type ExploreReport = { caseId: number; verdict: 'pass' | 'fail' | 'blocked'; steps: StepVerdict[]; dataChanges?: string; notes?: string };
+export type ExploreReport = {
+  caseId: number;
+  verdict: 'pass' | 'fail' | 'blocked';
+  steps: StepVerdict[];
+  dataChanges?: string;
+  notes?: string;
+};
 
 export type ExploreOptions = {
   project: string;
@@ -19,12 +30,13 @@ export type ExploreOptions = {
   model: string;
   runDir: string;
   headed?: boolean;
+  target?: Target;
+  signal?: AbortSignal;
+  onMetrics?: (metrics: RunMetrics) => void;
   log?: (line: string) => void;
 };
 
 const root = new URL('..', import.meta.url).pathname;
-
-const PLAYWRIGHT_MCP = '@playwright/mcp@0.0.83';
 
 // Every browser action Playwright MCP executed, as code, in order. The codify stage builds the spec from it.
 export const actionLog = (events: ClaudeOutcome['events']) => {
@@ -45,7 +57,10 @@ export const actionLog = (events: ClaudeOutcome['events']) => {
 
 export const explore = async (opts: ExploreOptions) => {
   const state = statePath(opts.slot, opts.role);
-  if (!existsSync(state)) throw new Error(`No session for slot ${opts.slot}/${opts.role}. Run: npm run login -- --slot ${opts.slot} --role ${opts.role} --base ${opts.base}`);
+  if (!existsSync(state))
+    throw new Error(
+      `No session for slot ${opts.slot}/${opts.role}. Run: npm run login -- --slot ${opts.slot} --role ${opts.role} --base ${opts.base}`,
+    );
   const dir = join(opts.runDir, 'explore');
   mkdirSync(join(dir, 'video'), { recursive: true });
 
@@ -73,8 +88,6 @@ export const explore = async (opts: ExploreOptions) => {
       2,
     ),
   );
-  const claudeMcpConfigPath = join(dir, 'claude-mcp.json');
-  writeFileSync(claudeMcpConfigPath, JSON.stringify({ mcpServers: { playwright: { command: 'npx', args: ['-y', PLAYWRIGHT_MCP, '--config', mcpConfigPath] } } }));
 
   const runId = opts.runDir.split('/').pop()!;
   const prompt = readFileSync(join(root, 'prompts/verify-case.md'), 'utf8')
@@ -86,19 +99,46 @@ export const explore = async (opts: ExploreOptions) => {
     .replaceAll('{{RUN_ID}}', runId);
   writeFileSync(join(dir, 'prompt.md'), prompt);
 
-  const outcome = await runClaude({
+  const outcome = await runAgent({
+    target: opts.target,
+    signal: opts.signal,
+    onMetrics: opts.onMetrics,
+    stageConfig: { browserConfig: mcpConfigPath, actionsPath: join(dir, 'actions.js') },
     prompt,
     cwd: dir,
     model: opts.model,
     tools: [''],
     allowedTools: ['mcp__playwright'],
-    mcpConfigPath: claudeMcpConfigPath,
     transcriptPath: join(dir, 'transcript.jsonl'),
     log: opts.log,
   });
 
-  const report = lastJsonObject<ExploreReport>(outcome.resultText);
-  const actions = actionLog(outcome.events);
+  const schema = z.object({
+    caseId: z.literal(opts.caseId),
+    verdict: z.enum(['pass', 'fail', 'blocked']),
+    steps: z.array(
+      z.object({
+        position: z.number().int(),
+        verdict: z.enum(['pass', 'fail', 'blocked']),
+        evidence: z.string().min(1),
+        inferred: z.boolean().optional(),
+        check: z.string().optional(),
+      }),
+    ),
+    dataChanges: z.string().optional(),
+    notes: z.string().optional(),
+  });
+  const report = schema.parse(lastJsonObject<ExploreReport>(outcome.resultText));
+  const expected = testCase.steps.map((s) => s.position).sort((a, b) => a - b);
+  if (JSON.stringify(report.steps.map((s) => s.position).sort((a, b) => a - b)) !== JSON.stringify(expected))
+    throw new Error('REPORT_INVALID: report must cover every case step exactly once');
+  if (report.verdict === 'pass' && report.steps.some((s) => s.verdict !== 'pass'))
+    throw new Error('REPORT_INVALID: passing report contains non-passing steps');
+  if (report.verdict === 'fail' && !report.steps.some((s) => s.verdict === 'fail'))
+    throw new Error('REPORT_INVALID: failing report contains no failed step');
+  const actions = existsSync(join(dir, 'actions.js'))
+    ? readFileSync(join(dir, 'actions.js'), 'utf8').split('\n')
+    : actionLog(outcome.events);
   writeFileSync(join(dir, 'report.json'), report ? JSON.stringify(report, null, 2) : outcome.resultText);
   writeFileSync(join(dir, 'actions.js'), actions.join('\n'));
   const metrics = { ...outcome.metrics, videos: readdirSync(join(dir, 'video')) };
@@ -131,8 +171,21 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const caseId = Number(values.case);
   const runDir = newRunDir(values.project!, caseId, values.slot!, values.label);
   console.log(`Explore ${values.project}-${caseId} → ${runDir}`);
-  const { report, metrics } = await explore({ ...values, caseId, runDir, project: values.project!, base: values.base!, role: values.role!, slot: values.slot!, model: values.model!, log: (l) => console.log(`  ${l}`) });
+  const { report, metrics } = await explore({
+    ...values,
+    caseId,
+    runDir,
+    project: values.project!,
+    base: values.base!,
+    role: values.role!,
+    slot: values.slot!,
+    model: values.model!,
+    log: (l) => console.log(`  ${l}`),
+  });
   console.log(`\nVerdict: ${report?.verdict ?? 'unparsed'}`);
-  for (const s of report?.steps ?? []) console.log(`  ${s.position}. ${s.verdict}${s.inferred ? ' (inferred)' : ''}: ${s.evidence.slice(0, 160)}`);
-  console.log(`Cost $${metrics.costUsd.toFixed(3)} · ${metrics.turns} turns · ${metrics.toolCalls} tool calls · ${(metrics.wallMs / 1000).toFixed(0)}s`);
+  for (const s of report?.steps ?? [])
+    console.log(`  ${s.position}. ${s.verdict}${s.inferred ? ' (inferred)' : ''}: ${s.evidence.slice(0, 160)}`);
+  console.log(
+    `Reported cost ${metrics.costUsd === null ? 'unavailable' : '$' + metrics.costUsd.toFixed(3)} · ${metrics.turns} turns · ${metrics.toolCalls} tool calls · ${(metrics.wallMs / 1000).toFixed(0)}s`,
+  );
 }

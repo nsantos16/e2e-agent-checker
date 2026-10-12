@@ -19,7 +19,10 @@ const run = async (cmd: string, args: string[]) => {
 };
 
 const versionAtLeast = (v: string | undefined, min: number[]) => {
-  const parts = v?.match(/(\d+)\.(\d+)(?:\.(\d+))?/)?.slice(1).map(Number);
+  const parts = v
+    ?.match(/(\d+)\.(\d+)(?:\.(\d+))?/)
+    ?.slice(1)
+    .map(Number);
   if (!parts) return false;
   for (let i = 0; i < min.length; i++) if ((parts[i] ?? 0) !== min[i]) return (parts[i] ?? 0) > min[i];
   return true;
@@ -42,15 +45,69 @@ export const runDoctor = async (): Promise<Check[]> => {
     }
   })();
   return [
-    { name: 'Node.js ≥ 24', required: true, ok: versionAtLeast(process.versions.node, [24]), detail: process.versions.node, fix: 'Install Node 24+ (the frontend pins 26)' },
-    { name: 'sample-frontend checkout', required: true, ok: !!repo, detail: repo ?? 'not found', fix: 'Set "frontendRepo" in e2e-agent.local.json' },
-    { name: 'Claude Code CLI', required: true, ok: !!claude, detail: claude ?? 'not installed', fix: 'npm install -g @anthropic-ai/claude-code && claude (log in once)' },
-    { name: '1Password CLI', required: true, ok: !!op, detail: op ?? 'not installed', fix: 'brew install 1password-cli, then enable 1Password → Settings → Developer → Integrate with 1Password CLI' },
-    { name: `1Password account ${config.onePasswordAccount}`, required: true, ok: opHasAccount, detail: opHasAccount ? 'configured' : 'not signed in', fix: `op account add --address ${config.onePasswordAccount}` },
-    { name: 'Qase API token', required: true, ok: !!qaseToken(), detail: qaseToken() ? 'found' : 'missing', fix: `Create one at https://app.qase.io/user/api/token, then: security add-generic-password -s ${config.qase.keychainService} -a "$USER" -w` },
-    { name: 'Playwright Chromium', required: true, ok: existsSync(chromium.executablePath()), detail: existsSync(chromium.executablePath()) ? 'installed' : 'missing', fix: 'npm run setup' },
-    { name: 'ffmpeg (video packaging)', required: true, ok: !!ffmpeg, detail: ffmpeg?.split('\n')[0] ?? 'not installed', fix: 'brew install ffmpeg' },
-    { name: 'GitHub CLI ≥ 2.99 (publishing only)', required: false, ok: versionAtLeast(gh, [2, 99]), detail: gh?.split('\n')[0] ?? 'not installed', fix: 'brew install gh (or brew upgrade gh) && gh auth login' },
+    {
+      name: 'Node.js ≥ 24',
+      required: true,
+      ok: versionAtLeast(process.versions.node, [24]),
+      detail: process.versions.node,
+      fix: 'Install Node 24+ (the frontend pins 26)',
+    },
+    {
+      name: 'sample-frontend checkout',
+      required: true,
+      ok: !!repo,
+      detail: repo ?? 'not found',
+      fix: 'Set "frontendRepo" in e2e-agent.local.json',
+    },
+    {
+      name: 'Claude Code CLI (optional runtime)',
+      required: false,
+      ok: !!claude,
+      detail: claude ?? 'not installed',
+      fix: 'npm install -g @anthropic-ai/claude-code && claude (log in once)',
+    },
+    {
+      name: '1Password CLI',
+      required: true,
+      ok: !!op,
+      detail: op ?? 'not installed',
+      fix: 'brew install 1password-cli, then enable 1Password → Settings → Developer → Integrate with 1Password CLI',
+    },
+    {
+      name: `1Password account ${config.onePasswordAccount}`,
+      required: true,
+      ok: opHasAccount,
+      detail: opHasAccount ? 'configured' : 'not signed in',
+      fix: `op account add --address ${config.onePasswordAccount}`,
+    },
+    {
+      name: 'Qase API token',
+      required: true,
+      ok: !!qaseToken(),
+      detail: qaseToken() ? 'found' : 'missing',
+      fix: `Create one at https://app.qase.io/user/api/token, then: security add-generic-password -s ${config.qase.keychainService} -a "$USER" -w`,
+    },
+    {
+      name: 'Playwright Chromium',
+      required: true,
+      ok: existsSync(chromium.executablePath()),
+      detail: existsSync(chromium.executablePath()) ? 'installed' : 'missing',
+      fix: 'npm run setup',
+    },
+    {
+      name: 'ffmpeg (video packaging)',
+      required: true,
+      ok: !!ffmpeg,
+      detail: ffmpeg?.split('\n')[0] ?? 'not installed',
+      fix: 'brew install ffmpeg',
+    },
+    {
+      name: 'GitHub CLI ≥ 2.99 (publishing only)',
+      required: false,
+      ok: versionAtLeast(gh, [2, 99]),
+      detail: gh?.split('\n')[0] ?? 'not installed',
+      fix: 'brew install gh (or brew upgrade gh) && gh auth login',
+    },
   ];
 };
 

@@ -1,296 +1,2076 @@
 <!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<title>e2e agent checker</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<style>
-  :root {
-    --bg: #f6f7f9; --panel: #fff; --line: #e4e7ec; --text: #101828; --muted: #667085; --accent: #4f46e5;
-    --pass: #12b76a; --pass-bg: #ecfdf3; --fail: #f04438; --fail-bg: #fef3f2; --blocked: #f79009; --blocked-bg: #fffaeb;
-    --run: #2e90fa; --run-bg: #eff8ff;
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif; color: var(--text); background: var(--bg); }
-  header { display: flex; align-items: center; gap: 12px; padding: 12px 20px; background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 2; }
-  header h1 { font-size: 15px; margin: 0 12px 0 0; white-space: nowrap; }
-  header h1 span { color: var(--muted); font-weight: 500; }
-  select, input, button { font: inherit; }
-  select, input[type=text], input[type=number] { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; background: #fff; min-width: 0; }
-  #worktree { flex: 1; max-width: 560px; }
-  button { border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 6px 12px; cursor: pointer; }
-  button:hover { border-color: #cfd4dc; }
-  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
-  button.primary:disabled { opacity: .45; cursor: default; }
-  .slot-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background: #d0d5dd; }
-  .slot-dot.up { background: var(--pass); }
-  main { display: grid; grid-template-columns: minmax(380px, 46%) 1fr; gap: 16px; padding: 16px 20px; align-items: start; }
-  section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
-  .section-head { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
-  .section-head h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 auto 0 0; }
-  #search { width: 180px; }
-  #add-id { width: 90px; }
-  .suite { padding: 8px 14px 4px; font-size: 12px; color: var(--muted); background: #fafbfc; border-top: 1px solid var(--line); }
-  .case { display: grid; grid-template-columns: 20px auto 1fr auto auto; gap: 10px; align-items: center; padding: 8px 14px; border-top: 1px solid #f2f4f7; cursor: pointer; }
-  .case:hover { background: #f9fafb; }
-  .case .id { font: 600 12px ui-monospace, SFMono-Regular, monospace; color: var(--accent); }
-  .case .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .case .meta { font-size: 12px; color: var(--muted); white-space: nowrap; }
-  .case .run { padding: 3px 10px; font-size: 12px; }
-  .chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px; white-space: nowrap; }
-  .chip.pass { color: var(--pass); background: var(--pass-bg); } .chip.fail { color: var(--fail); background: var(--fail-bg); }
-  .chip.blocked, .chip.codify-failed { color: var(--blocked); background: var(--blocked-bg); }
-  .chip.running, .chip.queued { color: var(--run); background: var(--run-bg); } .chip.failed { color: var(--fail); background: var(--fail-bg); }
-  #jobs { display: flex; flex-direction: column; gap: 0; }
-  .job { border-top: 1px solid var(--line); padding: 12px 14px; }
-  .job:first-child { border-top: 0; }
-  .job-head { display: flex; align-items: center; gap: 8px; cursor: pointer; }
-  .job-head .title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-  .job-sub { display: flex; gap: 12px; color: var(--muted); font-size: 12px; margin-top: 2px; flex-wrap: wrap; }
-  .pipeline { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin: 10px 0 6px; }
-  .pipeline div { font-size: 11px; text-align: center; padding: 3px 0; border-radius: 6px; background: #f2f4f7; color: var(--muted); }
-  .pipeline div.done { background: #e0e7ff; color: var(--accent); }
-  .pipeline div.active { background: var(--accent); color: #fff; animation: pulse 1.6s ease-in-out infinite; }
-  @keyframes pulse { 50% { opacity: .65; } }
-  .log { font: 11px/1.4 ui-monospace, SFMono-Regular, monospace; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .steps { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
-  .step { font: 600 11px ui-monospace, monospace; padding: 2px 7px; border-radius: 6px; }
-  .step.pass { background: var(--pass-bg); color: var(--pass); } .step.fail { background: var(--fail-bg); color: var(--fail); } .step.blocked { background: var(--blocked-bg); color: var(--blocked); }
-  .detail { margin-top: 12px; display: grid; gap: 12px; }
-  .detail-content { display: contents; }
-  .detail video { width: 100%; border-radius: 8px; background: #000; }
-  .detail table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  .detail td { border-top: 1px solid #f2f4f7; padding: 6px 4px; vertical-align: top; }
-  .detail td:first-child { width: 70px; white-space: nowrap; }
-  .notes { background: #f9fafb; border-radius: 8px; padding: 8px 10px; font-size: 13px; color: #344054; }
-  .links { display: flex; gap: 12px; font-size: 13px; }
-  .links a { color: var(--accent); }
-  .empty { padding: 28px; text-align: center; color: var(--muted); }
-  .error { color: var(--fail); font-size: 12px; }
-  #doctor { display: none; margin: 16px 20px 0; padding: 12px 14px; border-radius: 12px; background: var(--fail-bg); border: 1px solid #fecdca; }
-  #doctor h3 { margin: 0 0 6px; font-size: 14px; color: var(--fail); }
-  #doctor li { margin: 4px 0; }
-  #doctor code { font: 12px ui-monospace, monospace; background: #fff; padding: 1px 6px; border-radius: 4px; }
-</style>
-</head>
-<body>
-<header>
-  <h1>e2e agent checker <span>· Qase cases × worktrees</span></h1>
-  <span class="slot-dot" id="slot-dot" title="dev server for this worktree"></span>
-  <select id="worktree" title="Worktree to test"></select>
-  <select id="role" title="Test user"></select>
-  <button class="primary" id="run-selected" disabled>Run selected</button>
-</header>
-<div id="doctor"></div>
-<main>
-  <section>
-    <div class="section-head">
-      <h2>Use cases</h2>
-      <input type="text" id="search" placeholder="Filter…">
-      <input type="number" id="add-id" placeholder="Qase id">
-      <button id="add">Add</button>
-    </div>
-    <div id="cases"></div>
-  </section>
-  <section>
-    <div class="section-head"><h2>Runs</h2><span class="meta" id="running-count"></span></div>
-    <div id="jobs"><div class="empty">Click a use case to test it on the selected worktree.<br>Select several and press “Run selected” to test them in parallel.</div></div>
-  </section>
-</main>
-<script>
-const $ = (s) => document.querySelector(s);
-const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-const api = async (path, body) => {
-  const res = await fetch(path, body ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : undefined);
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error ?? res.statusText);
-  return data;
-};
-const fileUrl = (p) => `/files?path=${encodeURIComponent(p)}`;
-
-let cases = [], jobs = [], worktrees = [];
-const selected = new Set();
-const expanded = new Set();
-const details = new Map();
-
-const STAGES = ['slot', 'explore', 'codify', 'replay'];
-const outcomeLabel = { pass: '✓ pass', fail: '✗ fail', blocked: '⛔ blocked', 'codify-failed': '⚠ not codified' };
-
-const latestJobFor = (c) => jobs.find((j) => j.project === c.project && j.caseId === c.id);
-
-function renderCases() {
-  const q = $('#search').value.toLowerCase();
-  const visible = cases.filter((c) => !q || `${c.project}-${c.id} ${c.title} ${c.suite}`.toLowerCase().includes(q));
-  let html = '', suite = null;
-  for (const c of visible) {
-    if (c.suite !== suite) { suite = c.suite; html += `<div class="suite">${esc(suite || 'Other')}</div>`; }
-    const key = `${c.project}-${c.id}`;
-    const j = latestJobFor(c);
-    const chip = !j ? '' : j.status === 'done' ? `<span class="chip ${j.outcome}">${outcomeLabel[j.outcome] ?? j.outcome}</span>` : `<span class="chip ${j.status}">${j.status}</span>`;
-    html += `<div class="case" data-key="${key}">
-      <input type="checkbox" ${selected.has(key) ? 'checked' : ''} data-select="${key}">
-      <span class="id">${key}</span>
-      <span class="title" title="${esc(c.title)}">${esc(c.title)}</span>
-      <span class="meta">${chip} ${c.steps} steps</span>
-      <button class="run" data-run="${key}">Run ▶</button>
-    </div>`;
-  }
-  $('#cases').innerHTML = html || '<div class="empty">No cases</div>';
-  $('#run-selected').disabled = selected.size === 0;
-  $('#run-selected').textContent = selected.size ? `Run ${selected.size} in parallel` : 'Run selected';
-}
-
-function stageIndex(job) {
-  if (job.status === 'done') return STAGES.length;
-  if (job.status === 'queued') return -1;
-  return Math.max(0, STAGES.indexOf(job.stage));
-}
-
-function renderJob(j) {
-  const idx = stageIndex(j);
-  const status = j.status === 'done' ? `<span class="chip ${j.outcome}">${outcomeLabel[j.outcome] ?? j.outcome}</span>` : `<span class="chip ${j.status}">${j.status}</span>`;
-  const wt = worktrees.find((w) => w.path === j.worktree);
-  const elapsed = Math.round(((j.finishedAt ? Date.parse(j.finishedAt) : Date.now()) - Date.parse(j.createdAt)) / 1000);
-  const steps = (j.steps ?? []).map((s) => `<span class="step ${s.verdict}" title="${esc(s.evidence)}">${s.position}${s.verdict === 'pass' ? '✓' : s.verdict === 'fail' ? '✗' : '–'}${s.inferred ? '*' : ''}</span>`).join('');
-  const replay = j.replay ? `replay ${j.replay.status}${j.replay.failedStep ? ` at “${esc(j.replay.failedStep)}”` : ''}` : '';
-  const d = details.get(j.id);
-  const open = expanded.has(j.id);
-  return `<div class="job" data-job="${j.id}">
-    <div class="job-summary">
-    <div class="job-head" data-toggle="${j.id}">
-      <span class="id" style="font:600 12px ui-monospace,monospace;color:var(--accent)">${j.project}-${j.caseId}</span>
-      <span class="title">${esc(j.title ?? '')}</span>${status}
-    </div>
-    <div class="job-sub">
-      <span>${esc(wt?.branch ?? j.worktree.split('/').pop())}${j.slot ? ` · slot ${j.slot}` : ''}</span>
-      <span>${elapsed}s</span>${j.costUsd != null ? `<span>$${j.costUsd.toFixed(2)}</span>` : ''}<span>${replay}</span>
-    </div>
-    ${j.status === 'done' || j.status === 'failed' ? '' : `<div class="pipeline">${STAGES.map((s, i) => `<div class="${i < idx ? 'done' : i === idx ? 'active' : ''}">${s}</div>`).join('')}</div>
-      <div class="log">${esc(j.log?.at(-1) ?? 'waiting for a free agent…')}</div>`}
-    ${steps ? `<div class="steps">${steps}</div>` : ''}
-    ${j.error ? `<div class="error">${esc(j.error)}</div>` : ''}
-    </div>
-    ${open && d ? `<div class="detail">
-      ${d.video ? `<video src="${fileUrl(d.video)}" controls preload="metadata"></video>` : ''}
-      <div class="detail-content">
-      <table>${(d.steps ?? []).map((s) => `<tr><td><span class="step ${s.verdict}">${s.position} ${s.verdict}${s.inferred ? ' *' : ''}</span></td><td>${esc(s.evidence)}</td></tr>`).join('')}</table>
-      ${d.notes ? `<div class="notes">${esc(d.notes)}</div>` : ''}
-      <div class="links">${d.prComment ? `<a href="${fileUrl(d.prComment)}" target="_blank">PR comment</a>` : ''}${d.spec ? `<a href="${fileUrl(d.spec)}" target="_blank">Generated spec</a>` : ''}${d.runDir ? `<span class="meta">${esc(d.runDir.split('/').pop())}</span>` : ''}</div>
-      </div>
-    </div>` : ''}
-  </div>`;
-}
-
-function renderJobs() {
-  // Keep each player's DOM node mounted while polling updates summaries and evidence.
-  const container = $('#jobs');
-  const existing = new Map([...container.querySelectorAll('.job')].map((el) => [el.dataset.job, el]));
-  if (jobs.length) container.querySelector('.empty')?.remove();
-  jobs.forEach((j, index) => {
-    const template = document.createElement('template');
-    template.innerHTML = renderJob(j);
-    const next = template.content.firstElementChild;
-    const card = existing.get(j.id) ?? next;
-    existing.delete(j.id);
-    if (card !== next) {
-      const summary = card.querySelector('.job-summary'), nextSummary = next.querySelector('.job-summary');
-      if (summary.innerHTML !== nextSummary.innerHTML) summary.innerHTML = nextSummary.innerHTML;
-      const detail = card.querySelector('.detail'), nextDetail = next.querySelector('.detail');
-      if (!nextDetail) detail?.remove();
-      else if (!detail) card.append(nextDetail);
-      else {
-        const content = detail.querySelector('.detail-content'), nextContent = nextDetail.querySelector('.detail-content');
-        if (content.innerHTML !== nextContent.innerHTML) content.innerHTML = nextContent.innerHTML;
-        const video = detail.querySelector('video'), nextVideo = nextDetail.querySelector('video');
-        if (!nextVideo) video?.remove();
-        else if (!video) detail.prepend(nextVideo);
-        else if (video.getAttribute('src') !== nextVideo.getAttribute('src')) video.setAttribute('src', nextVideo.getAttribute('src'));
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <title>Verifications · e2e checker</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0a0a0a;
+        --sidebar: #111111;
+        --surface: #161616;
+        --hover: #202020;
+        --raised: #1c1c1c;
+        --line: #ffffff10;
+        --border: #ffffff1a;
+        --text: #ededed;
+        --muted: #898989;
+        --subtle: #656565;
+        --accent: #e7e7e7;
+        --accent-text: #141414;
+        --green: #79bd9b;
+        --red: #e89b96;
+        --amber: #d5b479;
+        --blue: #9db9de;
+        --shadow: 0 16px 44px #0008;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+        font-size: 13px;
       }
-    }
-    const position = container.children[index] ?? null;
-    if (position !== card) {
-      if (card.parentElement === container && container.moveBefore) container.moveBefore(card, position);
-      else container.insertBefore(card, position);
-    }
-  });
-  existing.forEach((card) => card.remove());
-  if (!jobs.length && !container.querySelector('.empty')) container.innerHTML = '<div class="empty">Click a use case to test it on the selected worktree.<br>Select several and press “Run selected” to test them in parallel.</div>';
-  const running = jobs.filter((j) => j.status === 'running').length, queued = jobs.filter((j) => j.status === 'queued').length;
-  $('#running-count').textContent = running || queued ? `${running} running · ${queued} queued` : '';
-}
+      :root[data-theme='light'] {
+        color-scheme: light;
+        --bg: #fdfdfd;
+        --sidebar: #f6f6f6;
+        --surface: #fff;
+        --hover: #ededed;
+        --raised: #fff;
+        --line: #0000000a;
+        --border: #00000015;
+        --text: #27272a;
+        --muted: #71717a;
+        --subtle: #96969c;
+        --accent: #27272a;
+        --accent-text: #fff;
+        --green: #36865e;
+        --red: #c34f49;
+        --amber: #9a721c;
+        --blue: #446b9b;
+        --shadow: 0 16px 44px #0002;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        color: var(--text);
+        background: var(--bg);
+        height: 100dvh;
+        overflow: hidden;
+      }
+      button,
+      input,
+      select {
+        font: inherit;
+      }
+      button {
+        color: inherit;
+        background: none;
+        border: 0;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+      button:not(:disabled):hover {
+        background: var(--hover);
+      }
+      button:focus-visible,
+      a:focus-visible,
+      input:focus-visible,
+      select:focus-visible {
+        outline: 2px solid var(--blue);
+        outline-offset: 3px;
+      }
+      button,
+      select,
+      input {
+        border-radius: 8px;
+      }
+      input,
+      select {
+        color: inherit;
+        background: transparent;
+        border: 1px solid var(--border);
+        padding: 8px;
+        min-width: 0;
+      }
+      input[type='checkbox'] {
+        accent-color: var(--text);
+        width: 14px;
+        height: 14px;
+        flex-shrink: 0;
+      }
+      a {
+        color: var(--blue);
+        text-decoration: none;
+      }
+      a:hover {
+        text-decoration: underline;
+      }
+      svg {
+        width: 16px;
+        height: 16px;
+        flex-shrink: 0;
+        stroke: currentColor;
+        stroke-width: 1.6;
+        fill: none;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      small {
+        font-size: 11px;
+      }
+      kbd {
+        white-space: nowrap;
+        flex-shrink: 0;
+        font:
+          10px ui-monospace,
+          monospace;
+        color: var(--subtle);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 1px 4px;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .icon-btn {
+        width: 30px;
+        height: 30px;
+        padding: 7px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 8px;
+      }
+      .app {
+        display: grid;
+        grid-template-columns: 264px minmax(0, 1fr);
+        height: 100dvh;
+      }
+      .sidebar {
+        background: var(--sidebar);
+        display: flex;
+        flex-direction: column;
+        border-right: 1px solid var(--line);
+        min-height: 0;
+        padding: 0 10px;
+      }
+      .brand {
+        height: 54px;
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 0 8px;
+        font-weight: 600;
+        letter-spacing: -0.3px;
+      }
+      .brand-mark {
+        width: 22px;
+        height: 22px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        display: grid;
+        place-items: center;
+        font:
+          600 11px ui-monospace,
+          monospace;
+      }
+      .brand small {
+        margin-left: auto;
+        color: var(--subtle);
+        font-weight: 400;
+        letter-spacing: 0;
+      }
+      .new-run {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 9px 10px;
+        text-align: left;
+        font-weight: 500;
+        width: 100%;
+        margin: 3px 0 16px;
+      }
+      .new-run kbd {
+        margin-left: auto;
+      }
+      .sidebar-tabs {
+        display: flex;
+        gap: 4px;
+        padding: 0 2px 10px;
+        border-bottom: 1px solid var(--line);
+      }
+      .sidebar-tabs button {
+        padding: 6px 10px;
+        font-size: 12px;
+        color: var(--muted);
+        border-radius: 6px;
+      }
+      .sidebar-tabs button[aria-selected='true'] {
+        color: var(--text);
+        background: var(--hover);
+      }
+      .search-wrap {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 12px 8px 8px;
+        color: var(--subtle);
+      }
+      .search-wrap input {
+        border: 0;
+        outline: 0;
+        background: none;
+        width: 100%;
+        padding: 2px;
+        font-size: 12px;
+      }
+      .sidebar-body {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        padding-bottom: 12px;
+      }
+      .suite {
+        font-size: 10px;
+        color: var(--subtle);
+        padding: 18px 10px 6px;
+        font-weight: 500;
+        letter-spacing: 0.03em;
+      }
+      .case {
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
+        padding: 8px;
+        border-radius: 7px;
+        margin: 1px 0;
+        cursor: pointer;
+      }
+      .case:hover,
+      .case.selected {
+        background: var(--hover);
+      }
+      .case input {
+        margin: 3px 0 0;
+      }
+      .case-copy {
+        min-width: 0;
+        flex: 1;
+      }
+      .case .title {
+        display: block;
+        font-size: 12px;
+        line-height: 1.5;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+      .case .meta {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--subtle);
+        font-size: 10px;
+        margin-top: 3px;
+      }
+      .case .run {
+        opacity: 0;
+        width: 22px;
+        height: 24px;
+        padding: 3px;
+      }
+      .case:hover .run,
+      .case:focus-within .run {
+        opacity: 1;
+      }
+      .status-dot {
+        display: inline-block;
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--subtle);
+        flex-shrink: 0;
+      }
+      .status-dot.pass,
+      .status-dot.ready {
+        background: var(--green);
+      }
+      .status-dot.fail,
+      .status-dot.failed {
+        background: var(--red);
+      }
+      .status-dot.running,
+      .status-dot.queued {
+        background: var(--blue);
+      }
+      .status-dot.blocked {
+        background: var(--amber);
+      }
+      .history-item {
+        display: block;
+        width: 100%;
+        padding: 10px;
+        border-radius: 8px;
+        text-align: left;
+        margin: 2px 0;
+      }
+      .history-item.active {
+        background: var(--hover);
+      }
+      .history-title {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .history-title span:last-child {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        font-size: 12px;
+      }
+      .history-meta {
+        font-size: 10px;
+        color: var(--subtle);
+        margin: 5px 0 0 13px;
+        display: flex;
+        justify-content: space-between;
+        gap: 6px;
+      }
+      .sidebar-footer {
+        border-top: 1px solid var(--line);
+        padding: 10px 3px;
+        display: flex;
+        align-items: center;
+        gap: 3px;
+      }
+      .sidebar-footer .settings-button {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex: 1;
+        text-align: left;
+        font-size: 12px;
+        padding: 8px;
+        border-radius: 8px;
+        color: var(--muted);
+      }
+      .sidebar-footer .settings-button:hover {
+        color: var(--text);
+      }
+      .workspace {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        min-width: 0;
+      }
+      .topbar {
+        height: 54px;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        padding: 0 24px;
+        gap: 10px;
+        font-size: 12px;
+        border-bottom: 1px solid var(--line);
+      }
+      .topbar .path {
+        color: var(--subtle);
+        white-space: nowrap;
+      }
+      .topbar .slash {
+        color: var(--subtle);
+      }
+      #view-title {
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .topbar .right {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-shrink: 0;
+      }
+      #running-count {
+        font-size: 11px;
+        color: var(--muted);
+      }
+      #sidebar-toggle {
+        display: none;
+      }
+      .thread-scroll {
+        overflow: auto;
+        flex: 1;
+        padding: 28px 28px 20px;
+        min-height: 0;
+        scrollbar-gutter: stable;
+      }
+      .content-column {
+        max-width: 780px;
+        margin: 0 auto;
+      }
+      .welcome {
+        padding: clamp(32px, 10vh, 110px) 0 26px;
+        max-width: 640px;
+        margin: 0 auto;
+      }
+      .welcome-mark {
+        display: grid;
+        place-items: center;
+        border: 1px solid var(--border);
+        color: var(--muted);
+        width: 40px;
+        height: 40px;
+        border-radius: 12px;
+        margin-bottom: 22px;
+      }
+      .welcome-mark svg {
+        width: 20px;
+        height: 20px;
+      }
+      .welcome h1 {
+        font-size: 27px;
+        letter-spacing: -0.8px;
+        font-weight: 500;
+        margin: 0 0 10px;
+        line-height: 1.3;
+      }
+      .welcome p {
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.8;
+        margin: 0;
+        max-width: 460px;
+      }
+      .suggestions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 27px;
+      }
+      .suggestions button {
+        padding: 9px 11px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        font-size: 11px;
+        color: var(--muted);
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+      .selected-preview {
+        margin-top: 28px;
+        border-top: 1px solid var(--line);
+        padding-top: 16px;
+      }
+      .selected-preview .eyebrow {
+        font-size: 10px;
+        color: var(--subtle);
+        text-transform: uppercase;
+        letter-spacing: 0.09em;
+        margin-bottom: 8px;
+      }
+      .selected-case {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 9px 0;
+        font-size: 12px;
+      }
+      .selected-case span {
+        flex: 1;
+      }
+      .selected-case small {
+        color: var(--subtle);
+      }
+      .empty {
+        color: var(--subtle);
+        padding: 24px 10px;
+        line-height: 1.7;
+        text-align: center;
+        font-size: 12px;
+      }
+      .job[hidden],
+      [hidden] {
+        display: none !important;
+      }
+      .job {
+        padding: 4px 0 20px;
+      }
+      .job-head {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        cursor: pointer;
+      }
+      .job-head .title {
+        font-size: 21px;
+        font-weight: 500;
+        line-height: 1.4;
+        letter-spacing: -0.45px;
+        flex: 1;
+      }
+      .job-head .id {
+        display: none;
+      }
+      .job-head .chip {
+        margin-top: 4px;
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 10px;
+        padding: 3px 7px;
+        border: 1px solid var(--border);
+        border-radius: 5px;
+        white-space: nowrap;
+        color: var(--muted);
+      }
+      .chip.pass {
+        color: var(--green);
+      }
+      .chip.fail,
+      .chip.failed {
+        color: var(--red);
+      }
+      .chip.blocked,
+      .chip.codify-failed {
+        color: var(--amber);
+      }
+      .chip.running,
+      .chip.queued {
+        color: var(--blue);
+      }
+      .job-sub {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 14px;
+        color: var(--subtle);
+        font-size: 11px;
+        margin-top: 10px;
+      }
+      .run-metrics {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1px;
+        margin: 22px 0 15px;
+        border: 1px solid var(--border);
+        border-radius: 9px;
+        overflow: hidden;
+        background: var(--line);
+      }
+      .metric {
+        background: var(--bg);
+        padding: 12px 15px;
+      }
+      .metric span {
+        display: block;
+        font-size: 10px;
+        color: var(--subtle);
+        margin-bottom: 5px;
+      }
+      .metric strong {
+        font-size: 16px;
+        font-weight: 500;
+        font-variant-numeric: tabular-nums;
+      }
+      .metric small {
+        font-size: 10px;
+        color: var(--muted);
+        display: block;
+        margin-top: 4px;
+      }
+      .metrics {
+        color: var(--subtle);
+        font-size: 11px;
+        line-height: 1.7;
+      }
+      .pipeline {
+        display: flex;
+        gap: 5px;
+        margin: 18px 0 10px;
+      }
+      .pipeline div {
+        flex: 1;
+        text-align: center;
+        border-bottom: 2px solid var(--line);
+        padding: 7px 0;
+        color: var(--subtle);
+        font-size: 10px;
+        text-transform: capitalize;
+      }
+      .pipeline .done {
+        border-color: var(--green);
+        color: var(--muted);
+      }
+      .pipeline .active {
+        border-color: var(--blue);
+        color: var(--blue);
+      }
+      .log {
+        font:
+          11px/1.7 ui-monospace,
+          monospace;
+        color: var(--muted);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .steps {
+        display: flex;
+        gap: 5px;
+        margin-top: 13px;
+        flex-wrap: wrap;
+      }
+      .step {
+        font:
+          10px ui-monospace,
+          monospace;
+        border: 1px solid var(--border);
+        border-radius: 5px;
+        padding: 4px 6px;
+        color: var(--muted);
+      }
+      .step.pass {
+        color: var(--green);
+      }
+      .step.fail {
+        color: var(--red);
+      }
+      .step.blocked {
+        color: var(--amber);
+      }
+      .error {
+        color: var(--red);
+        font-size: 12px;
+        margin: 12px 0;
+      }
+      .job-actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 15px;
+      }
+      .job-actions button {
+        border: 1px solid var(--border);
+        border-radius: 7px;
+        padding: 6px 10px;
+        font-size: 11px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .detail {
+        display: grid;
+        gap: 18px;
+        margin-top: 24px;
+      }
+      .detail-content {
+        display: contents;
+      }
+      .detail video {
+        width: 100%;
+        max-height: 440px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: #000;
+      }
+      .detail table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+        line-height: 1.7;
+      }
+      .detail td {
+        padding: 12px 0;
+        border-bottom: 1px solid var(--line);
+        vertical-align: top;
+      }
+      .detail td:first-child {
+        width: 85px;
+      }
+      .detail td:last-child {
+        color: var(--muted);
+      }
+      .notes {
+        border-left: 2px solid var(--border);
+        padding: 3px 12px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.7;
+      }
+      .links {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        font-size: 11px;
+        flex-wrap: wrap;
+      }
+      .links .meta {
+        color: var(--subtle);
+      }
+      .dock {
+        padding: 12px 28px 18px;
+        flex-shrink: 0;
+        background: linear-gradient(transparent, var(--bg) 14%);
+      }
+      .composer {
+        max-width: 780px;
+        margin: auto;
+        border: 1px solid var(--border);
+        border-radius: 15px;
+        background: var(--surface);
+        box-shadow: 0 12px 28px -18px #000a;
+      }
+      .composer-body {
+        padding: 16px 17px 12px;
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        min-height: 65px;
+      }
+      .composer-body > svg {
+        color: var(--subtle);
+      }
+      #case-summary {
+        color: var(--muted);
+        flex: 1;
+        text-align: left;
+        padding: 2px 0;
+        font-size: 13px;
+      }
+      .composer-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 7px 10px 10px;
+        min-width: 0;
+      }
+      .composer-toolbar .control {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 6px 8px;
+        font-size: 11px;
+        color: var(--muted);
+        border-radius: 7px;
+        min-width: 0;
+      }
+      .composer-toolbar .control:hover {
+        color: var(--text);
+      }
+      #model-button {
+        max-width: 220px;
+      }
+      #model-label {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .chevron {
+        width: 11px;
+        height: 11px;
+        color: var(--subtle);
+      }
+      #worktree {
+        border: 0;
+        padding: 5px 2px;
+        max-width: 220px;
+        width: 100%;
+        font-size: 11px;
+        color: var(--muted);
+        text-overflow: ellipsis;
+        background: var(--surface);
+        cursor: pointer;
+      }
+      .worktree-control {
+        max-width: 240px;
+        flex: 1;
+      }
+      .worktree-control > svg {
+        width: 13px;
+        height: 13px;
+      }
+      .composer-toolbar .spacer {
+        flex: 1;
+      }
+      .primary {
+        background: var(--accent);
+        color: var(--accent-text);
+        border-radius: 8px;
+        font-weight: 600;
+        padding: 7px 10px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        white-space: nowrap;
+      }
+      .primary:not(:disabled):hover {
+        filter: brightness(0.9);
+        background: var(--accent);
+      }
+      .primary svg {
+        width: 14px;
+        height: 14px;
+      }
+      .dock-note {
+        max-width: 780px;
+        margin: 9px auto 0;
+        display: flex;
+        justify-content: space-between;
+        color: var(--subtle);
+        font-size: 10px;
+        gap: 10px;
+      }
+      .dock-note span:last-child {
+        white-space: nowrap;
+      }
+      #run-error {
+        max-width: 780px;
+        margin: 0 auto 9px;
+        font-size: 12px;
+        color: var(--red);
+      }
+      #run-error:empty {
+        display: none;
+      }
+      .slot-dot {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--subtle);
+      }
+      .slot-dot.up {
+        background: var(--green);
+      }
+      dialog {
+        color: var(--text);
+        background: var(--raised);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 0;
+        box-shadow: var(--shadow);
+        max-height: min(80dvh, 700px);
+        max-width: calc(100vw - 24px);
+      }
+      dialog::backdrop {
+        background: #0007;
+        backdrop-filter: blur(3px);
+      }
+      .dialog-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 15px 18px;
+        border-bottom: 1px solid var(--line);
+      }
+      .dialog-head h2 {
+        font-size: 14px;
+        font-weight: 500;
+        margin: 0;
+      }
+      .dialog-body {
+        padding: 18px;
+      }
+      .settings-dialog {
+        width: 530px;
+      }
+      .provider-setting {
+        border-bottom: 1px solid var(--line);
+        padding: 15px 0;
+      }
+      .provider-setting:first-child {
+        padding-top: 0;
+      }
+      .provider-setting:last-child {
+        border-bottom: 0;
+        padding-bottom: 0;
+      }
+      .provider-setting-head {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+      .provider-setting-head strong {
+        font-weight: 500;
+        flex: 1;
+      }
+      .provider-setting p {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.7;
+        margin: 9px 0;
+      }
+      .provider-setting code {
+        font:
+          11px ui-monospace,
+          monospace;
+        display: block;
+        padding: 9px;
+        background: var(--bg);
+        border: 1px solid var(--line);
+        border-radius: 7px;
+      }
+      .dialog-actions {
+        padding: 12px 18px;
+        border-top: 1px solid var(--line);
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        justify-content: space-between;
+        color: var(--subtle);
+        font-size: 11px;
+      }
+      .dialog-actions button {
+        padding: 7px 9px;
+        border: 1px solid var(--border);
+        border-radius: 7px;
+      }
+      .model-dialog {
+        width: 430px;
+        position: fixed;
+        inset: auto auto 132px calc(264px + (100vw - 264px - min(780px, 100vw - 320px)) / 2);
+        margin: 0;
+        overflow: hidden;
+      }
+      .model-dialog::backdrop {
+        background: transparent;
+        backdrop-filter: none;
+      }
+      .model-search {
+        display: flex;
+        align-items: center;
+        padding: 12px 13px;
+        border-bottom: 1px solid var(--line);
+        gap: 9px;
+        color: var(--subtle);
+      }
+      .model-search input {
+        border: 0;
+        background: none;
+        outline: none;
+        padding: 0;
+        width: 100%;
+        font-size: 12px;
+      }
+      .model-picker-body {
+        display: grid;
+        grid-template-columns: 49px 1fr;
+        min-height: 235px;
+        max-height: 340px;
+      }
+      .provider-rail {
+        padding: 6px;
+        border-right: 1px solid var(--line);
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        background: var(--sidebar);
+      }
+      .provider-rail button {
+        width: 35px;
+        height: 35px;
+        border-radius: 7px;
+        font:
+          500 13px ui-monospace,
+          monospace;
+        color: var(--muted);
+      }
+      .provider-rail button[aria-pressed='true'] {
+        background: var(--hover);
+        color: var(--text);
+      }
+      .model-list {
+        overflow: auto;
+        padding: 8px;
+      }
+      .model-group-label {
+        padding: 5px 7px 8px;
+        font-size: 10px;
+        color: var(--subtle);
+      }
+      .model-option {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 8px;
+        border-radius: 7px;
+        cursor: pointer;
+        font-size: 12px;
+      }
+      .model-option:hover {
+        background: var(--hover);
+      }
+      .model-option small {
+        color: var(--subtle);
+        margin-left: auto;
+        font-size: 10px;
+      }
+      .model-option input {
+        margin: 0;
+      }
+      .model-unavailable {
+        padding: 10px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.7;
+      }
+      .model-unavailable button {
+        border: 1px solid var(--border);
+        padding: 7px 9px;
+        border-radius: 7px;
+        margin-top: 15px;
+      }
+      .model-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 14px;
+        border-top: 1px solid var(--line);
+        font-size: 10px;
+        color: var(--subtle);
+      }
+      .model-footer button {
+        padding: 4px 8px;
+        border-radius: 6px;
+        color: var(--text);
+      }
+      .field {
+        display: grid;
+        grid-template-columns: 1fr 130px;
+        align-items: center;
+        gap: 20px;
+        padding: 12px 0;
+      }
+      .field label {
+        font-size: 12px;
+      }
+      .field small {
+        display: block;
+        color: var(--subtle);
+        font-size: 10px;
+        margin-top: 4px;
+      }
+      .field input,
+      .field select {
+        width: 100%;
+      }
+      .import-dialog {
+        width: 370px;
+      }
+      .import-dialog p {
+        font-size: 12px;
+        color: var(--muted);
+        line-height: 1.7;
+      }
+      #doctor {
+        color: var(--amber);
+        font-size: 11px;
+        line-height: 1.8;
+      }
+      #doctor ul {
+        padding-left: 18px;
+      }
+      #doctor code {
+        font-size: 10px;
+      }
+      #doctor h3 {
+        font-size: 12px;
+        font-weight: 500;
+      }
+      .mobile-scrim {
+        display: none;
+      }
+      ::-webkit-scrollbar {
+        width: 5px;
+        height: 5px;
+      }
+      ::-webkit-scrollbar-thumb {
+        border-radius: 10px;
+        background: var(--border);
+      }
+      @media (max-width: 900px) {
+        .app {
+          grid-template-columns: 230px minmax(0, 1fr);
+        }
+        .sidebar {
+          padding: 0 7px;
+        }
+        .thread-scroll {
+          padding: 25px 20px;
+        }
+        .dock {
+          padding: 10px 20px 15px;
+        }
+        .worktree-control {
+          max-width: 165px;
+        }
+        .model-dialog {
+          left: 250px;
+          bottom: 132px;
+          max-width: calc(100vw - 270px);
+        }
+        .composer-toolbar {
+          flex-wrap: wrap;
+        }
+        .topbar {
+          padding: 0 20px;
+        }
+        .topbar .path {
+          display: none;
+        }
+        .topbar .slash {
+          display: none;
+        }
+      }
+      @media (max-width: 640px) {
+        .app {
+          grid-template-columns: 1fr;
+        }
+        .sidebar {
+          display: none;
+          position: fixed;
+          inset: 0 auto 0 0;
+          width: 264px;
+          z-index: 30;
+          box-shadow: var(--shadow);
+        }
+        body.sidebar-open .sidebar {
+          display: flex;
+        }
+        body.sidebar-open .mobile-scrim {
+          display: block;
+          position: fixed;
+          inset: 0;
+          background: #0006;
+          z-index: 29;
+        }
+        #sidebar-toggle {
+          display: inline-flex;
+        }
+        .topbar {
+          padding: 0 12px;
+          height: 48px;
+        }
+        .thread-scroll {
+          padding: 18px 16px;
+        }
+        .welcome {
+          padding-top: 50px;
+        }
+        .welcome h1 {
+          font-size: 24px;
+        }
+        .dock {
+          padding: 8px 12px 12px;
+        }
+        .model-dialog {
+          left: 12px;
+          right: 12px;
+          bottom: 135px;
+          width: auto;
+          max-width: none;
+        }
+        .worktree-control {
+          max-width: 160px;
+        }
+        .run-metrics {
+          grid-template-columns: repeat(3, 1fr);
+        }
+        .metric {
+          padding: 10px;
+        }
+        .metric strong {
+          font-size: 13px;
+        }
+        .metric small {
+          font-size: 9px;
+        }
+        .job-head .title {
+          font-size: 18px;
+        }
+        .dock-note span:last-child {
+          display: none;
+        }
+        #model-button {
+          max-width: 175px;
+        }
+        .case .run {
+          opacity: 1;
+        }
+        .composer-toolbar {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) 30px auto;
+        }
+        .composer-toolbar .spacer {
+          display: none;
+        }
+        .worktree-control {
+          grid-column: 1/-1;
+          grid-row: 2;
+          max-width: 100%;
+          padding-top: 0 !important;
+          padding-bottom: 0 !important;
+        }
+        #worktree {
+          max-width: 100%;
+        }
+        .model-dialog {
+          bottom: 162px;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          scroll-behavior: auto !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="mobile-scrim" id="sidebar-scrim"></div>
+    <div class="app">
+      <aside class="sidebar" aria-label="Cases and run history">
+        <div class="brand"><span class="brand-mark">e2</span> e2e checker <small>local</small></div>
+        <button class="new-run" id="new-run">
+          <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg> New verification <kbd>⌘ N</kbd>
+        </button>
+        <div class="sidebar-tabs" role="tablist" aria-label="Workspace navigation">
+          <button id="cases-tab" role="tab" aria-selected="true" aria-controls="case-panel" data-tab="cases">
+            Cases <span id="case-count"></span></button
+          ><button id="history-tab" role="tab" aria-selected="false" aria-controls="history-panel" data-tab="history">
+            Runs <span id="history-count"></span></button
+          ><button class="icon-btn" id="import-open" title="Import a Qase case" aria-label="Import a Qase case" style="margin-left: auto">
+            <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>
+          </button>
+        </div>
+        <div class="search-wrap">
+          <svg viewBox="0 0 24 24">
+            <circle cx="10.5" cy="10.5" r="6.5" />
+            <path d="m16 16 4 4" /></svg
+          ><input id="search" type="search" placeholder="Search cases…" aria-label="Search cases or runs" /><kbd>⌘ K</kbd>
+        </div>
+        <div class="sidebar-body">
+          <div id="case-panel" role="tabpanel" aria-labelledby="cases-tab"><div id="cases"></div></div>
+          <div id="history-panel" role="tabpanel" aria-labelledby="history-tab" hidden><div id="history"></div></div>
+        </div>
+        <div class="sidebar-footer">
+          <button id="settings-open" class="settings-button">
+            <svg viewBox="0 0 24 24">
+              <path d="M9 3h6l1 3 3 1 2 5-2 5-3 1-1 3H9l-1-3-3-1-2-5 2-5 3-1Z" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
+            Connections <span id="connection-dot" class="status-dot" style="margin-left: auto"></span></button
+          ><button id="theme-toggle" class="icon-btn" aria-label="Switch color theme" title="Switch color theme">
+            <svg viewBox="0 0 24 24"><path d="M20 14A8 8 0 0 1 10 4a8 8 0 1 0 10 10Z" /></svg>
+          </button>
+        </div>
+      </aside>
+      <main class="workspace">
+        <header class="topbar">
+          <button id="sidebar-toggle" class="icon-btn" aria-label="Toggle sidebar">
+            <svg viewBox="0 0 24 24">
+              <rect x="3" y="4" width="18" height="16" rx="2" />
+              <path d="M9 4v16" />
+            </svg></button
+          ><span class="path">e2e-agent-checker</span><span class="slash">/</span><span id="view-title">New verification</span>
+          <div class="right"><span id="running-count"></span><span class="slot-dot" id="slot-dot" title="Dev server status"></span></div>
+        </header>
+        <div class="thread-scroll" id="thread-scroll">
+          <div class="content-column">
+            <div id="welcome" class="welcome">
+              <div class="welcome-mark">
+                <svg viewBox="0 0 24 24">
+                  <rect x="3" y="4" width="18" height="16" rx="3" />
+                  <path d="m8 12 3 3 5-6" />
+                </svg>
+              </div>
+              <h1>What should we verify?</h1>
+              <p>Select your test cases and a worktree.<br />Get a repeatable test, a clear verdict, and the video to prove it.</p>
+              <div class="suggestions" id="suggestions"></div>
+              <div id="selection-preview"></div>
+            </div>
+            <div id="jobs"></div>
+          </div>
+        </div>
+        <div class="dock">
+          <div id="run-error" role="alert"></div>
+          <div class="composer">
+            <div class="composer-body">
+              <svg viewBox="0 0 24 24">
+                <rect x="5" y="3" width="14" height="18" rx="2" />
+                <path d="m8 9 1 1 2-2m2 1h3M8 15h8" /></svg
+              ><button id="case-summary">Choose cases from the sidebar</button
+              ><button id="clear-selection" class="icon-btn" aria-label="Clear selected cases" title="Clear selected cases" hidden>
+                <svg viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6" /></svg>
+              </button>
+            </div>
+            <div class="composer-toolbar">
+              <button id="model-button" class="control" aria-haspopup="dialog" aria-controls="model-dialog">
+                <svg viewBox="0 0 24 24"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z" /></svg
+                ><span id="model-label">Choose model</span><svg class="chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" /></svg>
+              </button>
+              <div class="control worktree-control" title="Worktree to verify">
+                <svg viewBox="0 0 24 24">
+                  <circle cx="6" cy="5" r="2" />
+                  <circle cx="6" cy="19" r="2" />
+                  <circle cx="18" cy="5" r="2" />
+                  <path d="M6 7v10M18 7c0 6-12 3-12 10" /></svg
+                ><select id="worktree" aria-label="Worktree to verify"></select>
+              </div>
+              <span class="spacer"></span
+              ><button id="options-open" class="icon-btn" aria-label="Run options" title="Run options">
+                <svg viewBox="0 0 24 24"><path d="M4 7h16M4 17h16M8 4v6M16 14v6" /></svg></button
+              ><button class="primary" id="run-selected" disabled>
+                <span>Run</span><svg viewBox="0 0 24 24"><path d="M12 19V5m-5 5 5-5 5 5" /></svg>
+              </button>
+            </div>
+          </div>
+          <div class="dock-note"><span id="composer-hint">Explore → Codify → Replay</span><span>⌘ Enter to run</span></div>
+        </div>
+      </main>
+    </div>
+    <dialog class="model-dialog" id="model-dialog" aria-label="Choose models">
+      <div class="model-search">
+        <svg viewBox="0 0 24 24">
+          <circle cx="10.5" cy="10.5" r="6.5" />
+          <path d="m16 16 4 4" /></svg
+        ><input id="model-search" placeholder="Search models…" aria-label="Search models" /><button
+          class="icon-btn"
+          data-close="model-dialog"
+          aria-label="Close model picker"
+        >
+          ×
+        </button>
+      </div>
+      <div class="model-picker-body">
+        <div id="provider-rail" class="provider-rail" aria-label="Providers"></div>
+        <div class="model-list" id="model-list"></div>
+      </div>
+      <div class="model-footer">
+        <span id="model-selection-count">Select models to compare</span><button data-close="model-dialog">Done</button>
+      </div>
+    </dialog>
+    <dialog class="settings-dialog" id="settings-dialog" aria-labelledby="settings-title">
+      <div class="dialog-head">
+        <h2 id="settings-title">Connections</h2>
+        <button class="icon-btn" data-close="settings-dialog" aria-label="Close connections">×</button>
+      </div>
+      <div class="dialog-body">
+        <p class="muted" style="font-size: 12px; margin: 0 0 20px">
+          Use your existing developer subscriptions. Each runtime keeps its own sign-in.
+        </p>
+        <div id="providers"></div>
+        <div id="doctor"></div>
+      </div>
+      <div class="dialog-actions">
+        <span>Credentials stay with their provider.</span><button id="refresh-providers">Refresh connections</button>
+      </div>
+    </dialog>
+    <dialog class="settings-dialog" id="options-dialog" aria-labelledby="options-title">
+      <div class="dialog-head">
+        <h2 id="options-title">Run options</h2>
+        <button class="icon-btn" data-close="options-dialog" aria-label="Close run options">×</button>
+      </div>
+      <div class="dialog-body">
+        <div class="field">
+          <label for="role">Test identity<small>Runs sharing an identity run in sequence.</small></label
+          ><select id="role"></select>
+        </div>
+        <div class="field">
+          <label for="timeout">Time limit<small>Minutes per run, including setup.</small></label
+          ><input id="timeout" type="number" value="20" min="1" max="60" />
+        </div>
+        <div class="field">
+          <label for="attempts">Test attempts<small>Maximum attempts to stabilize the spec.</small></label
+          ><input id="attempts" type="number" value="8" min="1" max="8" />
+        </div>
+      </div>
+      <div class="dialog-actions">
+        <span>Applied to each case × model combination.</span><button data-close="options-dialog">Done</button>
+      </div>
+    </dialog>
+    <dialog class="import-dialog" id="import-dialog" aria-labelledby="import-title">
+      <div class="dialog-head">
+        <h2 id="import-title">Import a Qase case</h2>
+        <button class="icon-btn" data-close="import-dialog" aria-label="Close import">×</button>
+      </div>
+      <div class="dialog-body">
+        <p>Add a case from your Qase project to this workspace.</p>
+        <label for="add-id" class="muted">Case ID</label
+        ><input id="add-id" type="number" placeholder="e.g. 6003" style="display: block; width: 100%; margin-top: 8px" min="1" />
+      </div>
+      <div class="dialog-actions"><span id="import-error" role="alert"></span><button id="add">Import case</button></div>
+    </dialog>
+    <script>
+      const $ = (s) => document.querySelector(s);
+      const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+      const markup = (el, html) => {
+        if (el.innerHTML !== html) el.innerHTML = html;
+      };
+      const api = async (path, body) => {
+        const res = await fetch(
+          path,
+          body === undefined ? undefined : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) },
+        );
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? res.statusText);
+        return data;
+      };
+      const fileUrl = (p) => `/files?path=${encodeURIComponent(p)}`;
+      const readPreference = (key, fallback) => {
+        try {
+          return JSON.parse(localStorage.getItem(key)) ?? fallback;
+        } catch {
+          return fallback;
+        }
+      };
+      let cases = [],
+        jobs = [],
+        worktrees = [],
+        providers = [],
+        submitting = false,
+        activeJob = readPreference('active-job', null),
+        sidebarTab = 'cases',
+        pickerProvider = 'codex';
+      const selected = new Set(),
+        expanded = new Set(),
+        details = new Map();
+      const targets = new Map(readPreference('run-targets', []).map((t) => [`${t.provider}:${t.model}`, t]));
+      const STAGES = ['prepare', 'explore', 'codify', 'replay', 'package'];
+      const outcomeLabel = { pass: 'Passed', fail: 'Failed', blocked: 'Blocked', 'codify-failed': 'Not codified' };
+      const terminal = (j) => !['queued', 'running', 'cancelling'].includes(j.status);
+      const number = (n) => (n == null ? 'Unavailable' : n.toLocaleString());
+      const duration = (ms) =>
+        ms == null || !Number.isFinite(ms)
+          ? '—'
+          : ms < 60000
+            ? `${(ms / 1000).toFixed(1)}s`
+            : `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`;
+      const dollars = (n) => (n == null ? 'Unavailable' : `$${n.toFixed(4)}`);
+      const shortTime = (date) => {
+        const mins = Math.max(0, Math.floor((Date.now() - Date.parse(date)) / 60000));
+        return mins < 1 ? 'now' : mins < 60 ? `${mins}m` : mins < 1440 ? `${Math.floor(mins / 60)}h` : `${Math.floor(mins / 1440)}d`;
+      };
+      const reportError = (error) => {
+        $('#run-error').textContent = error.message ?? String(error);
+      };
+      const latestJobFor = (c) => jobs.find((j) => j.project === c.project && j.caseId === c.id);
+      const readyTargets = () =>
+        [...targets.values()].filter((t) =>
+          providers.some((p) => p.id === t.provider && p.ready && p.models.some((m) => m.id === t.model)),
+        );
+      const modelName = (target) =>
+        providers.find((p) => p.id === target.provider)?.models.find((m) => m.id === target.model)?.name ?? target.model;
 
-function renderWorktrees() {
-  const current = $('#worktree').value || localStorage.getItem('worktree');
-  $('#worktree').innerHTML = worktrees.map((w) => `<option value="${esc(w.path)}">${esc(w.branch)} — ${esc(w.subject).slice(0, 60)}${w.slot ? ` · :${w.slot.port}` : ''}</option>`).join('');
-  if (current && worktrees.some((w) => w.path === current)) $('#worktree').value = current;
-  const w = worktrees.find((x) => x.path === $('#worktree').value);
-  $('#slot-dot').className = `slot-dot ${w?.slot?.healthy ? 'up' : ''}`;
-  $('#slot-dot').title = w?.slot ? `slot ${w.slot.slot} on ${w.slot.url} (${w.slot.healthy ? 'up' : 'down'})` : 'no dev server yet: it starts on first run';
-}
+      function renderCases() {
+        const q = $('#search').value.toLowerCase();
+        const visible = cases.filter((c) => !q || `${c.project}-${c.id} ${c.title} ${c.suite}`.toLowerCase().includes(q));
+        let html = '',
+          suite = null;
+        for (const c of visible) {
+          if (c.suite !== suite) {
+            suite = c.suite;
+            html += `<div class="suite">${esc(suite || 'Workspace cases')}</div>`;
+          }
+          const key = `${c.project}-${c.id}`,
+            j = latestJobFor(c),
+            status = j?.outcome ?? j?.status ?? '';
+          html += `<div class="case ${selected.has(key) ? 'selected' : ''}" data-key="${key}"><input type="checkbox" aria-label="Select ${key}" ${selected.has(key) ? 'checked' : ''} data-select="${key}"><div class="case-copy"><span class="title" title="${esc(c.title)}">${esc(c.title)}</span><span class="meta"><span>${key}</span><span>·</span><span>${c.steps} steps</span>${j ? `<span class="status-dot ${esc(status)}" title="${esc(status)}"></span>` : ''}</span></div><button class="run" data-run="${key}" aria-label="Run ${key}" title="Run case"><svg viewBox="0 0 24 24"><path d="m9 6 9 6-9 6Z"/></svg></button></div>`;
+        }
+        markup($('#cases'), html || '<div class="empty">No matching cases.<br>Use + to import a case from Qase.</div>');
+        $('#case-count').textContent = cases.length;
+        renderComposer();
+        renderSelection();
+      }
+      function renderHistory() {
+        const q = $('#search').value.toLowerCase();
+        markup(
+          $('#history'),
+          jobs
+            .filter((j) => !q || `${j.project}-${j.caseId} ${j.title} ${j.target?.model}`.toLowerCase().includes(q))
+            .map(
+              (j) =>
+                `<button class="history-item ${j.id === activeJob ? 'active' : ''}" data-open-job="${j.id}" aria-current="${j.id === activeJob ? 'page' : 'false'}"><span class="history-title"><span class="status-dot ${esc(j.outcome ?? j.status)}"></span><span>${esc(j.title ?? `${j.project}-${j.caseId}`)}</span></span><span class="history-meta"><span>${j.project}-${j.caseId} · ${esc(j.target ? modelName(j.target) : 'Claude')}</span><span>${shortTime(j.createdAt)}</span></span></button>`,
+            )
+            .join('') || '<div class="empty">Your verification runs will appear here.</div>',
+        );
+        $('#history-count').textContent = jobs.length || '';
+      }
+      function renderComposer() {
+        const all = [...targets.values()],
+          ready = readyTargets(),
+          count = selected.size * ready.length;
+        $('#model-label').textContent = all.length > 1 ? `${all.length} models` : all.length ? modelName(all[0]) : 'Choose model';
+        $('#model-button').title = all.map((t) => `${t.provider} · ${modelName(t)}`).join('\n') || 'Choose models';
+        $('#case-summary').textContent = selected.size
+          ? `${selected.size} case${selected.size === 1 ? '' : 's'} selected${selected.size === 1 ? ' · ' + [...selected][0] : ''}`
+          : 'Choose cases from the sidebar';
+        $('#clear-selection').hidden = !selected.size;
+        $('#run-selected').disabled = !count || ready.length !== all.length || !$('#worktree').value || submitting;
+        $('#run-selected span').textContent = submitting ? 'Queuing…' : count > 1 ? `Run ${count}` : 'Run';
+        $('#composer-hint').textContent =
+          selected.size && ready.length
+            ? `${selected.size} case${selected.size === 1 ? '' : 's'} × ${ready.length} model${ready.length === 1 ? '' : 's'} · ${count} run${count === 1 ? '' : 's'}`
+            : 'Explore → Codify → Replay';
+      }
+      function renderSelection() {
+        const picked = cases.filter((c) => selected.has(`${c.project}-${c.id}`));
+        markup(
+          $('#selection-preview'),
+          picked.length
+            ? `<div class="selected-preview"><div class="eyebrow">Ready to verify</div>${picked.map((c) => `<div class="selected-case"><small>${c.project}-${c.id}</small><span>${esc(c.title)}</span><button class="icon-btn" data-remove-case="${c.project}-${c.id}" aria-label="Remove ${c.project}-${c.id}">×</button></div>`).join('')}</div>`
+            : '',
+        );
+        const suggested = [6003, 6004, 2359].map((id) => cases.find((c) => c.id === id)).filter(Boolean);
+        markup(
+          $('#suggestions'),
+          selected.size
+            ? ''
+            : suggested
+                .map(
+                  (c) =>
+                    `<button data-suggest="${c.project}-${c.id}"><svg viewBox="0 0 24 24"><path d="m9 6 9 6-9 6Z"/></svg>${c.id === 6003 ? 'Multiline notes' : c.id === 6004 ? 'Note persistence' : 'Add a comment'}</button>`,
+                )
+                .join(''),
+        );
+      }
+      function stageIndex(job) {
+        if (job.status === 'done') return STAGES.length;
+        if (job.status === 'queued') return -1;
+        return Math.max(0, STAGES.indexOf(job.stage));
+      }
+      function renderJob(j) {
+        const idx = stageIndex(j),
+          state = j.status === 'done' ? j.outcome : j.status;
+        const status = `<span class="chip ${esc(state)}">${outcomeLabel[state] ?? esc(state)}</span>`;
+        const wt = worktrees.find((w) => w.path === j.worktree);
+        const elapsed = (j.finishedAt ? Date.parse(j.finishedAt) : Date.now()) - Date.parse(j.createdAt);
+        const active = j.timing ? (j.finishedAt ? j.timing.activeMs : Date.now() - Date.parse(j.startedAt)) : null;
+        const steps = (j.steps ?? [])
+          .map(
+            (s) =>
+              `<span class="step ${s.verdict}" title="${esc(s.evidence)}">${s.position}${s.verdict === 'pass' ? ' ✓' : s.verdict === 'fail' ? ' ×' : ' –'}${s.inferred ? ' *' : ''}</span>`,
+          )
+          .join('');
+        const d = details.get(j.id),
+          open = expanded.has(j.id),
+          cost = j.usage?.providerReportedCostUsd ?? j.costUsd;
+        return `<div class="job" data-job="${j.id}"><div class="job-summary">
+    <div class="job-head" data-toggle="${j.id}"><span class="id">${j.project}-${j.caseId}</span><span class="title">${esc(j.title ?? `${j.project}-${j.caseId}`)}</span>${status}</div>
+    <div class="job-sub"><span>${j.project}-${j.caseId}</span><span>${esc(wt?.branch ?? j.worktree.split('/').pop())}${j.slot ? ` · slot ${j.slot}` : ''}</span><span>${esc(j.target ? `${j.target.provider} / ${modelName(j.target)}` : 'Historical run')}</span></div>
+    <div class="run-metrics"><div class="metric"><span>${j.timing ? 'Active time' : 'Elapsed time'}</span><strong>${duration(active ?? elapsed)}</strong><small>${j.timing ? `${duration(j.timing.queueMs)} queued` : 'Includes queue time'}</small></div><div class="metric"><span>Tokens</span><strong>${number(j.usage?.totalTokens)}</strong><small>${j.replayOf ? 'Replay only · no model calls' : j.usage ? `${esc(j.usage.status)} usage` : 'Not recorded'}</small></div><div class="metric"><span>Reported cost</span><strong>${dollars(cost)}</strong><small>${j.target?.authMode === 'subscription' ? 'Subscription · billed amount unknown' : 'Provider estimate, when recorded'}</small></div></div>
+    <div class="metrics">${j.usage ? `Input ${number(j.usage.inputTokens)} · output ${number(j.usage.outputTokens)} · cached ${number(j.usage.cacheReadTokens)}` : 'Detailed usage was not recorded for this run.'}</div>
+    ${terminal(j) ? '' : `<div class="pipeline">${STAGES.map((s, i) => `<div class="${i < idx ? 'done' : i === idx ? 'active' : ''}">${s}</div>`).join('')}</div><div class="log">${esc(j.log?.at(-1) ?? 'Waiting for an available test identity…')}</div>`}
+    ${steps ? `<div class="steps">${steps}</div>` : ''}${j.error ? `<div class="error">${esc(j.error)}</div>` : ''}
+    <div class="job-actions">${!terminal(j) ? `<button data-cancel="${j.id}" ${j.status === 'cancelling' ? 'disabled' : ''}>${j.status === 'cancelling' ? 'Cancelling…' : 'Cancel run'}</button>` : j.canReplay ? `<button data-replay="${j.id}"><svg viewBox="0 0 24 24"><path d="M4 10a8 8 0 1 1 1 8M4 4v6h6"/></svg>Replay saved spec</button>` : ''}${terminal(j) ? `<button data-rerun="${j.id}">Run again</button>` : ''}</div>
+    </div>
+    ${
+      open && d
+        ? `<div class="detail">${d.video ? `<video src="${fileUrl(d.video)}" controls preload="metadata"></video>` : ''}<div class="detail-content">
+      ${
+        j.timing
+          ? `<div class="metrics">${Object.entries(j.timing.stages)
+              .map(([stage, ms]) => `${esc(stage)} ${duration(ms)}`)
+              .join(' · ')}</div>`
+          : ''
+      }
+      <table aria-label="Step evidence">${(d.steps ?? []).map((s) => `<tr><td><span class="step ${s.verdict}">${s.position} ${s.verdict}${s.inferred ? ' *' : ''}</span></td><td>${esc(s.evidence)}</td></tr>`).join('')}</table>
+      ${d.notes ? `<div class="notes">${esc(d.notes)}</div>` : ''}
+      <div class="links">${d.prComment ? `<a href="${fileUrl(d.prComment)}" target="_blank" rel="noopener">PR comment ↗</a>` : ''}${d.spec ? `<a href="${fileUrl(d.spec)}" target="_blank" rel="noopener">Generated spec ↗</a>` : ''}${d.runDir ? `<span class="meta">${esc(d.runDir.split('/').pop())}</span>` : ''}</div>
+      ${
+        j.stageMetrics
+          ? `<div class="metrics">${Object.entries(j.stageMetrics)
+              .map(([stage, m]) => `${esc(stage)} · ${m.toolCalls} tool calls · ${esc(m.models.join(', '))}`)
+              .join('<br>')}</div>`
+          : ''
+      }
+    </div></div>`
+        : ''
+    }</div>`;
+      }
+      function renderJobs() {
+        // Keep each player's DOM node mounted while polling updates summaries and evidence.
+        const container = $('#jobs');
+        const existing = new Map([...container.querySelectorAll('.job')].map((el) => [el.dataset.job, el]));
+        if (jobs.length) container.querySelector('.empty')?.remove();
+        jobs.forEach((j, index) => {
+          const template = document.createElement('template');
+          template.innerHTML = renderJob(j);
+          const next = template.content.firstElementChild;
+          const card = existing.get(j.id) ?? next;
+          existing.delete(j.id);
+          card.hidden = j.id !== activeJob;
+          if (card !== next) {
+            const summary = card.querySelector('.job-summary'),
+              nextSummary = next.querySelector('.job-summary');
+            if (summary.innerHTML !== nextSummary.innerHTML) summary.innerHTML = nextSummary.innerHTML;
+            const detail = card.querySelector('.detail'),
+              nextDetail = next.querySelector('.detail');
+            if (!nextDetail) detail?.remove();
+            else if (!detail) card.append(nextDetail);
+            else {
+              const content = detail.querySelector('.detail-content'),
+                nextContent = nextDetail.querySelector('.detail-content');
+              if (content.innerHTML !== nextContent.innerHTML) content.innerHTML = nextContent.innerHTML;
+              const video = detail.querySelector('video'),
+                nextVideo = nextDetail.querySelector('video');
+              if (!nextVideo) video?.remove();
+              else if (!video) detail.prepend(nextVideo);
+              else if (video.getAttribute('src') !== nextVideo.getAttribute('src'))
+                video.setAttribute('src', nextVideo.getAttribute('src'));
+            }
+          }
+          const position = container.children[index] ?? null;
+          if (position !== card) {
+            if (card.parentElement === container && container.moveBefore) container.moveBefore(card, position);
+            else container.insertBefore(card, position);
+          }
+        });
+        existing.forEach((card) => card.remove());
+        if (!jobs.length) container.innerHTML = '';
+        syncView();
+        const running = jobs.filter((j) => j.status === 'running').length,
+          queued = jobs.filter((j) => j.status === 'queued').length;
+        $('#running-count').textContent = running || queued ? `${running} running · ${queued} queued` : '';
+      }
 
-async function run(keys) {
-  const worktree = $('#worktree').value;
-  const list = keys.map((k) => { const [project, id] = k.split(/-(?=\d+$)/); return { project, id: Number(id) }; });
-  await api('/api/jobs', { cases: list, worktree, role: $('#role').value });
-  selected.clear();
-  await refreshJobs();
-  renderCases();
-}
+      function syncView() {
+        const job = jobs.find((j) => j.id === activeJob);
+        $('#welcome').hidden = !!job;
+        $('#view-title').textContent = job ? `${job.project}-${job.caseId}` : 'New verification';
+        document.title = job ? `${job.project}-${job.caseId} · e2e checker` : 'New verification · e2e checker';
+      }
+      function showTab(tab) {
+        sidebarTab = tab;
+        $('#case-panel').hidden = tab !== 'cases';
+        $('#history-panel').hidden = tab !== 'history';
+        $('#cases-tab').setAttribute('aria-selected', String(tab === 'cases'));
+        $('#history-tab').setAttribute('aria-selected', String(tab === 'history'));
+        $('#search').placeholder = tab === 'cases' ? 'Search cases…' : 'Search runs…';
+        $('#search').value = '';
+        renderCases();
+        renderHistory();
+      }
+      function beginDraft() {
+        activeJob = null;
+        localStorage.removeItem('active-job');
+        expanded.clear();
+        renderJobs();
+        renderHistory();
+        showTab('cases');
+        $('#thread-scroll').scrollTop = 0;
+      }
+      async function selectJob(id) {
+        activeJob = id;
+        localStorage.setItem('active-job', JSON.stringify(id));
+        expanded.clear();
+        expanded.add(id);
+        details.set(id, await api(`/api/jobs/${id}`));
+        renderJobs();
+        renderHistory();
+        showTab('history');
+        $('#thread-scroll').scrollTop = 0;
+        document.body.classList.remove('sidebar-open');
+      }
+      function renderWorktrees() {
+        const current = $('#worktree').value || localStorage.getItem('worktree');
+        markup(
+          $('#worktree'),
+          worktrees.map((w) => `<option value="${esc(w.path)}">${esc(w.branch)}${w.slot ? ` · :${w.slot.port}` : ''}</option>`).join(''),
+        );
+        if (current && worktrees.some((w) => w.path === current)) $('#worktree').value = current;
+        const w = worktrees.find((w) => w.path === $('#worktree').value);
+        $('#worktree').title = w ? `${w.branch}\n${w.path}\n${w.subject}` : 'Select a worktree';
+        $('#slot-dot').className = `slot-dot ${w?.slot?.healthy ? 'up' : ''}`;
+        $('#slot-dot').title = w?.slot ? `Dev server on ${w.slot.url}` : 'Dev server starts with the run';
+        renderComposer();
+      }
+      async function run(keys) {
+        if (submitting) return;
+        if (!keys.length) {
+          reportError(new Error('Select at least one case.'));
+          return;
+        }
+        if (!targets.size || readyTargets().length !== targets.size) {
+          openModelPicker();
+          reportError(new Error('Choose an available model before running.'));
+          return;
+        }
+        const limits = { timeoutMs: Number($('#timeout').value) * 60000, maxAttempts: Number($('#attempts').value) };
+        if (
+          !Number.isInteger(limits.maxAttempts) ||
+          limits.maxAttempts < 1 ||
+          limits.maxAttempts > 8 ||
+          limits.timeoutMs < 60000 ||
+          limits.timeoutMs > 3600000
+        ) {
+          reportError(new Error('Use 1–60 minutes and 1–8 test attempts.'));
+          return;
+        }
+        submitting = true;
+        renderComposer();
+        $('#run-error').textContent = '';
+        try {
+          const list = keys.map((k) => {
+            const [project, id] = k.split(/-(?=\d+$)/);
+            return { project, id: Number(id) };
+          });
+          const ids = await api('/api/jobs', {
+            cases: list,
+            worktree: $('#worktree').value,
+            role: $('#role').value,
+            targets: [...targets.values()],
+            limits,
+            idempotencyKey: crypto.randomUUID(),
+          });
+          selected.clear();
+          await refreshJobs();
+          await selectJob(ids[0]);
+        } catch (error) {
+          reportError(error);
+        } finally {
+          submitting = false;
+          renderComposer();
+          renderCases();
+        }
+      }
+      let refreshPromise = null;
+      function refreshJobs() {
+        if (refreshPromise) return refreshPromise;
+        refreshPromise = (async () => {
+          try {
+            jobs = await api('/api/jobs');
+            for (const id of expanded) {
+              const j = jobs.find((x) => x.id === id);
+              if (j && terminal(j) && !details.get(id)?.final) details.set(id, { ...(await api(`/api/jobs/${id}`)), final: true });
+            }
+            renderJobs();
+            renderCases();
+            renderHistory();
+          } finally {
+            refreshPromise = null;
+          }
+        })();
+        return refreshPromise;
+      }
+      const providerMark = { codex: 'Cx', 'claude-code': 'Cl', cursor: 'Cu' };
+      function providerMessage(p) {
+        if (p.ready) return 'Connected. Runs use your existing subscription.';
+        if (p.id === 'cursor' && p.auth === 'subscription' && p.reason?.startsWith('CAPABILITY_UNSUPPORTED'))
+          return 'Cursor is connected, but its runtime does not yet support the tool restrictions required for verification. You can use the checker MCP from Cursor with Codex as the worker.';
+        if (p.auth === 'api-key')
+          return 'An API key is active. Sign in with your subscription, then restart the checker without the provider API-key environment variable.';
+        return p.reason?.replace(/^[A-Z_]+:\s*/, '') ?? 'Sign in through the native app to connect.';
+      }
+      function renderModelPicker() {
+        markup(
+          $('#provider-rail'),
+          providers
+            .map(
+              (p) =>
+                `<button data-picker-provider="${p.id}" aria-pressed="${p.id === pickerProvider}" title="${esc(p.name)}${p.ready ? '' : ' · unavailable'}" aria-label="${esc(p.name)}">${providerMark[p.id]}</button>`,
+            )
+            .join(''),
+        );
+        const p = providers.find((p) => p.id === pickerProvider),
+          q = $('#model-search').value.toLowerCase();
+        if (!p) {
+          $('#model-list').innerHTML = '<div class="empty">Checking connections…</div>';
+          return;
+        }
+        markup(
+          $('#model-list'),
+          `<div class="model-group-label">${esc(p.name)}${p.ready ? ' · subscription' : ''}</div>` +
+            (p.ready
+              ? p.models
+                  .filter((m) => !q || m.name.toLowerCase().includes(q) || m.id.toLowerCase().includes(q))
+                  .map(
+                    (m) =>
+                      `<label class="model-option"><input type="checkbox" data-model="${esc(m.id)}" data-provider="${p.id}" ${targets.has(`${p.id}:${m.id}`) ? 'checked' : ''}><span>${esc(m.name)}</span>${targets.has(`${p.id}:${m.id}`) ? '<small>Selected</small>' : ''}</label>`,
+                  )
+                  .join('') || '<div class="empty">No matching models</div>'
+              : `<div class="model-unavailable">${esc(providerMessage(p))}<br><button id="picker-setup">Manage connection</button></div>`),
+        );
+        $('#model-selection-count').textContent = targets.size
+          ? `${targets.size} model${targets.size === 1 ? '' : 's'} selected · one run per model`
+          : 'Select models to compare';
+      }
+      function openModelPicker() {
+        const preferred = [...targets.values()][0]?.provider;
+        if (preferred) pickerProvider = preferred;
+        $('#model-search').value = '';
+        renderModelPicker();
+        $('#model-dialog').showModal();
+        $('#model-search').focus();
+      }
+      async function refreshProviders() {
+        $('#refresh-providers').disabled = true;
+        try {
+          providers = await api('/api/providers?fresh=1');
+          if (!targets.size) {
+            const p = providers.find((p) => p.ready && p.models.length);
+            if (p) {
+              const target = { provider: p.id, model: p.models[0].id, authMode: 'subscription' };
+              targets.set(`${p.id}:${target.model}`, target);
+              pickerProvider = p.id;
+            }
+          }
+          markup(
+            $('#providers'),
+            providers
+              .map(
+                (p) =>
+                  `<div class="provider-setting"><div class="provider-setting-head"><span class="brand-mark">${providerMark[p.id]}</span><strong>${esc(p.name)}</strong><span class="chip ${p.ready ? 'pass' : p.auth === 'api-key' ? 'blocked' : ''}">${p.ready ? 'Connected' : p.auth === 'api-key' ? 'API key active' : p.installed ? 'Unavailable' : 'Not installed'}</span></div><p>${esc(providerMessage(p))}</p>${!p.ready && (p.id !== 'cursor' || p.auth !== 'subscription') ? `<code>${esc(p.loginCommand)}</code>` : ''}</div>`,
+              )
+              .join(''),
+          );
+          $('#connection-dot').className = `status-dot ${providers.some((p) => p.ready) ? 'ready' : ''}`;
+          renderComposer();
+          renderModelPicker();
+        } finally {
+          $('#refresh-providers').disabled = false;
+        }
+      }
+      async function checkSetup() {
+        const checks = await api('/api/doctor'),
+          missing = checks.filter((c) => !c.ok && c.required);
+        $('#doctor').innerHTML = missing.length
+          ? `<h3>Workspace setup</h3><ul>${missing.map((c) => `<li>${esc(c.name)}: ${esc(c.detail)}<br><code>${esc(c.fix)}</code></li>`).join('')}</ul>`
+          : '';
+      }
+      function openSettings() {
+        $('#settings-dialog').showModal();
+        checkSetup().catch(reportError);
+      }
 
-async function refreshJobs() {
-  jobs = await api('/api/jobs');
-  for (const id of expanded) {
-    const j = jobs.find((x) => x.id === id);
-    if (j && (j.status === 'done' || j.status === 'failed') && !details.get(id)?.final) details.set(id, { ...(await api(`/api/jobs/${id}`)), final: true });
-  }
-  renderJobs();
-  renderCases();
-}
-
-$('#cases').addEventListener('click', async (e) => {
-  const sel = e.target.closest('[data-select]');
-  if (sel) { sel.checked ? selected.add(sel.dataset.select) : selected.delete(sel.dataset.select); renderCases(); return; }
-  const runBtn = e.target.closest('[data-run]');
-  if (runBtn) { await run([runBtn.dataset.run]); return; }
-  const row = e.target.closest('.case');
-  if (row) { const k = row.dataset.key; selected.has(k) ? selected.delete(k) : selected.add(k); renderCases(); }
-});
-$('#jobs').addEventListener('click', async (e) => {
-  const t = e.target.closest('[data-toggle]');
-  if (!t) return;
-  const id = t.dataset.toggle;
-  if (expanded.has(id)) expanded.delete(id); else { expanded.add(id); details.set(id, await api(`/api/jobs/${id}`)); }
-  renderJobs();
-});
-$('#run-selected').addEventListener('click', () => run([...selected]));
-$('#search').addEventListener('input', renderCases);
-$('#worktree').addEventListener('change', () => { localStorage.setItem('worktree', $('#worktree').value); renderWorktrees(); });
-$('#add').addEventListener('click', async () => {
-  const id = Number($('#add-id').value);
-  if (!id) return;
-  $('#add').disabled = true;
-  try { await api('/api/cases', { project: 'DEMO', id }); cases = await api('/api/cases'); $('#add-id').value = ''; renderCases(); }
-  catch (err) { alert(err.message); }
-  finally { $('#add').disabled = false; }
-});
-
-async function checkSetup() {
-  const checks = await api('/api/doctor');
-  const missing = checks.filter((c) => !c.ok && c.required);
-  $('#doctor').style.display = missing.length ? 'block' : 'none';
-  $('#doctor').innerHTML = missing.length ? `<h3>Setup incomplete: runs will fail until these are fixed</h3><ul>${missing.map((c) => `<li><b>${esc(c.name)}</b>: ${esc(c.detail)} → <code>${esc(c.fix)}</code></li>`).join('')}</ul>` : '';
-}
-
-(async () => {
-  checkSetup();
-  const config = await api('/api/config');
-  $('#role').innerHTML = config.roles.map((r) => `<option>${esc(r)}</option>`).join('');
-  [cases, worktrees] = await Promise.all([api('/api/cases'), api('/api/worktrees')]);
-  renderWorktrees();
-  await refreshJobs();
-  setInterval(refreshJobs, 2000);
-  setInterval(async () => { worktrees = await api('/api/worktrees'); renderWorktrees(); }, 10000);
-})();
-</script>
-</body>
+      $('#cases').addEventListener('click', (e) => {
+        const sel = e.target.closest('[data-select]');
+        if (sel) {
+          sel.checked ? selected.add(sel.dataset.select) : selected.delete(sel.dataset.select);
+          if (activeJob) beginDraft();
+          renderCases();
+          return;
+        }
+        const runBtn = e.target.closest('[data-run]');
+        if (runBtn) {
+          void run([runBtn.dataset.run]);
+          return;
+        }
+        const row = e.target.closest('.case');
+        if (row) {
+          const key = row.dataset.key;
+          selected.has(key) ? selected.delete(key) : selected.add(key);
+          if (activeJob) beginDraft();
+          renderCases();
+        }
+      });
+      $('#history').addEventListener('click', (e) => {
+        const b = e.target.closest('[data-open-job]');
+        if (b) selectJob(b.dataset.openJob).catch(reportError);
+      });
+      $('#jobs').addEventListener('click', async (e) => {
+        const action = e.target.closest('[data-cancel],[data-replay],[data-rerun]');
+        if (action) {
+          try {
+            if (action.dataset.rerun) {
+              const j = jobs.find((j) => j.id === action.dataset.rerun);
+              selected.clear();
+              selected.add(`${j.project}-${j.caseId}`);
+              if (j.target) {
+                targets.clear();
+                targets.set(`${j.target.provider}:${j.target.model}`, j.target);
+              }
+              $('#worktree').value = j.worktree;
+              beginDraft();
+              renderWorktrees();
+              return;
+            }
+            action.disabled = true;
+            const result = await api(
+              `/api/jobs/${action.dataset.cancel ?? action.dataset.replay}/${action.dataset.cancel ? 'cancel' : 'replay'}`,
+              {},
+            );
+            await refreshJobs();
+            if (action.dataset.replay) await selectJob(result.id);
+          } catch (error) {
+            reportError(error);
+            action.disabled = false;
+          }
+          return;
+        }
+        const t = e.target.closest('[data-toggle]');
+        if (!t) return;
+        const id = t.dataset.toggle;
+        if (expanded.has(id)) expanded.delete(id);
+        else {
+          expanded.add(id);
+          details.set(id, await api(`/api/jobs/${id}`));
+        }
+        renderJobs();
+      });
+      $('#selection-preview').addEventListener('click', (e) => {
+        const b = e.target.closest('[data-remove-case]');
+        if (b) {
+          selected.delete(b.dataset.removeCase);
+          renderCases();
+        }
+      });
+      $('#suggestions').addEventListener('click', (e) => {
+        const b = e.target.closest('[data-suggest]');
+        if (b) {
+          selected.add(b.dataset.suggest);
+          renderCases();
+        }
+      });
+      $('#new-run').addEventListener('click', () => {
+        selected.clear();
+        beginDraft();
+      });
+      $('#clear-selection').addEventListener('click', () => {
+        selected.clear();
+        renderCases();
+      });
+      $('#case-summary').addEventListener('click', () => {
+        showTab('cases');
+        document.body.classList.add('sidebar-open');
+        $('#search').focus();
+      });
+      $('#run-selected').addEventListener('click', () => void run([...selected]));
+      $('#search').addEventListener('input', () => {
+        renderCases();
+        renderHistory();
+      });
+      $('[data-tab="cases"]').addEventListener('click', () => showTab('cases'));
+      $('[data-tab="history"]').addEventListener('click', () => showTab('history'));
+      $('#worktree').addEventListener('change', () => {
+        localStorage.setItem('worktree', $('#worktree').value);
+        renderWorktrees();
+      });
+      $('#model-button').addEventListener('click', openModelPicker);
+      $('#model-search').addEventListener('input', renderModelPicker);
+      $('#provider-rail').addEventListener('click', (e) => {
+        const b = e.target.closest('[data-picker-provider]');
+        if (b) {
+          pickerProvider = b.dataset.pickerProvider;
+          $('#model-search').value = '';
+          renderModelPicker();
+          $('#model-search').focus();
+        }
+      });
+      $('#model-list').addEventListener('change', (e) => {
+        const input = e.target.closest('[data-model]');
+        if (!input) return;
+        const key = `${input.dataset.provider}:${input.dataset.model}`;
+        if (input.checked) {
+          if (targets.size >= 8) {
+            input.checked = false;
+            return;
+          }
+          targets.set(key, { provider: input.dataset.provider, model: input.dataset.model, authMode: 'subscription' });
+        } else targets.delete(key);
+        localStorage.setItem('run-targets', JSON.stringify([...targets.values()]));
+        renderComposer();
+        renderModelPicker();
+        [...document.querySelectorAll('[data-model]')]
+          .find((el) => el.dataset.provider === input.dataset.provider && el.dataset.model === input.dataset.model)
+          ?.focus();
+      });
+      $('#model-list').addEventListener('click', (e) => {
+        if (e.target.closest('#picker-setup')) {
+          $('#model-dialog').close();
+          openSettings();
+        }
+      });
+      $('#settings-open').addEventListener('click', openSettings);
+      $('#refresh-providers').addEventListener('click', () => refreshProviders().catch(reportError));
+      $('#options-open').addEventListener('click', () => $('#options-dialog').showModal());
+      $('#import-open').addEventListener('click', () => {
+        $('#import-error').textContent = '';
+        $('#import-dialog').showModal();
+        $('#add-id').focus();
+      });
+      $('#add').addEventListener('click', async () => {
+        const id = Number($('#add-id').value);
+        if (!Number.isInteger(id) || id < 1) {
+          $('#import-error').textContent = 'Enter a case ID.';
+          return;
+        }
+        $('#add').disabled = true;
+        try {
+          await api('/api/cases', { project: 'DEMO', id });
+          cases = await api('/api/cases');
+          $('#add-id').value = '';
+          $('#import-dialog').close();
+          showTab('cases');
+          renderCases();
+        } catch (error) {
+          $('#import-error').textContent = error.message;
+        } finally {
+          $('#add').disabled = false;
+        }
+      });
+      document
+        .querySelectorAll('[data-close]')
+        .forEach((button) => button.addEventListener('click', () => document.getElementById(button.dataset.close).close()));
+      document.querySelectorAll('dialog').forEach((dialog) =>
+        dialog.addEventListener('click', (e) => {
+          if (e.target !== dialog) return;
+          const r = dialog.getBoundingClientRect();
+          if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) dialog.close();
+        }),
+      );
+      $('#theme-toggle').addEventListener('click', () => {
+        const theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+        document.documentElement.dataset.theme = theme;
+        localStorage.setItem('theme', theme);
+      });
+      document.documentElement.dataset.theme = localStorage.getItem('theme') ?? 'dark';
+      $('#sidebar-toggle').addEventListener('click', () => document.body.classList.toggle('sidebar-open'));
+      $('#sidebar-scrim').addEventListener('click', () => document.body.classList.remove('sidebar-open'));
+      document.addEventListener('keydown', (e) => {
+        if (!(e.metaKey || e.ctrlKey)) return;
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          void run([...selected]);
+        }
+        if (e.key.toLowerCase() === 'k') {
+          e.preventDefault();
+          document.body.classList.add('sidebar-open');
+          $('#search').focus();
+        }
+        if (e.key.toLowerCase() === 'n') {
+          e.preventDefault();
+          selected.clear();
+          beginDraft();
+        }
+      });
+      (async () => {
+        const config = await api('/api/config');
+        $('#role').innerHTML = config.roles.map((r) => `<option>${esc(r)}</option>`).join('');
+        [cases, worktrees] = await Promise.all([api('/api/cases'), api('/api/worktrees')]);
+        renderWorktrees();
+        await Promise.all([refreshProviders(), refreshJobs()]);
+        if (activeJob && jobs.some((j) => j.id === activeJob)) await selectJob(activeJob);
+        else {
+          activeJob = null;
+          syncView();
+        }
+        setInterval(() => refreshJobs().catch(reportError), 2000);
+        setInterval(async () => {
+          try {
+            worktrees = await api('/api/worktrees');
+            renderWorktrees();
+          } catch (error) {
+            reportError(error);
+          }
+        }, 10000);
+      })().catch(reportError);
+    </script>
+  </body>
 </html>

@@ -1,103 +1,216 @@
 import { execFile, spawn } from 'node:child_process';
-import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { config } from './config.ts';
-import type { Job } from './jobs.ts';
-
-// MCP surface for coding agents. The local app owns the job queue, so jobs an agent starts show up in the app UI too;
-// this server forwards to the app's API and starts the app in the background when it isn't running.
-
-const exec = promisify(execFile);
-const root = new URL('..', import.meta.url).pathname;
-const APP = `http://127.0.0.1:${config.app.port}`;
-
-const appUp = () => fetch(`${APP}/api/config`, { signal: AbortSignal.timeout(1_500) }).then((r) => r.ok, () => false);
-
-const ensureApp = async () => {
+import { targetSchema, providerId } from './providers/index.ts';
+const exec = promisify(execFile),
+  root = new URL('..', import.meta.url).pathname,
+  APP = `http://127.0.0.1:${config.app.port}`;
+const appUp = () =>
+  fetch(`${APP}/api/config`, { signal: AbortSignal.timeout(1500) }).then(
+    (r) => r.ok,
+    () => false,
+  );
+async function ensureApp() {
   if (await appUp()) return;
-  spawn(process.execPath, [join(root, 'src/app/server.ts')], { detached: true, stdio: 'ignore', env: { ...process.env, E2E_APP_OPEN: '0' } }).unref();
+  spawn(process.execPath, [join(root, 'src/app/server.ts')], {
+    detached: true,
+    stdio: 'ignore',
+    env: { ...process.env, E2E_APP_OPEN: '0' },
+  }).unref();
   for (let i = 0; i < 40; i++) {
     if (await appUp()) return;
     await new Promise((r) => setTimeout(r, 250));
   }
-  throw new Error(`The e2e-agent-checker app did not start on ${APP}`);
-};
-
-const appApi = async <T>(path: string, body?: unknown): Promise<T> => {
+  throw new Error('Local app did not start');
+}
+async function api(path: string, body?: unknown): Promise<any> {
   await ensureApp();
-  const res = await fetch(`${APP}${path}`, body ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : undefined);
-  const data = await res.json();
-  if (!res.ok) throw new Error((data as { error?: string }).error ?? res.statusText);
-  return data as T;
+  const r = await fetch(APP + path, {
+    ...(body === undefined ? {} : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
+    signal: AbortSignal.timeout(60_000),
+  });
+  const data = await r.json();
+  if (!r.ok) throw Object.assign(new Error(data.error), { code: data.code });
+  return data;
+}
+const server = new McpServer({ name: 'e2e-agent-checker', version: '0.3.0' });
+const jobSchema = z
+  .object({
+    id: z.string(),
+    project: z.string(),
+    caseId: z.number(),
+    status: z.enum(['queued', 'running', 'cancelling', 'done', 'failed', 'cancelled', 'interrupted']),
+    createdAt: z.string(),
+    log: z.array(z.string()),
+  })
+  .passthrough();
+const providerSchema = z
+  .object({
+    id: providerId,
+    name: z.string(),
+    installed: z.boolean(),
+    auth: z.enum(['subscription', 'api-key', 'unknown', 'logged-out']),
+    ready: z.boolean(),
+    models: z.array(z.object({ id: z.string(), name: z.string() })),
+  })
+  .passthrough();
+const outputs: Record<string, z.ZodType> = {
+  list_providers: z.object({ providers: z.array(providerSchema) }),
+  list_models: providerSchema,
+  list_cases: z.object({ cases: z.array(z.object({ project: z.string(), id: z.number(), title: z.string() }).passthrough()) }),
+  list_worktrees: z.object({ worktrees: z.array(z.object({ path: z.string(), branch: z.string() }).passthrough()) }),
+  verify_case: z.object({ jobId: z.string() }),
+  verify_cases: z.object({ jobIds: z.array(z.string()) }),
+  get_job: jobSchema,
+  cancel_job: jobSchema,
+  replay_job: z.object({ jobId: z.string() }),
+  list_jobs: z.object({ jobs: z.array(jobSchema), nextCursor: z.number().nullable() }),
+  attach_to_pr: z.object({ posted: z.string().optional(), alreadyPublished: z.boolean().optional(), pr: z.string().optional() }),
 };
-
-const server = new McpServer({ name: 'e2e-agent-checker', version: '0.2.0' });
-const text = (value: unknown) => ({ content: [{ type: 'text' as const, text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }] });
-
-server.registerTool(
+function register(name: string, description: string, inputSchema: any, fn: (args: any) => Promise<unknown>) {
+  const outputSchema = z.object({ data: outputs[name] });
+  server.registerTool(name, { description, inputSchema, outputSchema }, async (args: any) => {
+    try {
+      const data = outputs[name].parse(await fn(args));
+      return { structuredContent: { data }, content: [{ type: 'text' as const, text: JSON.stringify(data) }] };
+    } catch (e) {
+      return {
+        isError: true,
+        content: [{ type: 'text' as const, text: JSON.stringify({ code: (e as any).code ?? 'RUN_FAILED', message: String(e) }) }],
+      };
+    }
+  });
+}
+const limits = z
+  .object({ timeoutMs: z.number().int().min(10_000).max(3600000).optional(), maxAttempts: z.number().int().min(1).max(8).optional() })
+  .optional();
+const common = {
+  worktreePath: z.string().min(1),
+  role: z.string().optional(),
+  limits,
+  idempotencyKey: z.string().min(1).max(128).optional(),
+};
+register('list_providers', 'Inspect native subscription authentication, capabilities, and model availability.', {}, async () => ({
+  providers: await api('/api/providers'),
+}));
+register(
+  'list_models',
+  'List models for a native runtime. Availability is checked again before execution.',
+  { provider: providerId },
+  async ({ provider }) => {
+    const p = (await api('/api/providers')).find((p: any) => p.id === provider);
+    return { provider, ...p };
+  },
+);
+register('list_cases', 'List locally imported Qase cases.', {}, async () => ({ cases: await api('/api/cases') }));
+register('list_worktrees', 'List available frontend worktrees and dev-server slots.', {}, async () => ({
+  worktrees: await api('/api/worktrees'),
+}));
+register(
   'verify_case',
+  'Start one background Explore → Codify → Replay job. Uses existing subscriptions only; poll get_job.',
   {
-    title: 'Verify a Qase test case against a worktree',
-    description:
-      'Starts a background job in the local e2e-agent-checker app: serves the frontend worktree against the shared dev API, has an agent execute the Qase case ' +
-      'in a browser, codifies it into a Playwright spec, and replays that spec with video. Returns a jobId immediately; poll get_job (typically 3-10 minutes). ' +
-      `Progress is also visible at http://localhost:${config.app.port}.`,
-    inputSchema: {
-      worktreePath: z.string().describe('Absolute path to a sample-frontend checkout or worktree'),
-      qaseCaseId: z.number().int().positive().describe('Qase case id, e.g. 6003 for DEMO-6003'),
-      project: z.string().default(config.qase.project).describe('Qase project code'),
-      role: z.string().optional().describe('Test user role from config/roles.json'),
-    },
+    ...common,
+    qaseCaseId: z.number().int().positive(),
+    project: z
+      .string()
+      .regex(/^[A-Z0-9_]+$/)
+      .default(config.qase.project),
+    target: targetSchema.optional(),
   },
-  async ({ worktreePath, qaseCaseId, project, role }) => {
-    const [jobId] = await appApi<string[]>('/api/jobs', { worktree: worktreePath, cases: [{ project, id: qaseCaseId }], role });
-    return text({ jobId, next: `Call get_job with jobId "${jobId}" in a few minutes.`, app: `http://localhost:${config.app.port}` });
-  },
+  async ({ worktreePath, qaseCaseId, project, target, ...rest }) => ({
+    jobId: (
+      await api('/api/jobs', {
+        worktree: worktreePath,
+        cases: [{ project, id: qaseCaseId }],
+        targets: target ? [target] : undefined,
+        ...rest,
+      })
+    )[0],
+  }),
 );
-
-server.registerTool(
+register(
+  'verify_cases',
+  'Atomically preflight and queue every case × model combination. Jobs sharing an identity run sequentially.',
+  {
+    ...common,
+    cases: z
+      .array(z.object({ project: z.string().regex(/^[A-Z0-9_]+$/), id: z.number().int().positive() }))
+      .min(1)
+      .max(30),
+    targets: z.array(targetSchema).min(1).max(8),
+  },
+  async ({ worktreePath, ...rest }) => ({ jobIds: await api('/api/jobs', { worktree: worktreePath, ...rest }) }),
+);
+register(
   'get_job',
-  {
-    title: 'Get a verification job',
-    description: 'Status, current stage, per-step verdicts with evidence, replay result, MP4 path, PR comment, generated spec path, and cost.',
-    inputSchema: { jobId: z.string() },
-  },
-  async ({ jobId }) => {
-    const job = await appApi<Job & { comment?: string }>(`/api/jobs/${jobId}`);
-    return text({ ...job, log: job.log.slice(-10) });
+  'Read status, stage timings, partial usage, evidence paths and bounded logs. Billed cost may be unavailable.',
+  { jobId: z.string(), logLimit: z.number().int().min(0).max(80).default(10) },
+  async ({ jobId, logLimit }) => {
+    const j = await api(`/api/jobs/${encodeURIComponent(jobId)}`);
+    return { ...j, log: logLimit ? j.log.slice(-logLimit) : [] };
   },
 );
-
-server.registerTool(
+register(
   'list_jobs',
-  { title: 'List verification jobs', description: 'Most recent first, with status and outcome.', inputSchema: {} },
-  async () => {
-    const jobs = await appApi<(Job & { title?: string })[]>('/api/jobs');
-    return text(jobs.slice(0, 30).map((j) => ({ id: j.id, case: `${j.project}-${j.caseId}`, title: j.title, worktree: j.worktree, status: j.status, stage: j.stage, outcome: j.outcome, costUsd: j.costUsd })));
-  },
-);
-
-server.registerTool(
-  'attach_to_pr',
+  'List recent jobs with optional status/provider/batch filters and offset cursor.',
   {
-    title: 'Attach verification evidence to a GitHub PR',
-    description:
-      "PUBLISHES to GitHub: posts the job's PR comment (step table + replay video) on the pull request, uploading the MP4 with `gh --attach`. " +
-      'Uploaded attachments are viewable by anyone with the URL, even on private repos. Only call this when the user asked to publish.',
-    inputSchema: { jobId: z.string(), pr: z.string().describe('PR number or URL') },
-    annotations: { destructiveHint: false, openWorldHint: true },
+    status: z.string().optional(),
+    provider: providerId.optional(),
+    batchId: z.string().optional(),
+    cursor: z.number().int().min(0).default(0),
+    limit: z.number().int().min(1).max(60).default(30),
   },
-  async ({ jobId, pr }) => {
-    const job = await appApi<Job>(`/api/jobs/${jobId}`);
-    if (job.status !== 'done' || !job.prComment) return text(`Job ${jobId} has no finished evidence to attach`);
-    const args = ['pr', 'comment', pr, '--body-file', job.prComment, ...(job.video ? ['--attach', job.video] : [])];
-    const { stdout } = await exec('gh', args, { cwd: job.worktree });
-    return text({ posted: stdout.trim(), body: readFileSync(job.prComment, 'utf8').slice(0, 2000) });
+  async ({ status, provider, batchId, cursor, limit }) => {
+    const jobs = (await api('/api/jobs?limit=1000')).filter(
+      (j: any) => (!status || j.status === status) && (!provider || j.target?.provider === provider) && (!batchId || j.batchId === batchId),
+    );
+    return { jobs: jobs.slice(cursor, cursor + limit), nextCursor: cursor + limit < jobs.length ? cursor + limit : null };
   },
 );
-
+register(
+  'cancel_job',
+  'Cancel a queued or running job. Idempotent; retains partial metrics and artifacts.',
+  { jobId: z.string() },
+  async ({ jobId }) => api(`/api/jobs/${encodeURIComponent(jobId)}/cancel`, {}),
+);
+register(
+  'replay_job',
+  'Create a fresh replay of the saved spec with zero new model calls. Fails if the spec is missing.',
+  { jobId: z.string() },
+  async ({ jobId }) => ({ jobId: (await api(`/api/jobs/${encodeURIComponent(jobId)}/replay`, {})).id }),
+);
+register(
+  'attach_to_pr',
+  'PUBLISH evidence to GitHub only when explicitly requested. Attachments are accessible to anyone with their URL.',
+  { jobId: z.string(), pr: z.string().regex(/^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+$/), publish: z.literal(true) },
+  async ({ jobId, pr }) => {
+    const job = await api(`/api/jobs/${encodeURIComponent(jobId)}`);
+    if (job.status !== 'done' || !job.prComment) throw new Error('ARTIFACT_MISSING: no completed evidence');
+    const parts = new URL(pr).pathname.split('/');
+    const repo = `${parts[1]}/${parts[2]}`,
+      number = parts[4];
+    const marker = `e2e-job:${jobId}`;
+    const { stdout: comments } = await exec('gh', ['api', `repos/${repo}/issues/${number}/comments`, '--paginate']);
+    // gh concatenates pages; query exact marker before publishing to avoid duplicate evidence on retries.
+    if (comments.includes(marker)) return { alreadyPublished: true, pr };
+    const { readFileSync, writeFileSync, mkdtempSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const dir = mkdtempSync(join(tmpdir(), 'e2e-publish-'));
+    try {
+      const body = join(dir, 'comment.md');
+      writeFileSync(body, readFileSync(job.prComment, 'utf8') + `\n<!-- ${marker} -->\n`);
+      const r = await exec('gh', ['pr', 'comment', pr, '--body-file', body, ...(job.video ? ['--attach', job.video] : [])], {
+        cwd: job.worktree,
+      });
+      return { posted: r.stdout.trim() };
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
 await server.connect(new StdioServerTransport());

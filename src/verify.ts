@@ -1,79 +1,129 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { parseArgs } from 'node:util';
-import { codify, specLocation, type CodifyResult } from './codify.ts';
+import { codify, specLocation } from './codify.ts';
 import { explore, newRunDir, type ExploreReport } from './explore.ts';
 import { replay } from './replay.ts';
 import { baseUrl, getSlot } from './slots.ts';
-
-// Explore → Codify → Replay → Package for one Qase case (docs/architecture-proposals.md, proposal C).
-
+import { targetSchema, type Target } from './providers/index.ts';
+import type { RunMetrics } from './usage.ts';
 export type VerifyOptions = {
   project: string;
   caseId: number;
   slot: string;
+  role?: string;
   replaySlots?: string[];
   model: string;
+  target?: Target;
+  signal?: AbortSignal;
+  maxAttempts?: number;
   fromRun?: string;
   replayOnly?: boolean;
-  log?: (l: string) => void;
+  runDir?: string;
+  onStage?: (stage: string) => void;
+  onMetrics?: (stage: string, metrics: RunMetrics) => void;
+  log?: (line: string) => void;
 };
-
 const root = new URL('..', import.meta.url).pathname;
-
 export const verify = async (opts: VerifyOptions) => {
   const slot = getSlot(opts.slot);
   if (!slot) throw new Error(`Slot ${opts.slot} is not running`);
-  const runDir = opts.fromRun ?? newRunDir(opts.project, opts.caseId, opts.slot, 'verify');
-  const log = (l: string) => opts.log?.(l);
-
-  let report: ExploreReport | undefined;
-  let exploreMetrics: Record<string, unknown> | undefined;
-  if (opts.fromRun && existsSync(join(runDir, 'explore/report.json'))) {
-    report = JSON.parse(readFileSync(join(runDir, 'explore/report.json'), 'utf8'));
-    exploreMetrics = JSON.parse(readFileSync(join(runDir, 'explore/metrics.json'), 'utf8'));
-    log(`explore: reusing ${relative(root, runDir)} (${report?.verdict})`);
+  const runDir = opts.runDir ?? newRunDir(opts.project, opts.caseId, opts.slot, opts.replayOnly ? 'replay' : 'verify');
+  const log = (s: string) => opts.log?.(s);
+  const stage = (s: string) => {
+    opts.signal?.throwIfAborted();
+    opts.onStage?.(s);
+    log(`${s}: start`);
+  };
+  const summary: Record<string, any> = { project: opts.project, caseId: opts.caseId, slot: opts.slot, runDir, target: opts.target };
+  const save = () => writeFileSync(join(runDir, 'summary.json'), JSON.stringify(summary, null, 2));
+  let report: ExploreReport;
+  let spec = specLocation(runDir, opts.project, opts.caseId);
+  if (opts.replayOnly) {
+    if (!opts.fromRun) throw new Error('ARTIFACT_MISSING: replay requires an existing run');
+    const old = specLocation(opts.fromRun, opts.project, opts.caseId);
+    const saved = join(opts.fromRun, 'codify', old.specFile);
+    const reportPath = join(opts.fromRun, 'explore/report.json');
+    if (!existsSync(saved) || !existsSync(reportPath)) throw new Error('ARTIFACT_MISSING: saved spec or report is missing');
+    mkdirSync(spec.specDir, { recursive: true });
+    mkdirSync(join(runDir, 'explore'), { recursive: true });
+    mkdirSync(join(runDir, 'codify'), { recursive: true });
+    copyFileSync(saved, spec.specPath);
+    copyFileSync(saved, join(runDir, 'codify', spec.specFile));
+    copyFileSync(reportPath, join(runDir, 'explore/report.json'));
+    report = JSON.parse(readFileSync(reportPath, 'utf8'));
+    summary.reusedFrom = opts.fromRun;
+    summary.explore = { verdict: report.verdict, reused: true };
+    summary.codify = { reused: true };
   } else {
-    log('explore: start');
-    const explored = await explore({ project: opts.project, caseId: opts.caseId, base: baseUrl(slot), role: slot.role, slot: opts.slot, model: opts.model, runDir, log: (l) => log(`  explore ${l}`) });
+    stage('explore');
+    const explored = await explore({
+      project: opts.project,
+      caseId: opts.caseId,
+      base: baseUrl(slot),
+      role: opts.role ?? slot.role,
+      slot: opts.slot,
+      model: opts.model,
+      runDir,
+      target: opts.target,
+      signal: opts.signal,
+      onMetrics: (m) => opts.onMetrics?.('explore', m),
+      log,
+    });
     report = explored.report;
-    exploreMetrics = explored.metrics;
-    log(`explore: ${report?.verdict} ($${explored.metrics.costUsd.toFixed(3)}, ${explored.metrics.turns} turns)`);
+    summary.explore = { verdict: report.verdict, metrics: explored.metrics };
+    save();
+    if (report.verdict === 'blocked') {
+      summary.outcome = 'blocked';
+      save();
+      return summary;
+    }
+    stage('codify');
+    const codified = await codify({
+      project: opts.project,
+      caseId: opts.caseId,
+      base: baseUrl(slot),
+      role: opts.role ?? slot.role,
+      slot: opts.slot,
+      model: opts.model,
+      runDir,
+      target: opts.target,
+      signal: opts.signal,
+      maxAttempts: opts.maxAttempts,
+      onMetrics: (m) => opts.onMetrics?.('codify', m),
+      log,
+    });
+    summary.codify = { ...codified.result, metrics: codified.metrics };
+    save();
+    if (codified.result.outcome === 'could-not-stabilize') {
+      summary.outcome = 'codify-failed';
+      save();
+      return summary;
+    }
+    spec = codified;
   }
-
-  const summary: Record<string, unknown> = { project: opts.project, caseId: opts.caseId, runDir, slot: opts.slot, explore: { verdict: report?.verdict, metrics: exploreMetrics } };
-  if (!report || report.verdict === 'blocked') {
-    summary.outcome = 'blocked';
-    writeFileSync(join(runDir, 'summary.json'), JSON.stringify(summary, null, 2));
-    return summary;
-  }
-
-  const previous = join(runDir, 'codify/result.json');
-  const codified =
-    opts.replayOnly && existsSync(previous)
-      ? { result: JSON.parse(readFileSync(previous, 'utf8')) as CodifyResult, metrics: JSON.parse(readFileSync(join(runDir, 'codify/metrics.json'), 'utf8')), ...specLocation(runDir, opts.project, opts.caseId) }
-      : (log('codify: start'), await codify({ project: opts.project, caseId: opts.caseId, runDir, base: baseUrl(slot), slot: opts.slot, role: slot.role, model: opts.model, log: (l) => log(`  codify ${l}`) }));
-  summary.codify = { ...codified.result, metrics: codified.metrics };
-  log(`codify: ${codified.result?.outcome} after ${codified.result?.attempts} attempts ($${codified.metrics.costUsd.toFixed(3)})`);
-  if (!codified.result || codified.result.outcome === 'could-not-stabilize') {
-    summary.outcome = 'codify-failed';
-    writeFileSync(join(runDir, 'summary.json'), JSON.stringify(summary, null, 2));
-    return summary;
-  }
-
-  const replays: Record<string, unknown>[] = [];
+  summary.replays = [];
   for (const replaySlot of [opts.slot, ...(opts.replaySlots ?? [])]) {
     const s = getSlot(replaySlot);
     if (!s) throw new Error(`Replay slot ${replaySlot} is not running`);
-    log(`replay: slot ${replaySlot} (${s.worktree})`);
-    const r = await replay({ runDir, label: `slot${replaySlot}`, specDir: codified.specDir, specFile: codified.specFile, base: baseUrl(s), slot: replaySlot, role: s.role });
-    replays.push({ slot: replaySlot, worktree: s.worktree, ...r, log: undefined });
-    log(`replay: slot ${replaySlot} → ${r.status}${r.failedStep ? ` at "${r.failedStep}"` : ''} · ${r.mp4Bytes ? `${(r.mp4Bytes / 1e6).toFixed(1)} MB mp4` : 'no video'}`);
+    stage('replay');
+    const r = await replay({
+      runDir,
+      label: `slot${replaySlot}`,
+      specDir: spec.specDir,
+      specFile: spec.specFile,
+      base: baseUrl(s),
+      slot: replaySlot,
+      role: opts.role ?? s.role,
+      signal: opts.signal,
+      onPackage: () => stage('package'),
+    });
+    summary.replays.push({ slot: replaySlot, worktree: s.worktree, ...r, log: undefined });
+    save();
   }
-  summary.replays = replays;
-  summary.spec = codified.specPath;
-  summary.outcome = (replays[0] as { status: string }).status === 'passed' ? 'pass' : 'fail';
-  writeFileSync(join(runDir, 'summary.json'), JSON.stringify(summary, null, 2));
+  summary.spec = spec.specPath;
+  summary.outcome = summary.replays[0].status === 'passed' ? 'pass' : summary.replays[0].status === 'failed' ? 'fail' : 'blocked';
+  save();
   writeFileSync(join(runDir, 'pr-comment.md'), prComment(summary, report));
   return summary;
 };
@@ -82,11 +132,14 @@ export const prComment = (summary: Record<string, unknown>, report: ExploreRepor
   const icon = (v: string) => ({ pass: '✅', fail: '❌', blocked: '⛔' })[v] ?? '❔';
   const replays = (summary.replays as { slot: string; status: string; failedStep?: string; video?: string }[]) ?? [];
   const lines = [
-    `### ${icon(String(summary.outcome))} ${summary.project}-${summary.caseId} (agent verification)`,
+    `### ${icon(String(summary.outcome))} ${summary.project}-${summary.caseId} (verification)`,
     '',
     '| Step | Result | Evidence |',
     '|---|---|---|',
-    ...report.steps.map((s) => `| ${s.position} | ${icon(s.verdict)}${s.inferred ? ' (inferred)' : ''} | ${s.evidence.replace(/\|/g, '\\|').replace(/\n/g, ' ').slice(0, 220)} |`),
+    ...report.steps.map(
+      (s) =>
+        `| ${s.position} | ${icon(s.verdict)}${s.inferred ? ' (inferred)' : ''} | ${s.evidence.replace(/\|/g, '\\|').replace(/\n/g, ' ').slice(0, 220)} |`,
+    ),
     '',
     `Deterministic replay of the generated spec: ${replays.map((r) => `slot ${r.slot} **${r.status}**${r.failedStep ? ` (${r.failedStep})` : ''}`).join(', ')}`,
     '',
@@ -104,6 +157,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       slot: { type: 'string', default: '1' },
       'replay-slots': { type: 'string', default: '' },
       model: { type: 'string', default: 'sonnet' },
+      provider: { type: 'string', default: 'claude-code' },
+      'timeout-ms': { type: 'string', default: '1200000' },
+      'max-attempts': { type: 'string', default: '8' },
       'from-run': { type: 'string' },
       'replay-only': { type: 'boolean', default: false },
     },
@@ -114,6 +170,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     slot: values.slot!,
     replaySlots: values['replay-slots'] ? values['replay-slots'].split(',') : [],
     model: values.model!,
+    target: targetSchema.parse({ provider: values.provider, model: values.model, authMode: 'subscription' }),
+    signal: AbortSignal.timeout(Number(values['timeout-ms'])),
+    maxAttempts: Number(values['max-attempts']),
     fromRun: values['from-run'] ? join(root, values['from-run'].replace(/^.*runs\//, 'runs/')) : undefined,
     replayOnly: values['replay-only'],
     log: (l) => console.log(l),

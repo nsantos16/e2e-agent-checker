@@ -45,7 +45,8 @@ export const isHealthy = async (s: Pick<Slot, 'port'>) => {
   }
 };
 
-export const startSlot = async (slot: string, worktree: string, role = 'eugene') => {
+export const startSlot = async (slot: string, worktree: string, role = 'eugene', signal?: AbortSignal) => {
+  signal?.throwIfAborted();
   const port = portFor(slot);
   const registry = readRegistry();
   const existing = registry[slot];
@@ -70,6 +71,7 @@ export const startSlot = async (slot: string, worktree: string, role = 'eugene')
 
   const deadline = Date.now() + 120_000;
   while (Date.now() < deadline) {
+    signal?.throwIfAborted();
     if (await isHealthy(entry)) {
       // The first request triggers Vite's dependency optimisation; warm the main route so the agent doesn't pay for it.
       await fetch(`${baseUrl(entry)}/client-list`).catch(() => {});
@@ -95,27 +97,33 @@ const SESSION_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 // A worktree without node_modules shares the main checkout's only when the lockfiles match; otherwise it needs its own install.
 const ensureNodeModules = (worktree: string) => {
   if (existsSync(join(worktree, 'node_modules'))) return;
-  const commonDir = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: worktree, encoding: 'utf8' }).trim();
+  const commonDir = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], {
+    cwd: worktree,
+    encoding: 'utf8',
+  }).trim();
   const mainCheckout = resolve(commonDir, '..');
   const same = readFileSync(join(worktree, 'yarn.lock'), 'utf8') === readFileSync(join(mainCheckout, 'yarn.lock'), 'utf8');
-  if (!same) throw new Error(`${worktree} has no node_modules and its yarn.lock differs from ${mainCheckout}. Run: (cd ${worktree} && yarn install --frozen-lockfile --ignore-engines --ignore-scripts)`);
+  if (!same)
+    throw new Error(
+      `${worktree} has no node_modules and its yarn.lock differs from ${mainCheckout}. Run: (cd ${worktree} && yarn install --frozen-lockfile --ignore-engines --ignore-scripts)`,
+    );
   symlinkSync(join(mainCheckout, 'node_modules'), join(worktree, 'node_modules'));
 };
 
 // Concurrent jobs for the same worktree share one in-flight allocation instead of racing for two slots.
-const allocating = new Map<string, Promise<Slot>>();
+let allocation: Promise<unknown> = Promise.resolve();
 
-export const ensureSlotForWorktree = (worktreePath: string, role = 'eugene', log: (l: string) => void = () => {}) => {
-  const key = `${resolve(worktreePath)}|${role}`;
-  const inFlight = allocating.get(key);
-  if (inFlight) return inFlight;
-  const p = allocateSlot(worktreePath, role, log).finally(() => allocating.delete(key));
-  allocating.set(key, p);
+export const ensureSlotForWorktree = (worktreePath: string, role = 'eugene', log: (l: string) => void = () => {}, signal?: AbortSignal) => {
+  const p = allocation.then(() => {
+    signal?.throwIfAborted();
+    return allocateSlot(worktreePath, role, log, signal);
+  });
+  allocation = p.catch(() => {});
   return p;
 };
 
 // Finds the slot already serving this worktree, or allocates the next free one; starts it and logs the role in when needed.
-const allocateSlot = async (worktreePath: string, role: string, log: (l: string) => void): Promise<Slot> => {
+const allocateSlot = async (worktreePath: string, role: string, log: (l: string) => void, signal?: AbortSignal): Promise<Slot> => {
   const worktree = resolve(worktreePath);
   if (!existsSync(join(worktree, 'package.json'))) throw new Error(`${worktree} is not a frontend checkout (no package.json)`);
   const registry = readRegistry();
@@ -124,13 +132,14 @@ const allocateSlot = async (worktreePath: string, role: string, log: (l: string)
   if (!slot) throw new Error(`All ${MAX_SLOTS} slots are in use`);
   ensureNodeModules(worktree);
   log(`slot ${slot}: starting dev server for ${worktree}`);
-  const entry = await startSlot(slot, worktree, role);
+  const entry = await startSlot(slot, worktree, role, signal);
   const state = statePath(slot, role);
   if (!existsSync(state) || Date.now() - statSync(state).mtimeMs > SESSION_MAX_AGE_MS) {
     log(`slot ${slot}: logging in as ${role}`);
-    await loginSlot({ base: baseUrl(entry), role, slot });
+    signal?.throwIfAborted();
+    await loginSlot({ base: baseUrl(entry), role, slot, signal });
   }
-  return entry;
+  return { ...entry, role };
 };
 
 if (import.meta.url === `file://${process.argv[1]}`) {
@@ -147,6 +156,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     stopSlot(values.slot!);
     console.log(`Slot ${values.slot} stopped`);
   } else {
-    for (const s of listSlots()) console.log(`Slot ${s.slot}: ${baseUrl(s)} ← ${s.worktree} · pid ${s.pid} · ${isAlive(s.pid) && (await isHealthy(s)) ? 'up' : 'down'}`);
+    for (const s of listSlots())
+      console.log(
+        `Slot ${s.slot}: ${baseUrl(s)} ← ${s.worktree} · pid ${s.pid} · ${isAlive(s.pid) && (await isHealthy(s)) ? 'up' : 'down'}`,
+      );
   }
 }

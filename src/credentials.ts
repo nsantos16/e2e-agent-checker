@@ -21,10 +21,13 @@ export type Credentials = {
 
 const config: RolesConfig = JSON.parse(readFileSync(new URL('../config/roles.json', import.meta.url), 'utf8'));
 
-type Resolver = (ref: string) => Promise<string>;
+type Resolver = (ref: string, signal?: AbortSignal) => Promise<string>;
 
-const opRead: Resolver = async (ref) => {
-  const { stdout } = await promisify(execFile)('op', ['read', '--no-newline', '--account', appConfig.onePasswordAccount, ref]);
+const opRead: Resolver = async (ref, signal) => {
+  const { stdout } = await promisify(execFile)('op', ['read', '--no-newline', '--account', appConfig.onePasswordAccount, ref], {
+    timeout: 60_000,
+    signal,
+  });
   return stdout;
 };
 
@@ -37,7 +40,11 @@ const resolver = () => {
       integrationName: 'e2e-agent-checker',
       integrationVersion: '0.0.1',
     })
-    .then((c): Resolver => (ref) => c.secrets.resolve(ref))
+    .then(
+      (c): Resolver =>
+        (ref) =>
+          c.secrets.resolve(ref),
+    )
     .catch((error) => {
       if (process.env.OP_SERVICE_ACCOUNT_TOKEN) throw error;
       console.warn(`1Password SDK desktop auth unavailable (${error}); falling back to the op CLI`);
@@ -46,11 +53,11 @@ const resolver = () => {
   return resolverPromise;
 };
 
-export const resolveRole = async (role: string): Promise<Credentials> => {
+export const resolveRole = async (role: string, signal?: AbortSignal): Promise<Credentials> => {
   const refs = config.roles[role];
   if (!refs) throw new Error(`Unknown role "${role}". Known: ${Object.keys(config.roles).join(', ')}`);
   const resolve = await resolver();
-  const [username, password] = await Promise.all([resolve(refs.username), resolve(refs.password)]);
+  const [username, password] = await Promise.all([resolve(refs.username, signal), resolve(refs.password, signal)]);
   const totpRef = refs.totp;
-  return { username, password, totp: totpRef ? () => resolve(totpRef) : undefined };
+  return { username, password, totp: totpRef ? () => resolve(totpRef, signal) : undefined };
 };

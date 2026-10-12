@@ -1,10 +1,6 @@
-import { spawn } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
-
-// Runs `claude -p` headless and returns the stream-json events, the final result, and cost/turn metrics.
-// Child agents run in --restricted mode with dontAsk: user/project settings (including a bypass default) are ignored,
-// only the built-in tools named in `tools` exist, file tools are confined to cwd + addDirs, and anything not in
-// `allowedTools` is denied instead of prompting.
+import { appendFileSync, writeFileSync } from 'node:fs';
+import { command } from './process.ts';
+import { claudeUsage, emptyUsage, mergeUsage, type RunMetrics } from './usage.ts';
 
 export type ClaudeRun = {
   prompt: string;
@@ -15,96 +11,91 @@ export type ClaudeRun = {
   addDirs?: string[];
   mcpConfigPath?: string;
   transcriptPath: string;
+  signal?: AbortSignal;
+  onMetrics?: (metrics: RunMetrics) => void;
   log?: (line: string) => void;
 };
-
-type ToolUse = { type: 'tool_use'; name: string; input: unknown };
-type ResultEvent = {
-  type: 'result';
-  result: string;
-  total_cost_usd: number;
-  num_turns: number;
-  usage: Record<string, unknown>;
-  modelUsage?: Record<string, unknown>;
-};
-
-export type ClaudeOutcome = {
-  exitCode: number;
-  resultText: string;
-  events: Record<string, unknown>[];
-  metrics: { costUsd: number; turns: number; toolCalls: number; wallMs: number; models: string[]; usage?: Record<string, unknown> };
-};
-
+export type ClaudeOutcome = { exitCode: number; resultText: string; events: Record<string, any>[]; metrics: RunMetrics };
 export const runClaude = async (run: ClaudeRun): Promise<ClaudeOutcome> => {
   const args = [
     '-p',
-    '--output-format', 'stream-json',
+    '--output-format',
+    'stream-json',
     '--verbose',
-    '--model', run.model,
+    '--model',
+    run.model,
     '--restricted',
-    '--permission-mode', 'dontAsk',
-    '--tools', run.tools.join(','),
-    '--allowedTools', run.allowedTools.join(','),
+    '--permission-mode',
+    'dontAsk',
+    '--tools',
+    run.tools.join(','),
+    '--allowedTools',
+    run.allowedTools.join(','),
     ...(run.addDirs ?? []).flatMap((d) => ['--add-dir', d]),
     ...(run.mcpConfigPath ? ['--mcp-config', run.mcpConfigPath] : []),
     '--strict-mcp-config',
   ];
-  const started = Date.now();
-  const child = spawn('claude', args, { cwd: run.cwd, stdio: ['pipe', 'pipe', 'pipe'] });
-  child.stdin.end(run.prompt);
-
-  const events: Record<string, unknown>[] = [];
-  let stderr = '';
-  let buf = '';
-  child.stderr.on('data', (d) => (stderr += d));
-  child.stdout.on('data', (d) => {
-    buf += d;
-    let i;
-    while ((i = buf.indexOf('\n')) >= 0) {
-      const line = buf.slice(0, i);
-      buf = buf.slice(i + 1);
-      if (!line.trim()) continue;
-      const event = JSON.parse(line);
-      events.push(event);
-      if (event.type === 'assistant') {
-        for (const part of event.message.content as ToolUse[]) {
-          if (part.type === 'tool_use') run.log?.(`→ ${part.name.replace(/^mcp__playwright__/, '')} ${JSON.stringify(part.input).slice(0, 100)}`);
-        }
-      }
-    }
-  });
-  const exitCode: number = await new Promise((resolve) => child.on('close', resolve));
-  writeFileSync(run.transcriptPath, events.map((e) => JSON.stringify(e)).join('\n'));
-
-  const result = events.find((e): e is ResultEvent => e.type === 'result');
-  if (!result) throw new Error(`claude exited ${exitCode} without a result. stderr: ${stderr.slice(-500)}`);
-  const toolCalls = events
-    .filter((e) => e.type === 'assistant')
-    .flatMap((e) => (e as { message: { content: { type: string }[] } }).message.content)
-    .filter((p) => p.type === 'tool_use').length;
-  return {
-    exitCode,
-    resultText: result.result,
-    events,
-    metrics: {
-      costUsd: result.total_cost_usd,
-      turns: result.num_turns,
-      toolCalls,
-      wallMs: Date.now() - started,
-      models: Object.keys(result.modelUsage ?? {}),
-      usage: result.usage,
-    },
+  const started = Date.now(),
+    events: Record<string, any>[] = [],
+    messages = new Map<string, ReturnType<typeof claudeUsage>>();
+  const metrics: RunMetrics = { costUsd: null, turns: 0, toolCalls: 0, wallMs: 0, models: [], usage: emptyUsage('claude') };
+  writeFileSync(run.transcriptPath, '', { mode: 0o600 });
+  const update = () => {
+    metrics.wallMs = Date.now() - started;
+    run.onMetrics?.({ ...metrics });
   };
+  update();
+  try {
+    const result = await command('claude', args, {
+      cwd: run.cwd,
+      signal: run.signal,
+      input: run.prompt,
+      onLine: (line) => {
+        let e: any;
+        try {
+          e = JSON.parse(line);
+        } catch {
+          return;
+        }
+        events.push(e);
+        appendFileSync(run.transcriptPath, JSON.stringify(e) + '\n');
+        if (e.type === 'assistant') {
+          if (e.message?.id && e.message.usage) {
+            messages.set(e.message.id, claudeUsage(e.message.usage));
+            metrics.usage = mergeUsage([...messages.values()]);
+          }
+          if (e.message?.model) metrics.models = [...new Set([...metrics.models, e.message.model])];
+          for (const part of e.message?.content ?? [])
+            if (part.type === 'tool_use') {
+              metrics.toolCalls++;
+              run.log?.(`→ ${part.name}`);
+            }
+        }
+        if (e.type === 'result') {
+          metrics.usage = claudeUsage(e.usage ?? {}, e.total_cost_usd, !e.is_error);
+          metrics.costUsd = metrics.usage.providerReportedCostUsd;
+          metrics.turns = e.num_turns ?? 0;
+          metrics.models = Object.keys(e.modelUsage ?? {});
+        }
+        update();
+      },
+    });
+    const final = events.findLast((e) => e.type === 'result');
+    if (result.code !== 0 || !final || final.is_error)
+      throw new Error(`Claude run failed (${result.code}): ${final?.errors?.join('; ') ?? 'No successful result. See local transcript.'}`);
+    return { exitCode: result.code, resultText: final.result ?? '', events, metrics };
+  } finally {
+    if (metrics.usage.status === 'pending') metrics.usage.status = 'unavailable';
+    update();
+  }
 };
-
 export const lastJsonObject = <T>(text: string): T | undefined => {
   const fenced = [...text.matchAll(/```json\s*([\s\S]*?)```/g)].map((m) => m[1]);
   for (const candidate of [...fenced.reverse(), text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1)]) {
     try {
       return JSON.parse(candidate) as T;
     } catch {
-      // try next candidate
+      /* next candidate */
     }
   }
-  return undefined;
 };
