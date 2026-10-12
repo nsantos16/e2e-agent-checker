@@ -1,0 +1,49 @@
+{
+  "project": "DEMO",
+  "id": 6614,
+  "url": "https://app.qase.io/case/DEMO-6614",
+  "title": "[Ledger Inspector] List filters persist in the URL",
+  "suite_path": "Ledger Inspector",
+  "priority": 1,
+  "severity": 4,
+  "preconditions": "Signed in as an allowlisted internal admin with Ledger Inspector access.",
+  "description": "Maps to Phase 2 AC: all list filters round-trip through the URL; refresh and deeplink restore the exact view. Source: GET-17183.",
+  "steps": [
+    {
+      "position": 1,
+      "action": "Open Ledger Inspector and set Search, Provider, Status, Practice ID, and any failure-kind / Close Next filters; go to a later page.",
+      "expected_result": "The list updates to the filtered view and the URL contains those filters (search/practice update after the debounce, not on every keystroke).",
+      "data": null
+    },
+    {
+      "position": 2,
+      "action": "Refresh the page, then paste the same URL into a new tab.",
+      "expected_result": "Both restore the exact filtered view (same filters, same page).",
+      "data": null
+    },
+    {
+      "position": 3,
+      "action": "On a later page, change Provider, Status, or a checkbox/multi-select filter.",
+      "expected_result": "The list returns to page 1 rather than showing an empty later page; changing only the page number keeps your place.",
+      "data": null
+    },
+    {
+      "position": 4,
+      "action": "Click a client row, then use Back. Then click Clear filters.",
+      "expected_result": "The detail opens with the filters that produced the list still applied; Back returns to that filtered list. Clear filters empties every control and the URL.",
+      "data": null
+    },
+    {
+      "position": 5,
+      "action": "Paste an old bookmarked link such as /ledger-inspector?status=error.",
+      "expected_result": "The browser redirects to /internal/ledger-inspector with the status=error filter still applied and the list filtered to error rows.",
+      "data": null
+    },
+    {
+      "position": 6,
+      "action": "Edit the URL to include a malformed value, for example page=-1 or provider=foo, and load it.",
+      "expected_result": "Only that one filter is dropped (page falls back to 1, provider to all); every other filter in the URL stays applied and the page renders normally with no error screen.",
+      "data": null
+    }
+  ]
+}

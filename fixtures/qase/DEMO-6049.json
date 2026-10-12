@@ -1,0 +1,37 @@
+{
+  "project": "DEMO",
+  "id": 6049,
+  "url": "https://app.qase.io/case/DEMO-6049",
+  "title": "Comments Scoping - Limited-access user only sees unresolved threads for their assigned clients",
+  "suite_path": "Shared Functionality > Comments",
+  "priority": 2,
+  "severity": 3,
+  "preconditions": "A user exists whose access is limited to a specific set of client accounts (does not include all practice clients). At least one client the user IS assigned to and one client the user is NOT assigned to each have an unresolved/unread comment thread.",
+  "description": "Verifies that after the pusher-comment query rewrite (GET-16645), a user with access limited to specific client accounts cannot see unresolved/unread comment threads or unresolved counts for clients outside their assigned access. Maps to regression risk: permission scoping must be preserved (a regression could show someone threads they shouldn't see).",
+  "steps": [
+    {
+      "position": 1,
+      "action": "Log in as the limited-access user and open the Notification Inbox unresolved/unread view",
+      "expected_result": "The view loads without error",
+      "data": null
+    },
+    {
+      "position": 2,
+      "action": "Confirm the unresolved thread for the assigned client appears in the list",
+      "expected_result": "The assigned client's unresolved thread is visible",
+      "data": null
+    },
+    {
+      "position": 3,
+      "action": "Confirm the unresolved thread for the client outside the user's access does NOT appear in the list",
+      "expected_result": "The out-of-scope client's unresolved thread is absent from the view",
+      "data": null
+    },
+    {
+      "position": 4,
+      "action": "Navigate to the client list and check the per-client unresolved comment count for the out-of-scope client",
+      "expected_result": "The out-of-scope client either does not appear in the list, or shows no unresolved count visible to this user",
+      "data": null
+    }
+  ]
+}

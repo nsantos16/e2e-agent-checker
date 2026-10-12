@@ -1,0 +1,49 @@
+{
+  "project": "DEMO",
+  "id": 6915,
+  "url": "https://app.qase.io/case/DEMO-6915",
+  "title": "Task List - Task Name filter combines unnamed and named tasks",
+  "suite_path": "Tasks",
+  "priority": 1,
+  "severity": 4,
+  "preconditions": "Use a practice whose Task List has at least one task with no Task Name, two tasks with different names, and a task whose name includes an apostrophe. Note the task names and IDs before filtering.",
+  "description": "Regression coverage for the Task Name filter behavior identified in WMD-1965's investigation and PR #13179. The ticket's written acceptance criterion refers to the Status filter; this case separately verifies the investigated Task Name behavior.",
+  "steps": [
+    {
+      "position": 1,
+      "action": "Open the Tasks view and clear the Task Name filter.",
+      "expected_result": "The noted unnamed task and named tasks are present in the unfiltered Task List.",
+      "data": null
+    },
+    {
+      "position": 2,
+      "action": "In the Task Name filter, select only '(No Task Name)' and apply.",
+      "expected_result": "Only tasks with no Task Name appear; the noted named tasks are absent.",
+      "data": null
+    },
+    {
+      "position": 3,
+      "action": "Select '(No Task Name)' together with one noted task name, then apply.",
+      "expected_result": "Both the unnamed task and the selected named task appear. Tasks with other names are absent.",
+      "data": null
+    },
+    {
+      "position": 4,
+      "action": "Add the noted name containing an apostrophe to the same filter selection and apply.",
+      "expected_result": "The unnamed task and both selected named tasks appear without a filter error; tasks with unselected names are absent.",
+      "data": null
+    },
+    {
+      "position": 5,
+      "action": "Deselect '(No Task Name)' while keeping the two names selected, then apply.",
+      "expected_result": "Only tasks with the selected names appear; the unnamed task is absent.",
+      "data": null
+    },
+    {
+      "position": 6,
+      "action": "Clear the Task Name filter.",
+      "expected_result": "The full unfiltered Task List returns.",
+      "data": null
+    }
+  ]
+}

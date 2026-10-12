@@ -1,0 +1,37 @@
+{
+  "project": "DEMO",
+  "id": 6914,
+  "url": "https://app.qase.io/case/DEMO-6914",
+  "title": "Task List - Status filter retains tasks after Select all minus two statuses",
+  "suite_path": "Tasks",
+  "priority": 1,
+  "severity": 4,
+  "preconditions": "Use a practice whose Task List has tasks in at least three statuses, including a task in a status that will remain selected. Note that task's name and status before filtering.",
+  "description": "Regression coverage for WMD-1965's written acceptance criterion: the Tasks view must show tasks in the remaining selected statuses after Select all and deselecting a couple of statuses.",
+  "steps": [
+    {
+      "position": 1,
+      "action": "Open the Tasks view and clear any existing filters.",
+      "expected_result": "The Task List displays the known task and its status.",
+      "data": null
+    },
+    {
+      "position": 2,
+      "action": "Open the Status column filter and choose Select all.",
+      "expected_result": "All status options are selected, and tasks remain visible.",
+      "data": null
+    },
+    {
+      "position": 3,
+      "action": "Deselect two statuses, leaving the known task's status selected, and apply the filter.",
+      "expected_result": "The known task remains visible. Every displayed task has one of the remaining selected statuses; tasks in either deselected status are absent.",
+      "data": null
+    },
+    {
+      "position": 4,
+      "action": "Clear the Status filter entirely.",
+      "expected_result": "The full unfiltered task list returns, including tasks in the two previously deselected statuses.",
+      "data": null
+    }
+  ]
+}

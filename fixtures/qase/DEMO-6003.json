@@ -1,0 +1,43 @@
+{
+  "project": "DEMO",
+  "id": 6003,
+  "url": "https://app.qase.io/case/DEMO-6003",
+  "title": "Multi-line list item (Shift+Enter) persists after save and reopen — client note",
+  "suite_path": "Shared Functionality > Notes",
+  "priority": 2,
+  "severity": 4,
+  "preconditions": "You are on a client's Close page with access to Client Info › Notes. Regression coverage for WMD-1920: a second line inside a list item used to be dropped on save, collapsing the item to one line on reopen.",
+  "description": null,
+  "steps": [
+    {
+      "position": 1,
+      "action": "Open the Client Info modal → Notes tab, then click 'Add' (or 'Open' on an existing note) to open the note editor.",
+      "expected_result": "The rich-text note editor opens.",
+      "data": null
+    },
+    {
+      "position": 2,
+      "action": "Start a numbered or bulleted list and type text in the first list item.",
+      "expected_result": "A list item is created with the typed text and the correct bullet/number marker.",
+      "data": null
+    },
+    {
+      "position": 3,
+      "action": "Press Shift+Enter inside that same list item to start a second line, then type text on it (or paste a screenshot so the image sits on its own line under the bullet).",
+      "expected_result": "The second line/image appears on its own line within the same list item; the list marker is not repeated for the soft-break line.",
+      "data": null
+    },
+    {
+      "position": 4,
+      "action": "Wait for the note to auto-save, then close the note editor and the Client Info modal.",
+      "expected_result": "The note saves without error and the modal closes.",
+      "data": null
+    },
+    {
+      "position": 5,
+      "action": "Reopen the same note.",
+      "expected_result": "The list item still shows both lines as separate lines (the second line/image on its own line under the bullet); the content is NOT collapsed to a single line, not merged into the preceding sentence, and the text stays styled as a list.",
+      "data": null
+    }
+  ]
+}

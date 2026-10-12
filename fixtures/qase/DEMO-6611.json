@@ -1,0 +1,49 @@
+{
+  "project": "DEMO",
+  "id": 6611,
+  "url": "https://app.qase.io/case/DEMO-6611",
+  "title": "[Internal Admin Dashboard] Allowlisted admin sees Internal tab and the Internal tools page",
+  "suite_path": "Internal Admin Dashboard",
+  "priority": 2,
+  "severity": 4,
+  "preconditions": "Signed in as a @example.com / @example.app staff user who is on the internal-admin allowlist (the same gate as Ledger Inspector / Chat Inspector).\n\nThe Internal Tooling card (task-template sharing) is shown only when the signed-in admin's practice is a template reseller. Know whether your practice is one before step 3; if it is not, the card is expected to be absent.",
+  "description": "Maps to Phase 1 AC: dashboard lists all internal tools including sub-routes; linked in the nav for users who pass the real backend gate. Source: GET-17183.",
+  "steps": [
+    {
+      "position": 1,
+      "action": "Sign in and look at the main app nav.",
+      "expected_result": "An Internal tab is visible.",
+      "data": null
+    },
+    {
+      "position": 2,
+      "action": "Click the Internal tab (or go to /internal).",
+      "expected_result": "The Internal tools page loads with the heading \"Internal tools\" (not Access denied, not a spinner that never resolves).",
+      "data": null
+    },
+    {
+      "position": 3,
+      "action": "Review the tool cards on the page.",
+      "expected_result": "Ledger Inspector (with a Practice activation sub-link) and Chat Inspector (with an Evals sub-link) are listed. An Internal Tooling card (task-template sharing) is listed only if your practice is a template reseller; otherwise it is absent and nothing else on the page hints at it.",
+      "data": null
+    },
+    {
+      "position": 4,
+      "action": "Open each listed card and sub-link: Ledger Inspector, Practice activation, Chat Inspector, Evals, and Internal Tooling if shown.",
+      "expected_result": "Each opens under /internal/... and loads; none shows Access denied or 403 for this allowlisted admin.",
+      "data": null
+    },
+    {
+      "position": 5,
+      "action": "Open the old inspector URLs directly: /ledger-inspector, /ledger-inspector/practice-activation, /chat-inspector, /chat-inspector/evals.",
+      "expected_result": "Each redirects to its /internal/... counterpart and loads the same tool.",
+      "data": null
+    },
+    {
+      "position": 6,
+      "action": "Open the old /internal-tooling URL directly.",
+      "expected_result": "It redirects to /internal/template-sharing. If your practice is a template reseller, the task-template sharing page loads. If it is not, an \"Access denied — You do not have permission to access this tool\" notification appears and you land back on the Internal tools page at /internal (not the client list; that landing is reserved for users with no internal access at all).",
+      "data": null
+    }
+  ]
+}

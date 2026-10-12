@@ -1,0 +1,31 @@
+{
+  "project": "DEMO",
+  "id": 6004,
+  "url": "https://app.qase.io/case/DEMO-6004",
+  "title": "Single-line list items round-trip unchanged after save and reopen — client note",
+  "suite_path": "Shared Functionality > Notes",
+  "priority": 2,
+  "severity": 4,
+  "preconditions": "You are on a client's Close page with access to Client Info › Notes. Guards against the WMD-1920 fix's list-normalization altering ordinary single-line lists.",
+  "description": null,
+  "steps": [
+    {
+      "position": 1,
+      "action": "Open the Client Info modal → Notes tab and open a note in the editor.",
+      "expected_result": "The rich-text note editor opens.",
+      "data": null
+    },
+    {
+      "position": 2,
+      "action": "Create a bulleted list with three single-line items, then create a numbered list with three single-line items (one line of text per item, no Shift+Enter).",
+      "expected_result": "Both lists render with one line per item and correct bullet/number markers.",
+      "data": null
+    },
+    {
+      "position": 3,
+      "action": "Wait for auto-save, then close and reopen the note.",
+      "expected_result": "Both lists render exactly as before: one line per item, correct markers and numbering, with no duplicated, dropped, merged, or extra blank lines.",
+      "data": null
+    }
+  ]
+}

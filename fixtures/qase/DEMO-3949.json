@@ -1,0 +1,37 @@
+{
+  "project": "DEMO",
+  "id": 3949,
+  "url": "https://app.qase.io/case/DEMO-3949",
+  "title": "Comment Search - No results state displays correctly",
+  "suite_path": "Shared Functionality > Comments",
+  "priority": 1,
+  "severity": 4,
+  "preconditions": "Notification Inbox https://app.qase.io/case/DEMO-1994 (https://app.qase.io/case/DEMO-1994)\n\nClose Page:\n\nComments https://app.qase.io/case/DEMO-768 (https://app.qase.io/case/DEMO-768)\n\nTax Page \n\nComments https://app.qase.io/case/DEMO-2154 (https://app.qase.io/case/DEMO-2154)\n\nClient List (Comments and Client Communication):\nAll https://app.qase.io/case/DEMO-114 (https://app.qase.io/case/DEMO-114)\nOpen https://app.qase.io/case/DEMO-112 (https://app.qase.io/case/DEMO-112)\nLatest https://app.qase.io/case/DEMO-110 (https://app.qase.io/case/DEMO-110)",
+  "description": "Verifies that when a search returns zero results, the correct empty state message is shown. Maps to AC: Display 'no results for searchQuery' and helper text.",
+  "steps": [
+    {
+      "position": 1,
+      "action": "Navigate to the Comments section",
+      "expected_result": "The Comments page loads",
+      "data": null
+    },
+    {
+      "position": 2,
+      "action": "Type a search query that will return no results (e.g., a random string like 'zzz999xyz')",
+      "expected_result": "No comments are displayed in the results area",
+      "data": null
+    },
+    {
+      "position": 3,
+      "action": "Verify the text reads 'no results for \"zzz999xyz\"'",
+      "expected_result": "The no-results text is displayed with the correct search query",
+      "data": null
+    },
+    {
+      "position": 4,
+      "action": "Verify that additional helper text reads 'Try another search or clear the search to see all notifications'",
+      "expected_result": "The helper text is displayed below the no-results message",
+      "data": null
+    }
+  ]
+}

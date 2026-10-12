@@ -1,0 +1,31 @@
+{
+  "project": "DEMO",
+  "id": 2359,
+  "url": "https://app.qase.io/case/DEMO-2359",
+  "title": "Add new comment",
+  "suite_path": "Shared Functionality > Comments",
+  "priority": 2,
+  "severity": 4,
+  "preconditions": "Client List (Comments and Client Communication):\nAll https://app.qase.io/case/DEMO-114 (https://app.qase.io/case/DEMO-114)\nOpen https://app.qase.io/case/DEMO-112 (https://app.qase.io/case/DEMO-112)\nLatest https://app.qase.io/case/DEMO-110 (https://app.qase.io/case/DEMO-110)\nTax https://app.qase.io/case/DEMO-120 (https://app.qase.io/case/DEMO-120)\n\nClose:\nAccount Reconciliation https://app.qase.io/case/DEMO-619 (https://app.qase.io/case/DEMO-619)\nCustom Tasks https://app.qase.io/case/DEMO-593 (https://app.qase.io/case/DEMO-593)\nPre Close https://app.qase.io/case/DEMO-603 (https://app.qase.io/case/DEMO-603)\nAdditional Items https://app.qase.io/case/DEMO-766 (https://app.qase.io/case/DEMO-766)\nTransaction Review https://app.qase.io/case/DEMO-649 (https://app.qase.io/case/DEMO-649)\nPayee/Entity Review https://app.qase.io/case/DEMO-671 (https://app.qase.io/case/DEMO-671)\nFinal Review https://app.qase.io/case/DEMO-752 (https://app.qase.io/case/DEMO-752)\nAccruals https://app.qase.io/case/DEMO-986 (https://app.qase.io/case/DEMO-986)\nSearch Transaction https://app.qase.io/case/DEMO-599 (https://app.qase.io/case/DEMO-599)\nVendor Requests https://app.qase.io/case/DEMO-561 (https://app.qase.io/case/DEMO-561)\nTransaction Q https://app.qase.io/case/DEMO-774 (https://app.qase.io/case/DEMO-774)\nNon Transaction Q's https://app.qase.io/case/DEMO-797 (https://app.qase.io/case/DEMO-797)\nQs from client https://app.qase.io/case/DEMO-820 (https://app.qase.io/case/DEMO-820)\nClient Upload inbox https://app.qase.io/case/DEMO-422 (https://app.qase.io/case/DEMO-422)\nClient Upload inbox > Posted Transactions https://app.qase.io/case/DEMO-540 (https://app.qase.io/case/DEMO-540)\nEmail History Activity https://app.qase.io/case/DEMO-826 (https://app.qase.io/case/DEMO-826)\nComments https://app.qase.io/case/DEMO-768 (https://app.qase.io/case/DEMO-768)\nBank Feed https://app.qase.io/case/DEMO-867 (https://app.qase.io/case/DEMO-867)\nTransaction Nested tables https://app.qase.io/case/DEMO-634 (https://app.qase.io/case/DEMO-634)\nAllocations https://app.qase.io/case/DEMO-1091 (https://app.qase.io/case/DEMO-1091)\n\nTax: \nSearch Transactions https://app.qase.io/case/DEMO-2174 (https://app.qase.io/case/DEMO-2174)\nGather Info https://app.qase.io/case/DEMO-2155 (https://app.qase.io/case/DEMO-2155)\nPrepare Tax Return https://app.qase.io/case/DEMO-2156 (https://app.qase.io/case/DEMO-2156)\nFile Tax Return https://app.qase.io/case/DEMO-2157 (https://app.qase.io/case/DEMO-2157)\nFinancial Review https://app.qase.io/case/DEMO-2126 (https://app.qase.io/case/DEMO-2126)\nCustom Tasks https://app.qase.io/case/DEMO-2158 (https://app.qase.io/case/DEMO-2158)\nComments https://app.qase.io/case/DEMO-2154 (https://app.qase.io/case/DEMO-2154)\n\nInbox:\nPersonal https://app.qase.io/case/DEMO-2294 (https://app.qase.io/case/DEMO-2294)\nPractice https://app.qase.io/case/DEMO-2291 (https://app.qase.io/case/DEMO-2291)\n\nTask List:\nTask List https://app.qase.io/case/DEMO-151 (https://app.qase.io/case/DEMO-151)\nTax https://app.qase.io/case/DEMO-181 (https://app.qase.io/case/DEMO-181)\nClosing https://app.qase.io/case/DEMO-179 (https://app.qase.io/case/DEMO-179)\nFirm https://app.qase.io/case/DEMO-180 (https://app.qase.io/case/DEMO-180)\nCustom https://app.qase.io/case/DEMO-178 (https://app.qase.io/case/DEMO-178)\n\nFirm:\nFirm Task https://app.qase.io/case/DEMO-182 (https://app.qase.io/case/DEMO-182)\nFirm > Comments https://app.qase.io/case/DEMO-184 (https://app.qase.io/case/DEMO-184)\n\nNotification Inbox https://app.qase.io/case/DEMO-1994 (https://app.qase.io/case/DEMO-1994)",
+  "description": "[Migrated: TC-15103]",
+  "steps": [
+    {
+      "position": 1,
+      "action": "- Click on Comments",
+      "expected_result": "- Comments modal opens",
+      "data": null
+    },
+    {
+      "position": 2,
+      "action": "- Type any comment\n\n- Click on the 'Comment' button",
+      "expected_result": "- Able to see the comment added",
+      "data": null
+    },
+    {
+      "position": 3,
+      "action": "- Refresh page",
+      "expected_result": "- Comment persist",
+      "data": null
+    }
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "project": "DEMO",
+  "id": 6912,
+  "url": "https://app.qase.io/case/DEMO-6912",
+  "title": "Archive and unarchive a client - both lists update without refresh (setting off)",
+  "suite_path": "Info > Properties",
+  "priority": 2,
+  "severity": 4,
+  "preconditions": "Logged in as a firm admin. \"Show archived clients (client list & client properties)\" is unchecked. A disposable active test client exists that can be archived and unarchived.",
+  "description": "Maps to AC 9 and AC 10. Source: GET-15733. Archiving a client with the setting unchecked removes it from the client list and client properties list without a manual refresh; unarchiving it brings it back on both lists regardless of the setting.",
+  "steps": [
+    {
+      "position": 1,
+      "action": "Confirm the test client appears on the client list and in Settings > All client settings > Properties.",
+      "expected_result": "The test client is listed on both.",
+      "data": null
+    },
+    {
+      "position": 2,
+      "action": "Archive the test client.",
+      "expected_result": "The client is archived with a success confirmation.",
+      "data": null
+    },
+    {
+      "position": 3,
+      "action": "Without refreshing the browser, view the client list.",
+      "expected_result": "The archived client is no longer shown on the client list.",
+      "data": null
+    },
+    {
+      "position": 4,
+      "action": "Without refreshing the browser, open Settings > All client settings > Properties.",
+      "expected_result": "The archived client is no longer shown in the client properties list.",
+      "data": null
+    },
+    {
+      "position": 5,
+      "action": "In Settings > All client settings > Archived clients, click the unarchive (refresh) icon for the test client, confirm, and click Unarchive.",
+      "expected_result": "The client is unarchived.",
+      "data": null
+    },
+    {
+      "position": 6,
+      "action": "Without refreshing, check the client properties list and the client list.",
+      "expected_result": "The client appears again on both lists, even though the setting is still unchecked.",
+      "data": null
+    }
+  ]
+}
