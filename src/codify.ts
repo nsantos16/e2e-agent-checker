@@ -50,7 +50,9 @@ export const codify = async (opts: { project: string; caseId: number; runDir: st
     prompt,
     cwd: root,
     model: opts.model,
+    tools: ['Read', 'Glob', 'Grep', 'Write', 'Edit', 'Bash'],
     allowedTools: ['Read', 'Glob', 'Grep', `Write(/${specDir}/**)`, `Edit(/${specDir}/**)`, 'Bash(./scripts/try-spec.sh:*)'],
+    addDirs: [FRONTEND],
     transcriptPath: join(dir, 'transcript.jsonl'),
     log: opts.log,
   });

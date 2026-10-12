@@ -2,13 +2,17 @@ import { spawn } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 
 // Runs `claude -p` headless and returns the stream-json events, the final result, and cost/turn metrics.
+// Child agents run in --restricted mode with dontAsk: user/project settings (including a bypass default) are ignored,
+// only the built-in tools named in `tools` exist, file tools are confined to cwd + addDirs, and anything not in
+// `allowedTools` is denied instead of prompting.
 
 export type ClaudeRun = {
   prompt: string;
   cwd: string;
   model: string;
+  tools: string[];
   allowedTools: string[];
-  disallowedTools?: string[];
+  addDirs?: string[];
   mcpConfigPath?: string;
   transcriptPath: string;
   log?: (line: string) => void;
@@ -31,17 +35,19 @@ export type ClaudeOutcome = {
   metrics: { costUsd: number; turns: number; toolCalls: number; wallMs: number; models: string[]; usage?: Record<string, unknown> };
 };
 
-const DEFAULT_DISALLOWED = ['WebFetch', 'WebSearch', 'Task', 'Agent', 'NotebookEdit'];
-
 export const runClaude = async (run: ClaudeRun): Promise<ClaudeOutcome> => {
   const args = [
     '-p',
     '--output-format', 'stream-json',
     '--verbose',
     '--model', run.model,
+    '--restricted',
+    '--permission-mode', 'dontAsk',
+    '--tools', run.tools.join(','),
     '--allowedTools', run.allowedTools.join(','),
-    '--disallowedTools', [...DEFAULT_DISALLOWED, ...(run.disallowedTools ?? [])].join(','),
-    ...(run.mcpConfigPath ? ['--mcp-config', run.mcpConfigPath, '--strict-mcp-config'] : ['--strict-mcp-config']),
+    ...(run.addDirs ?? []).flatMap((d) => ['--add-dir', d]),
+    ...(run.mcpConfigPath ? ['--mcp-config', run.mcpConfigPath] : []),
+    '--strict-mcp-config',
   ];
   const started = Date.now();
   const child = spawn('claude', args, { cwd: run.cwd, stdio: ['pipe', 'pipe', 'pipe'] });

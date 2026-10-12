@@ -1,7 +1,8 @@
-import { spawn } from 'node:child_process';
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { execFileSync, spawn } from 'node:child_process';
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
+import { loginSlot, statePath } from './login.ts';
 
 // A slot is one frontend worktree served on its own port against the shared dev API (docs/adr/0003).
 // Dev servers run detached with a pid file so they outlive the process that started them.
@@ -86,6 +87,38 @@ export const stopSlot = (slot: string) => {
   if (entry?.pid && isAlive(entry.pid)) process.kill(-entry.pid, 'SIGTERM');
   delete registry[slot];
   writeRegistry(registry);
+};
+
+const MAX_SLOTS = 8;
+const SESSION_MAX_AGE_MS = 6 * 60 * 60 * 1000;
+
+// A worktree without node_modules shares the main checkout's only when the lockfiles match; otherwise it needs its own install.
+const ensureNodeModules = (worktree: string) => {
+  if (existsSync(join(worktree, 'node_modules'))) return;
+  const commonDir = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: worktree, encoding: 'utf8' }).trim();
+  const mainCheckout = resolve(commonDir, '..');
+  const same = readFileSync(join(worktree, 'yarn.lock'), 'utf8') === readFileSync(join(mainCheckout, 'yarn.lock'), 'utf8');
+  if (!same) throw new Error(`${worktree} has no node_modules and its yarn.lock differs from ${mainCheckout}. Run: (cd ${worktree} && yarn install --frozen-lockfile --ignore-engines --ignore-scripts)`);
+  symlinkSync(join(mainCheckout, 'node_modules'), join(worktree, 'node_modules'));
+};
+
+// Finds the slot already serving this worktree, or allocates the next free one; starts it and logs the role in when needed.
+export const ensureSlotForWorktree = async (worktreePath: string, role = 'eugene', log: (l: string) => void = () => {}) => {
+  const worktree = resolve(worktreePath);
+  if (!existsSync(join(worktree, 'package.json'))) throw new Error(`${worktree} is not a frontend checkout (no package.json)`);
+  const registry = readRegistry();
+  const existing = Object.values(registry).find((s) => s.worktree === worktree);
+  const slot = existing?.slot ?? String(Array.from({ length: MAX_SLOTS }, (_, i) => i + 1).find((n) => !registry[String(n)]) ?? '');
+  if (!slot) throw new Error(`All ${MAX_SLOTS} slots are in use`);
+  ensureNodeModules(worktree);
+  log(`slot ${slot}: starting dev server for ${worktree}`);
+  const entry = await startSlot(slot, worktree, role);
+  const state = statePath(slot, role);
+  if (!existsSync(state) || Date.now() - statSync(state).mtimeMs > SESSION_MAX_AGE_MS) {
+    log(`slot ${slot}: logging in as ${role}`);
+    await loginSlot({ base: baseUrl(entry), role, slot });
+  }
+  return entry;
 };
 
 if (import.meta.url === `file://${process.argv[1]}`) {

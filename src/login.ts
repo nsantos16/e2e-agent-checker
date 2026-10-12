@@ -34,17 +34,8 @@ const markTwoFactorModalSeen = (page: Page) =>
       }),
   );
 
-const main = async () => {
-  const { values } = parseArgs({
-    options: {
-      base: { type: 'string', default: 'http://localhost:4001' },
-      role: { type: 'string', default: 'eugene' },
-      slot: { type: 'string', default: '1' },
-      headed: { type: 'boolean', default: false },
-    },
-  });
-  const { base, role, slot, headed } = values;
-  const creds = await resolveRole(role!);
+export const loginSlot = async ({ base, role, slot, headed = false }: { base: string; role: string; slot: string; headed?: boolean }) => {
+  const creds = await resolveRole(role);
   const browser = await chromium.launch({ headless: !headed });
   const page = await browser.newPage();
   try {
@@ -68,10 +59,10 @@ const main = async () => {
     await page.waitForTimeout(1_000);
     await markTwoFactorModalSeen(page);
 
-    const path = statePath(slot!, role!);
+    const path = statePath(slot, role);
     mkdirSync(new URL('../.state/', import.meta.url), { recursive: true });
     await page.context().storageState({ path, indexedDB: true });
-    console.log(`Logged in as role "${role}" on ${base}; state saved to ${path}`);
+    return path;
   } catch (error) {
     mkdirSync(new URL('../.state/', import.meta.url), { recursive: true });
     await page.screenshot({ path: new URL('../.state/login-failure.png', import.meta.url).pathname }).catch(() => {});
@@ -82,4 +73,15 @@ const main = async () => {
   }
 };
 
-if (import.meta.url === `file://${process.argv[1]}`) await main();
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const { values } = parseArgs({
+    options: {
+      base: { type: 'string', default: 'http://localhost:4001' },
+      role: { type: 'string', default: 'eugene' },
+      slot: { type: 'string', default: '1' },
+      headed: { type: 'boolean', default: false },
+    },
+  });
+  const path = await loginSlot({ base: values.base!, role: values.role!, slot: values.slot!, headed: values.headed });
+  console.log(`Logged in as role "${values.role}" on ${values.base}; state saved to ${path}`);
+}
