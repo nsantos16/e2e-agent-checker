@@ -1233,15 +1233,59 @@
       .observation {
         margin: 22px 0;
         border: 1px solid var(--border);
-        border-radius: 10px;
+        border-radius: 12px;
+        background: var(--surface);
         overflow: hidden;
+      }
+      .content-column:has(.job:not([hidden]) .observation[data-pane='network']) {
+        max-width: 1120px;
+      }
+      .observation-tabs {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 0 14px;
+        border-bottom: 1px solid var(--border);
+      }
+      .observation-tab {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 14px 9px;
+        border-radius: 0;
+        border-bottom: 2px solid transparent;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .observation-tab svg {
+        width: 15px;
+        height: 15px;
+      }
+      .observation-tab[aria-selected='true'] {
+        color: var(--text);
+        border-bottom-color: var(--text);
+      }
+      .network-badge {
+        font-size: 10px;
+        font-variant-numeric: tabular-nums;
+        color: var(--red);
+        background: color-mix(in srgb, var(--red) 12%, transparent);
+        border-radius: 4px;
+        padding: 1px 5px;
+      }
+      .capture-state {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--muted);
+        font-size: 10px;
       }
       .observation-head {
         display: flex;
         align-items: center;
         gap: 8px;
         padding: 11px 14px;
-        border-bottom: 1px solid var(--line);
         font-size: 11px;
       }
       .observation-head strong {
@@ -1266,85 +1310,536 @@
         text-overflow: ellipsis;
         white-space: nowrap;
       }
-      .network-toolbar {
-        display: flex;
-        gap: 10px;
-        align-items: center;
-        padding: 12px 14px;
-        font-size: 11px;
-        border-top: 1px solid var(--line);
-      }
-      .network-toolbar strong {
-        font-weight: 500;
-      }
-      .network-toolbar label {
-        display: flex;
-        align-items: center;
-        gap: 5px;
-        margin-left: auto;
-        color: var(--muted);
-        font-size: 10px;
-      }
-      .network-toolbar a {
-        font-size: 10px;
-      }
-      .network-list {
-        max-height: 310px;
-        overflow: auto;
-        padding: 0 10px 10px;
-      }
-      .network-request {
-        border-top: 1px solid var(--line);
-        font-size: 11px;
-      }
-      .network-request summary {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        padding: 9px 3px;
-        cursor: pointer;
-        list-style: none;
-      }
-      .network-request summary .request-url {
-        flex: 1;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        color: var(--muted);
-      }
-      .network-status {
-        font-variant-numeric: tabular-nums;
-        width: 38px;
-        color: var(--green);
-        flex-shrink: 0;
-      }
-      .network-status.error {
-        color: var(--red);
-        margin: 0;
-        font-size: 11px;
-      }
-      .network-request pre {
-        white-space: pre-wrap;
-        overflow-wrap: anywhere;
-        font:
-          10px/1.7 ui-monospace,
-          monospace;
-        color: var(--muted);
-        background: var(--bg);
-        padding: 10px;
-        border-radius: 7px;
-        margin: 0 0 10px;
-      }
-      .network-note {
-        color: var(--subtle);
-        font-size: 10px;
-        line-height: 1.6;
-        padding: 0 14px 12px;
-      }
       .live-waiting {
         padding: 22px 14px;
         color: var(--subtle);
         font-size: 12px;
+      }
+      .network-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 14px 14px 10px;
+        flex-wrap: wrap;
+      }
+      .network-segments {
+        display: flex;
+        padding: 3px;
+        gap: 2px;
+        background: var(--bg);
+        border: 1px solid var(--line);
+        border-radius: 7px;
+      }
+      .network-segments button {
+        padding: 5px 9px;
+        font-size: 11px;
+        color: var(--muted);
+        border-radius: 4px;
+        white-space: nowrap;
+      }
+      .network-segments button[aria-pressed='true'] {
+        color: var(--text);
+        background: var(--hover);
+        box-shadow: 0 1px 2px #0001;
+      }
+      .network-segments button span {
+        font-size: 10px;
+        color: var(--subtle);
+        margin-left: 4px;
+      }
+      .network-segments button[data-network-filter='errors'][aria-pressed='true'] {
+        color: var(--red);
+      }
+      .network-actions {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+      .network-action {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 6px 8px;
+        color: var(--muted);
+        font-size: 10px;
+        text-decoration: none;
+        white-space: nowrap;
+      }
+      .network-action svg {
+        width: 12px;
+        height: 12px;
+      }
+      .network-action[aria-pressed='true'] {
+        color: var(--amber);
+      }
+      .network-filters {
+        display: flex;
+        gap: 7px;
+        padding: 0 14px 12px;
+        flex-wrap: wrap;
+      }
+      .network-search {
+        flex: 1 1 180px;
+        position: relative;
+        min-width: 120px;
+      }
+      .network-search svg {
+        width: 13px;
+        height: 13px;
+        position: absolute;
+        left: 9px;
+        top: 9px;
+        color: var(--muted);
+        pointer-events: none;
+      }
+      .network-search input {
+        width: 100%;
+        padding: 7px 10px 7px 29px;
+        font-size: 11px;
+        background: var(--bg);
+        border-radius: 6px;
+      }
+      .network-filters select {
+        max-width: 155px;
+        padding: 6px 24px 6px 8px;
+        font-size: 10px;
+        border-radius: 6px;
+        background: var(--bg);
+      }
+      .network-split {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        border-top: 1px solid var(--border);
+        min-height: 290px;
+      }
+      .network-split.has-selection {
+        grid-template-columns: minmax(0, 1fr) 320px;
+      }
+      .network-table-scroll {
+        max-height: 390px;
+        min-width: 0;
+        overflow: auto;
+        overscroll-behavior: contain;
+      }
+      .network-table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        table-layout: fixed;
+        text-align: left;
+        font-size: 11px;
+      }
+      .network-table th {
+        font-size: 9px;
+        font-weight: 500;
+        color: var(--muted);
+        padding: 9px 10px;
+        background: var(--raised);
+        border-bottom: 1px solid var(--border);
+        position: sticky;
+        top: 0;
+        z-index: 1;
+      }
+      .network-table th:first-child {
+        padding-left: 14px;
+      }
+      .network-table th:nth-child(2) {
+        width: 54px;
+      }
+      .network-table th:nth-child(3) {
+        width: 64px;
+        text-align: right;
+      }
+      .network-table th:nth-child(4) {
+        width: 100px;
+      }
+      .network-table td {
+        border-bottom: 1px solid var(--line);
+        padding: 10px;
+      }
+      .network-table td:first-child {
+        padding: 0;
+      }
+      .network-table tr[data-request] {
+        cursor: pointer;
+      }
+      .network-table tr[data-request]:hover {
+        background: var(--hover);
+      }
+      .network-table tr.selected {
+        background: color-mix(in srgb, var(--blue) 8%, var(--surface));
+      }
+      .network-table tr.selected td:first-child {
+        box-shadow: inset 2px 0 var(--blue);
+      }
+      .network-request-name {
+        display: flex;
+        align-items: center;
+        width: 100%;
+        text-align: left;
+        gap: 8px;
+        padding: 10px 8px 10px 14px;
+        border-radius: 0;
+      }
+      .network-request-name .request-method {
+        width: 34px;
+        flex-shrink: 0;
+        font:
+          9px ui-monospace,
+          monospace;
+        color: var(--blue);
+      }
+      .request-name-stack {
+        min-width: 0;
+      }
+      .request-name-stack strong {
+        font-weight: 450;
+        display: block;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        font-size: 11px;
+      }
+      .request-name-stack small {
+        display: block;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        color: var(--subtle);
+        font-size: 9px;
+        margin-top: 4px;
+      }
+      .network-status {
+        display: inline-flex;
+        gap: 4px;
+        align-items: center;
+        color: var(--green);
+        font:
+          10px ui-monospace,
+          monospace;
+      }
+      .network-status.bad {
+        color: var(--red);
+      }
+      .network-status.pending {
+        color: var(--muted);
+      }
+      .network-status.redirect {
+        color: var(--blue);
+      }
+      .network-duration {
+        text-align: right;
+        font:
+          10px ui-monospace,
+          monospace;
+        color: var(--muted);
+        white-space: nowrap;
+      }
+      .network-duration.slow {
+        color: var(--amber);
+      }
+      .network-waterfall {
+        height: 12px;
+        position: relative;
+        background: repeating-linear-gradient(
+          90deg,
+          transparent,
+          transparent calc(25% - 1px),
+          var(--line) calc(25% - 1px),
+          var(--line) 25%
+        );
+      }
+      .network-waterfall span {
+        display: block;
+        position: absolute;
+        top: 3px;
+        height: 6px;
+        border-radius: 2px;
+        background: color-mix(in srgb, var(--blue) 55%, transparent);
+        min-width: 3px;
+      }
+      .network-waterfall span.bad {
+        background: var(--red);
+      }
+      .network-waterfall span.slow {
+        background: var(--amber);
+      }
+      .network-waterfall span.pending {
+        background: var(--subtle);
+        opacity: 0.5;
+      }
+      .network-empty {
+        display: flex;
+        min-height: 245px;
+        padding: 36px 20px;
+        gap: 9px;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        text-align: center;
+        color: var(--muted);
+      }
+      .network-empty svg {
+        width: 24px;
+        height: 24px;
+        color: var(--subtle);
+        margin-bottom: 5px;
+      }
+      .network-empty strong {
+        font-size: 12px;
+        color: var(--text);
+        font-weight: 500;
+      }
+      .network-empty p {
+        font-size: 11px;
+        line-height: 1.6;
+        max-width: 260px;
+        margin: 0;
+      }
+      .network-detail {
+        min-width: 0;
+        border-left: 1px solid var(--border);
+        background: var(--bg);
+        display: flex;
+        flex-direction: column;
+        max-height: 390px;
+      }
+      .network-detail-head {
+        padding: 13px 14px 10px;
+        border-bottom: 1px solid var(--line);
+      }
+      .network-detail-title {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+      .network-detail-title strong {
+        font-size: 10px;
+        font-weight: 500;
+        color: var(--muted);
+        flex: 1;
+      }
+      .network-detail-title button {
+        padding: 0;
+        width: 22px;
+        height: 22px;
+        display: grid;
+        place-items: center;
+        color: var(--muted);
+      }
+      .network-detail-title svg {
+        width: 13px;
+        height: 13px;
+      }
+      .network-detail-name {
+        font-size: 12px;
+        line-height: 1.5;
+        margin: 8px 0 0;
+        font-weight: 500;
+        overflow-wrap: anywhere;
+      }
+      .network-detail-tabs {
+        display: flex;
+        padding: 0 12px;
+        gap: 12px;
+        border-bottom: 1px solid var(--border);
+      }
+      .network-detail-tabs button {
+        font-size: 10px;
+        padding: 10px 0 8px;
+        border-radius: 0;
+        border-bottom: 2px solid transparent;
+        color: var(--muted);
+      }
+      .network-detail-tabs button[aria-selected='true'] {
+        border-bottom-color: var(--blue);
+        color: var(--text);
+      }
+      .network-detail-body {
+        flex: 1;
+        overflow: auto;
+        padding: 14px;
+        min-height: 100px;
+        overscroll-behavior: contain;
+      }
+      .network-detail-body h4 {
+        font-size: 10px;
+        font-weight: 550;
+        color: var(--muted);
+        margin: 0 0 11px;
+      }
+      .network-detail-body dl {
+        display: grid;
+        grid-template-columns: 84px minmax(0, 1fr);
+        gap: 10px 7px;
+        font-size: 10px;
+        line-height: 1.55;
+        margin: 0 0 20px;
+      }
+      .network-detail-body dt {
+        color: var(--subtle);
+      }
+      .network-detail-body dd {
+        margin: 0;
+        overflow-wrap: anywhere;
+        font-variant-numeric: tabular-nums;
+      }
+      .network-detail-body dd.mono {
+        font:
+          10px/1.6 ui-monospace,
+          monospace;
+      }
+      .network-detail-body pre {
+        margin: 0;
+        font:
+          10px/1.8 ui-monospace,
+          monospace;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        color: var(--muted);
+        tab-size: 2;
+      }
+      .json-key {
+        color: var(--blue);
+      }
+      .json-string {
+        color: var(--green);
+      }
+      .json-number {
+        color: var(--amber);
+      }
+      .json-literal {
+        color: var(--red);
+      }
+      .network-detail-error {
+        padding: 9px 10px;
+        border: 1px solid color-mix(in srgb, var(--red) 22%, transparent);
+        background: color-mix(in srgb, var(--red) 5%, transparent);
+        color: var(--red);
+        font-size: 10px;
+        line-height: 1.6;
+        border-radius: 6px;
+        overflow-wrap: anywhere;
+        margin-bottom: 14px;
+      }
+      .network-detail-foot {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 9px 12px;
+        border-top: 1px solid var(--border);
+      }
+      .network-copy-feedback {
+        color: var(--muted);
+        font-size: 10px;
+        line-height: 1.4;
+      }
+      .network-detail-body .network-empty {
+        min-height: 160px;
+        padding: 10px 5px;
+      }
+      .network-footer {
+        border-top: 1px solid var(--border);
+        padding: 10px 14px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 8px;
+        color: var(--muted);
+        font-size: 10px;
+      }
+      .network-footer button {
+        font-size: 10px;
+        color: var(--blue);
+        padding: 3px 5px;
+      }
+      .network-note {
+        border-top: 1px solid var(--line);
+        color: var(--subtle);
+        font-size: 9px;
+        line-height: 1.6;
+        padding: 9px 14px;
+        display: flex;
+        align-items: flex-start;
+        gap: 6px;
+      }
+      .network-note svg {
+        width: 11px;
+        height: 11px;
+        flex-shrink: 0;
+        margin-top: 2px;
+      }
+      .observation-error {
+        color: var(--red);
+        font-size: 11px;
+        padding: 12px 14px;
+      }
+      @media (max-width: 900px) {
+        .network-split.has-selection {
+          grid-template-columns: minmax(0, 1fr) 280px;
+        }
+        .network-split.has-selection .waterfall-column {
+          display: none;
+        }
+      }
+      @media (max-width: 680px) {
+        .network-split.has-selection {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .network-detail {
+          border-left: 0;
+          border-top: 1px solid var(--border);
+          max-height: 380px;
+        }
+        .network-table-scroll {
+          max-height: 280px;
+        }
+        .network-toolbar {
+          padding: 12px 10px 8px;
+          gap: 8px;
+        }
+        .network-filters {
+          padding: 0 10px 10px;
+        }
+        .network-filters select {
+          flex: 1;
+          max-width: none;
+        }
+        .network-search {
+          flex-basis: 100%;
+        }
+        .network-actions {
+          margin-left: auto;
+        }
+        .network-action {
+          padding: 6px;
+        }
+        .network-table .waterfall-column {
+          display: none;
+        }
+        .network-table th:nth-child(2) {
+          width: 48px;
+        }
+        .network-table th:nth-child(3) {
+          width: 55px;
+        }
+        .network-table td {
+          padding: 9px 6px;
+        }
+        .network-request-name {
+          padding-left: 10px;
+          gap: 5px;
+        }
+        .network-request-name .request-method {
+          width: 30px;
+        }
+        .capture-state {
+          font-size: 9px;
+        }
       }
     </style>
   </head>
@@ -1758,21 +2253,278 @@
       }
 
       const observationCache = new Map(),
-        networkFilters = new Map();
+        networkViews = new Map();
       let observationRequest = null;
+      let observationQueued = false;
+      const networkIcon = (name) =>
+        `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${
+          {
+            browser: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M7 6.5h.01M10 6.5h.01"/>',
+            network: '<path d="M3 12h4l3-7 4 14 3-7h4"/>',
+            search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/>',
+            download: '<path d="M12 3v12m-4-4 4 4 4-4M4 16v4h16v-4"/>',
+            copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/>',
+            close: '<path d="m6 6 12 12M6 18 18 6"/>',
+            pause: '<path d="M8 5v14M16 5v14"/>',
+            play: '<path d="m8 5 11 7-11 7Z"/>',
+            shield: '<path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6Z"/><path d="m8 12 3 3 5-6"/>',
+          }[name] ?? ''
+        }</svg>`;
+      function networkView(id) {
+        if (!networkViews.has(id))
+          networkViews.set(id, {
+            pane: 'browser',
+            filter: 'errors',
+            query: '',
+            type: 'all',
+            stage: 'all',
+            sort: 'newest',
+            selected: null,
+            selectedRow: null,
+            detailTab: 'overview',
+            limit: 100,
+            frozen: null,
+          });
+        return networkViews.get(id);
+      }
+      const requestFailed = (r) => !!r.failure || r.status >= 400;
+      const requestClass = (r) => (requestFailed(r) ? 'bad' : r.status == null ? 'pending' : r.status >= 300 ? 'redirect' : '');
+      const requestDuration = (r) =>
+        r.durationMs == null
+          ? r.incomplete
+            ? 'Partial'
+            : 'Pending'
+          : r.durationMs >= 1000
+            ? `${(r.durationMs / 1000).toFixed(2)}s`
+            : `${Math.round(r.durationMs)}ms`;
+      const requestStatus = (r) => (r.failure ? 'ERR' : (r.status ?? '—'));
+      const stageLabel = (s) =>
+        s === 'explore'
+          ? 'Explore'
+          : s?.startsWith('codify/')
+            ? `Stabilize · ${s.slice(7)}`
+            : s?.startsWith('replay-')
+              ? `Replay · ${s.slice(7)}`
+              : (s ?? 'Unknown stage');
+      function requestName(r) {
+        try {
+          const u = new URL(r.url);
+          return {
+            name: u.pathname.split('/').filter(Boolean).pop() || u.hostname,
+            path: u.pathname + u.search,
+            host: u.host,
+          };
+        } catch {
+          return { name: r.url, path: r.url, host: '' };
+        }
+      }
+      function jsonMarkup(value) {
+        const raw = JSON.stringify(value, null, 2) ?? 'null';
+        return raw
+          .split(/("(?:\\.|[^"\\])*"\s*:|"(?:\\.|[^"\\])*"|\b(?:true|false|null)\b|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g)
+          .map((part) => {
+            const kind = /^".*:\s*$/.test(part)
+              ? 'key'
+              : part.startsWith('"')
+                ? 'string'
+                : /^(true|false|null)$/.test(part)
+                  ? 'literal'
+                  : /^-?\d/.test(part)
+                    ? 'number'
+                    : null;
+            return kind ? `<span class="json-${kind}">${esc(part)}</span>` : esc(part);
+          })
+          .join('');
+      }
+      function initObservation(host, id) {
+        const uid = `observation-${id}`;
+        host.innerHTML = `<div class="observation-tabs" role="tablist" aria-label="Run diagnostics">
+          <button class="observation-tab" data-observation-tab="browser" role="tab" id="${uid}-browser-tab" aria-controls="${uid}-browser" aria-selected="true">${networkIcon('browser')}Browser</button>
+          <button class="observation-tab" data-observation-tab="network" role="tab" id="${uid}-network-tab" aria-controls="${uid}-network" aria-selected="false" tabindex="-1">${networkIcon('network')}Network <span class="network-badge" hidden></span></button>
+          <span class="capture-state"><span class="status-dot"></span><span class="capture-label">Waiting</span></span></div>
+          <div class="observation-error" role="status" hidden></div>
+          <div class="browser-pane" id="${uid}-browser" role="tabpanel" aria-labelledby="${uid}-browser-tab">
+            <div class="observation-head"><span class="status-dot live-dot"></span><strong class="live-label">Browser</strong><small>Read only · 1s refresh</small></div><img class="live-frame" alt="Latest frame from the verification browser" hidden><div class="live-waiting"></div><div class="live-caption"></div>
+          </div>
+          <div class="network-pane" id="${uid}-network" role="tabpanel" aria-labelledby="${uid}-network-tab" hidden>
+            <div class="network-toolbar"><div class="network-segments" role="group" aria-label="Filter requests">
+              <button data-network-filter="all" aria-pressed="false">All <span data-count="all"></span></button><button data-network-filter="errors" aria-pressed="true">Errors <span data-count="errors"></span></button><button data-network-filter="slow" aria-pressed="false" title="Requests taking one second or longer">Slow ≥1s</button></div>
+              <div class="network-actions"><button class="network-action" data-network-pause aria-pressed="false" title="Freeze this request list. Capture continues.">${networkIcon('pause')}Pause feed</button><a class="network-action" href="/api/jobs/${id}/network?errorsOnly=0&limit=500&download=1" title="Download up to 500 retained requests as sanitized JSON">${networkIcon('download')}Export JSON</a></div></div>
+            <div class="network-filters"><label class="network-search">${networkIcon('search')}<input type="search" data-network-search placeholder="Filter URL, method or request ID…" aria-label="Search loaded network requests"></label>
+              <select data-network-type aria-label="Request type"><option value="all">All types</option><option value="api">Fetch / XHR</option><option value="document">Document</option><option value="script">Script</option><option value="stylesheet">Stylesheet</option><option value="image">Image</option><option value="font">Font</option><option value="other">Other</option></select>
+              <select data-network-stage aria-label="Capture stage"><option value="all">All stages</option></select>
+              <select data-network-sort aria-label="Sort requests"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="slowest">Slowest first</option></select></div>
+            <div class="network-split"><div class="network-table-scroll"><table class="network-table" aria-label="Captured network requests"><thead><tr><th scope="col">Request</th><th scope="col">Status</th><th scope="col">Time</th><th scope="col" class="waterfall-column" title="Start and duration within the loaded capture window">Timing</th></tr></thead><tbody></tbody></table><div class="network-empty" hidden></div></div>
+              <aside class="network-detail" aria-label="Selected request" hidden><div class="network-detail-head"><div class="network-detail-title"><strong>Request details</strong><span class="network-status"></span><button data-network-close aria-label="Close request details">${networkIcon('close')}</button></div><h3 class="network-detail-name"></h3></div>
+                <div class="network-detail-tabs" role="tablist" aria-label="Request details">${['overview', 'response', 'raw'].map((tab) => `<button role="tab" id="${uid}-${tab}-tab" aria-controls="${uid}-detail" data-network-detail-tab="${tab}" aria-selected="${tab === 'overview'}" tabindex="${tab === 'overview' ? 0 : -1}">${tab[0].toUpperCase() + tab.slice(1)}</button>`).join('')}</div>
+                <div class="network-detail-body" id="${uid}-detail" role="tabpanel"></div><div class="network-detail-foot"><button class="network-action" data-network-copy="details">${networkIcon('copy')}Copy details</button><button class="network-action" data-network-copy="url">Copy URL</button><span class="network-copy-feedback" role="status"></span></div></aside></div>
+            <div class="network-footer"><span class="network-count"></span><button data-network-more hidden>Load more</button><button data-network-clear hidden>Clear filters</button></div>
+            <div class="network-note">${networkIcon('shield')}<span></span></div></div>`;
+      }
+      function renderNetwork(host, id, network) {
+        const state = networkView(id),
+          all = network.requests ?? [],
+          list = host.querySelector('.network-table tbody');
+        const signature = JSON.stringify([
+          network,
+          state.filter,
+          state.query,
+          state.type,
+          state.stage,
+          state.sort,
+          state.selected,
+          state.detailTab,
+          state.limit,
+          !!state.frozen,
+        ]);
+        if (host.networkSignature === signature) return;
+        host.networkSignature = signature;
+        const stages = [...new Set([...(network.capturedStages ?? []), ...(state.stage !== 'all' ? [state.stage] : [])])];
+        markup(
+          host.querySelector('[data-network-stage]'),
+          '<option value="all">All stages</option>' +
+            stages.map((s) => `<option value="${esc(s)}">${esc(stageLabel(s))}</option>`).join(''),
+        );
+        host.querySelector('[data-network-stage]').value = state.stage;
+        for (const b of host.querySelectorAll('[data-network-filter]'))
+          b.setAttribute('aria-pressed', String(b.dataset.networkFilter === state.filter));
+        host.querySelector('[data-count="all"]').textContent = number(network.total ?? 0);
+        host.querySelector('[data-count="errors"]').textContent = number(network.errorCount ?? 0);
+        const pause = host.querySelector('[data-network-pause]');
+        pause.setAttribute('aria-pressed', String(!!state.frozen));
+        markup(pause, state.frozen ? networkIcon('play') + 'Resume feed' : networkIcon('pause') + 'Pause feed');
+        const query = state.query.trim().toLowerCase();
+        const rows = all.filter(
+          (r) =>
+            (state.filter !== 'errors' || requestFailed(r)) &&
+            (state.filter !== 'slow' || r.durationMs >= 1000) &&
+            (state.type === 'all' ||
+              (state.type === 'api'
+                ? ['fetch', 'xhr'].includes(r.resourceType)
+                : state.type === 'other'
+                  ? !['fetch', 'xhr', 'document', 'script', 'stylesheet', 'image', 'font'].includes(r.resourceType)
+                  : r.resourceType === state.type)) &&
+            (state.stage === 'all' || r.stage === state.stage) &&
+            (!query ||
+              `${r.url} ${r.method} ${r.status ?? ''} ${r.requestId ?? ''} ${r.traceId ?? ''} ${r.action ?? ''}`
+                .toLowerCase()
+                .includes(query)),
+        );
+        const timestamp = (r) => Date.parse(r.at) || 0;
+        rows.sort((a, b) =>
+          state.sort === 'slowest'
+            ? (b.durationMs ?? -1) - (a.durationMs ?? -1)
+            : state.sort === 'oldest'
+              ? timestamp(a) - timestamp(b)
+              : timestamp(b) - timestamp(a),
+        );
+        const dated = all.filter((r) => timestamp(r) > 0),
+          origin = dated.length ? Math.min(...dated.map(timestamp)) : 0;
+        const span = Math.max(1, ...dated.map((r) => timestamp(r) - origin + Math.max(0, r.durationMs ?? 0)));
+        const existing = new Map([...list.children].map((row) => [row.dataset.request, row]));
+        const focusedId = document.activeElement?.closest('[data-request]')?.dataset.request;
+        rows.forEach((r, index) => {
+          const name = requestName(r),
+            left = Math.max(0, Math.min(99, ((timestamp(r) - origin) / span) * 100)),
+            width = Math.max(0.8, Math.min(100 - left, ((r.durationMs ?? 0) / span) * 100));
+          const html = `<td><button class="network-request-name" aria-expanded="${state.selected === r.id}" aria-controls="observation-${id}-detail"><span class="request-method">${esc(r.method)}</span><span class="request-name-stack"><strong title="${esc(r.url)}">${esc(name.name)}</strong><small title="${esc(r.url)}">${esc(name.host + name.path.replace(/\/[^/]*$/, '/'))}</small></span></button></td><td><span class="network-status ${requestClass(r)}" title="${esc(r.failure ?? (r.incomplete ? 'Request did not finish before capture ended' : r.status == null ? 'Request in progress' : `HTTP ${r.status}`))}">${esc(requestStatus(r))}</span></td><td class="network-duration ${r.durationMs >= 1000 ? 'slow' : ''}">${requestDuration(r)}</td><td class="waterfall-column"><div class="network-waterfall" title="${timestamp(r) ? `+${((timestamp(r) - origin) / 1000).toFixed(2)}s in loaded capture · ${requestDuration(r)}` : 'Timing not captured'}">${timestamp(r) ? `<span class="${requestFailed(r) ? 'bad' : r.durationMs >= 1000 ? 'slow' : r.durationMs == null ? 'pending' : ''}" style="left:${left}%;width:${width}%"></span>` : ''}</div></td>`;
+          const row = existing.get(r.id) ?? document.createElement('tr');
+          existing.delete(r.id);
+          row.dataset.request = r.id;
+          row.className = 'network-request' + (state.selected === r.id ? ' selected' : '');
+          markup(row, html);
+          const position = list.children[index] ?? null;
+          if (position !== row) {
+            if (row.parentElement === list && list.moveBefore) list.moveBefore(row, position);
+            else list.insertBefore(row, position);
+          }
+        });
+        existing.forEach((row) => row.remove());
+        if (focusedId && !document.activeElement?.closest('[data-request]'))
+          [...list.children]
+            .find((r) => r.dataset.request === focusedId)
+            ?.querySelector('button')
+            ?.focus({ preventScroll: true });
+        const empty = host.querySelector('.network-table-scroll > .network-empty');
+        empty.hidden = !!rows.length;
+        if (!rows.length)
+          markup(
+            empty,
+            `${networkIcon(query || state.type !== 'all' || state.stage !== 'all' ? 'search' : 'network')}<strong>${!network.capturedStages?.length ? 'Waiting for network activity' : query || state.type !== 'all' || state.stage !== 'all' ? 'No matching requests' : state.filter === 'errors' ? 'No network errors' : state.filter === 'slow' ? 'No slow requests' : 'No requests captured'}</strong><p>${!network.capturedStages?.length ? 'Requests will appear when the browser opens.' : 'Try another filter or load more of the retained capture.'}</p>`,
+          );
+        host.querySelector('.network-count').textContent =
+          `${rows.length} shown · ${all.length} loaded${network.matching > all.length ? ` of ${number(network.matching)} retained` : ''}${state.frozen ? ' · Feed paused' : ''}`;
+        host.querySelector('[data-network-more]').hidden = state.limit >= 500 || network.matching <= all.length || !!state.frozen;
+        host.querySelector('[data-network-clear]').hidden =
+          !query && state.type === 'all' && state.stage === 'all' && state.filter === 'all';
+        host.querySelector('.network-note span').textContent =
+          `Sanitized capture. Request bodies and sensitive headers are not collected.${network.dropped ? ` ${number(network.dropped)} requests were omitted by the retention limit.` : ''}${network.matching > all.length ? ' Filters apply to loaded requests.' : ''} Timing bars are relative to the loaded capture.`;
+        const current = all.find((r) => r.id === state.selected);
+        if (current) state.selectedRow = current;
+        const selected = state.selectedRow;
+        const inspector = host.querySelector('.network-detail');
+        inspector.hidden = !selected;
+        host.querySelector('.network-split').classList.toggle('has-selection', !!selected);
+        if (!selected) return;
+        host.querySelector('.network-detail-name').textContent = requestName(selected).path;
+        const status = host.querySelector('.network-detail-title .network-status');
+        status.className = `network-status ${requestClass(selected)}`;
+        status.textContent = `${selected.method} ${requestStatus(selected)}`;
+        for (const b of host.querySelectorAll('[data-network-detail-tab]')) {
+          const active = b.dataset.networkDetailTab === state.detailTab;
+          b.setAttribute('aria-selected', String(active));
+          b.tabIndex = active ? 0 : -1;
+        }
+        const body = host.querySelector('.network-detail-body');
+        body.setAttribute('aria-labelledby', `observation-${id}-${state.detailTab}-tab`);
+        if (state.detailTab === 'raw') markup(body, `<pre>${jsonMarkup(selected)}</pre>`);
+        else if (state.detailTab === 'response')
+          markup(
+            body,
+            selected.errorBody != null
+              ? `<h4>Sanitized error response</h4><pre>${jsonMarkup(selected.errorBody)}</pre>`
+              : `<div class="network-empty">${networkIcon('network')}<strong>No response body captured</strong><p>${esc(selected.bodyNote ?? 'Only small JSON error responses are retained. Successful response bodies are not collected.')}</p></div>`,
+          );
+        else {
+          const field = (label, value, mono = false) =>
+            `<dt>${label}</dt><dd${mono ? ' class="mono"' : ''}>${esc(value ?? 'Not captured')}</dd>`;
+          markup(
+            body,
+            `${selected.failure ? `<div class="network-detail-error">${esc(selected.failure)}</div>` : requestFailed(selected) ? `<div class="network-detail-error">HTTP ${esc(selected.status)} response${selected.errorBody?.message ? ` · ${esc(String(selected.errorBody.message).slice(0, 200))}` : ''}</div>` : ''}${!rows.some((r) => r.id === selected.id) ? '<p class="network-copy-feedback">Selected request is outside the current filter.</p>' : ''}<h4>General</h4><dl>${field('URL', selected.url, true)}${field('Method', selected.method)}${field('Status', selected.status == null ? (selected.failure ? 'Transport failure' : selected.incomplete ? 'Incomplete' : 'Pending') : `HTTP ${selected.status}`)}${field('Duration', requestDuration(selected))}${field('Type', selected.resourceType)}${field('Started', selected.at ? new Date(selected.at).toLocaleTimeString([], { hour12: false, fractionalSecondDigits: 3 }) : null)}</dl><h4>Run context</h4><dl>${field('Stage', stageLabel(selected.stage))}${field('Action', selected.action)}${field('Content type', selected.contentType)}${field('Request ID', selected.requestId, true)}${field('Trace ID', selected.traceId, true)}</dl>`,
+          );
+        }
+      }
       function renderObservation(id, data) {
         const job = jobs.find((j) => j.id === id),
           card = [...document.querySelectorAll('.job')].find((el) => el.dataset.job === id),
           host = card?.querySelector('.observation');
         if (!host || !job) return;
-        const browser = data.browser,
-          network = data.network ?? { requests: [], total: 0, errorCount: 0, capturedStages: [] };
+        const state = networkView(id),
+          browser = data.browser,
+          network = state.frozen ??
+            data.network ?? {
+              requests: [],
+              total: 0,
+              errorCount: 0,
+              capturedStages: [],
+            };
         host.hidden = terminal(job) && !browser && !network.capturedStages?.length;
         if (host.hidden) return;
-        if (!host.children.length)
-          host.innerHTML = `<div class="observation-head"><span class="status-dot live-dot"></span><strong class="live-label">Browser</strong><small>Read only · 1s refresh</small></div><img class="live-frame" alt="Latest frame from the verification browser" hidden><div class="live-waiting"></div><div class="live-caption"></div><div class="network-toolbar"><strong class="network-count">Network</strong><label><input type="checkbox" data-network-errors checked>Errors only</label><a href="/api/jobs/${id}/network?errorsOnly=0&limit=500&download=1">JSON ↗</a></div><div class="network-list"></div><div class="network-note"></div>`;
+        if (!host.querySelector('.observation-tabs')) initObservation(host, id);
+        host.dataset.pane = state.pane;
+        for (const b of host.querySelectorAll('[data-observation-tab]')) {
+          const selected = b.dataset.observationTab === state.pane;
+          b.setAttribute('aria-selected', String(selected));
+          b.tabIndex = selected ? 0 : -1;
+        }
+        host.querySelector('.browser-pane').hidden = state.pane !== 'browser';
+        host.querySelector('.network-pane').hidden = state.pane !== 'network';
+        host.querySelector('.network-badge').hidden = !network.errorCount;
+        host.querySelector('.network-badge').textContent = number(network.errorCount ?? 0);
         const live = browser?.status === 'active' && !terminal(job);
         host.querySelector('.live-dot').className = 'status-dot live-dot' + (live ? ' ready' : '');
+        host.querySelector('.capture-state .status-dot').className = 'status-dot' + (live ? ' ready' : '');
+        host.querySelector('.capture-label').textContent = live ? 'Capturing' : !terminal(job) ? 'Between stages' : 'Capture complete';
         host.querySelector('.live-label').textContent = live
           ? 'Live browser'
           : browser?.status === 'stale'
@@ -1794,49 +2546,171 @@
         host.querySelector('.live-caption').textContent = browser
           ? `${browser.stage} · ${browser.pageUrl ?? 'Opening page…'}${live ? '' : browser.status === 'stale' ? ' · Waiting for a fresh frame' : ' · Browser session ended'}`
           : '';
-        host.querySelector('.network-count').textContent = `Network · ${network.total ?? 0} requests · ${network.errorCount ?? 0} errors`;
-        const errorsOnly = networkFilters.get(id) !== false;
-        host.querySelector('[data-network-errors]').checked = errorsOnly;
-        const rows = (network.requests ?? []).filter((r) => !errorsOnly || r.failure || r.status >= 400);
-        const list = host.querySelector('.network-list'),
-          opened = new Set([...list.querySelectorAll('details[open]')].map((el) => el.dataset.request));
-        markup(
-          list,
-          rows
-            .map(
-              (r) =>
-                `<details class="network-request" data-request="${esc(r.id)}" ${opened.has(r.id) ? 'open' : ''}><summary><span class="network-status ${r.failure || r.status >= 400 ? 'error' : ''}">${r.failure ? 'ERR' : (r.status ?? '…')}</span><span>${esc(r.method)}</span><span class="request-url" title="${esc(r.url)}">${esc(r.url)}</span><small class="muted">${r.durationMs == null ? (r.incomplete ? 'incomplete' : 'pending') : Math.round(r.durationMs) + 'ms'}</small></summary><pre>${esc(JSON.stringify(r, null, 2))}</pre></details>`,
-            )
-            .join('') ||
-            `<div class="empty">${network.capturedStages?.length ? (errorsOnly ? 'No network errors in the retained requests.' : 'No requests captured yet.') : 'Network capture starts with the browser.'}</div>`,
-        );
-        host.querySelector('.network-note').textContent =
-          `Sanitized diagnostics · no request bodies, cookies or authorization headers.${network.dropped ? ' ' + network.dropped + ' older requests omitted.' : ''}${network.matching > network.requests?.length ? ' Showing the latest ' + network.requests.length + ' retained requests.' : ''}`;
+        renderNetwork(host, id, network);
       }
       async function refreshObservation() {
         const id = activeJob;
-        if (!id || observationRequest) return;
+        if (!id) return;
+        if (observationRequest) {
+          observationQueued = true;
+          return;
+        }
         observationRequest = id;
+        const state = networkView(id),
+          errorsOnly = state.filter === 'errors',
+          limit = state.limit;
         try {
-          const data = await api(`/api/jobs/${id}/observation?errorsOnly=${networkFilters.get(id) === false ? '0' : '1'}`);
+          const data = await api(`/api/jobs/${id}/observation?errorsOnly=${errorsOnly ? '1' : '0'}`);
+          if (limit > 100 && !state.frozen)
+            data.network = await api(`/api/jobs/${id}/network?errorsOnly=${errorsOnly ? '1' : '0'}&limit=${limit}`);
+          // Discard a response if the filter changed while it was in flight.
+          if (errorsOnly !== (state.filter === 'errors') || limit !== state.limit) return;
           observationCache.set(id, data);
-          if (activeJob === id) renderObservation(id, data);
+          if (activeJob === id) {
+            renderObservation(id, data);
+            const error = document.querySelector('.job:not([hidden]) .observation-error');
+            if (error) error.hidden = true;
+          }
         } catch (error) {
           const host = document.querySelector('.job:not([hidden]) .observation');
           if (host && activeJob === id) {
             host.hidden = false;
-            host.textContent = 'Browser diagnostics unavailable: ' + error.message;
+            if (!host.querySelector('.observation-tabs')) initObservation(host, id);
+            host.querySelector('.observation-error').hidden = false;
+            host.querySelector('.observation-error').textContent = 'Diagnostics could not refresh. ' + error.message;
           }
         } finally {
           observationRequest = null;
+          const queued = observationQueued;
+          observationQueued = false;
+          if (activeJob && (queued || activeJob !== id || errorsOnly !== (state.filter === 'errors') || limit !== state.limit))
+            void refreshObservation();
         }
       }
-      $('#jobs').addEventListener('change', (e) => {
-        if (e.target.matches('[data-network-errors]')) {
-          const id = e.target.closest('.job').dataset.job;
-          networkFilters.set(id, e.target.checked);
-          renderObservation(id, observationCache.get(id) ?? {});
+      function redrawNetwork(id) {
+        renderObservation(id, observationCache.get(id) ?? {});
+      }
+      $('#jobs').addEventListener('click', async (e) => {
+        const host = e.target.closest('.observation');
+        if (!host) return;
+        const id = host.closest('.job').dataset.job,
+          state = networkView(id),
+          button = e.target.closest('button');
+        if (button?.matches('[data-observation-tab]')) {
+          state.pane = button.dataset.observationTab;
+          redrawNetwork(id);
+        } else if (button?.matches('[data-network-filter]')) {
+          state.filter = button.dataset.networkFilter;
+          state.frozen = null;
+          redrawNetwork(id);
           void refreshObservation();
+        } else if (button?.matches('[data-network-detail-tab]')) {
+          state.detailTab = button.dataset.networkDetailTab;
+          redrawNetwork(id);
+        } else if (button?.matches('[data-network-close]')) {
+          const selected = state.selected;
+          state.selected = null;
+          state.selectedRow = null;
+          redrawNetwork(id);
+          [...host.querySelectorAll('[data-request]')]
+            .find((row) => row.dataset.request === selected)
+            ?.querySelector('button')
+            ?.focus({ preventScroll: true });
+        } else if (button?.matches('[data-network-pause]')) {
+          state.frozen = state.frozen
+            ? null
+            : structuredClone(
+                observationCache.get(id)?.network ?? {
+                  requests: [],
+                  total: 0,
+                  errorCount: 0,
+                  capturedStages: [],
+                },
+              );
+          redrawNetwork(id);
+          if (!state.frozen) void refreshObservation();
+        } else if (button?.matches('[data-network-more]')) {
+          state.limit = Math.min(500, state.limit + 100);
+          button.disabled = true;
+          try {
+            await refreshObservation();
+          } finally {
+            button.disabled = false;
+          }
+        } else if (button?.matches('[data-network-clear]')) {
+          state.query = '';
+          state.type = 'all';
+          state.stage = 'all';
+          state.filter = 'all';
+          state.frozen = null;
+          host.querySelector('[data-network-search]').value = '';
+          host.querySelector('[data-network-type]').value = 'all';
+          redrawNetwork(id);
+          void refreshObservation();
+        } else if (button?.matches('[data-network-copy]') && state.selectedRow) {
+          const feedback = host.querySelector('.network-detail-foot .network-copy-feedback');
+          try {
+            await navigator.clipboard.writeText(
+              button.dataset.networkCopy === 'url' ? state.selectedRow.url : JSON.stringify(state.selectedRow, null, 2),
+            );
+            feedback.textContent = 'Copied';
+          } catch {
+            feedback.textContent = 'Copy unavailable. Select text in Raw.';
+          }
+        } else if (e.target.closest('[data-request]')) {
+          const requestId = e.target.closest('[data-request]').dataset.request;
+          const row = (state.frozen ?? observationCache.get(id)?.network)?.requests?.find((r) => r.id === requestId);
+          if (row) {
+            state.selected = requestId;
+            state.selectedRow = row;
+            host.querySelector('.network-detail-foot .network-copy-feedback').textContent = '';
+            redrawNetwork(id);
+          }
+        }
+      });
+      $('#jobs').addEventListener('input', (e) => {
+        if (!e.target.matches('[data-network-search]')) return;
+        const id = e.target.closest('.job').dataset.job;
+        networkView(id).query = e.target.value;
+        redrawNetwork(id);
+      });
+      $('#jobs').addEventListener('change', (e) => {
+        const control = e.target.closest('[data-network-type], [data-network-stage], [data-network-sort]');
+        if (!control) return;
+        const id = control.closest('.job').dataset.job,
+          state = networkView(id);
+        if (control.matches('[data-network-type]')) state.type = control.value;
+        if (control.matches('[data-network-stage]')) state.stage = control.value;
+        if (control.matches('[data-network-sort]')) state.sort = control.value;
+        redrawNetwork(id);
+      });
+      $('#jobs').addEventListener('keydown', (e) => {
+        const host = e.target.closest('.observation');
+        if (!host) return;
+        const tab = e.target.closest('[role="tab"]');
+        if (tab && ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) {
+          const tabs = [...tab.parentElement.querySelectorAll('[role="tab"]')],
+            index = tabs.indexOf(tab);
+          const next =
+            e.key === 'Home'
+              ? 0
+              : e.key === 'End'
+                ? tabs.length - 1
+                : (index + (e.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+          e.preventDefault();
+          tabs[next].click();
+          tabs[next].focus();
+        } else if (e.target.closest('[data-request]') && ['ArrowDown', 'ArrowUp'].includes(e.key)) {
+          const rows = [...host.querySelectorAll('[data-request]')],
+            index = rows.indexOf(e.target.closest('[data-request]'));
+          const next = rows[Math.max(0, Math.min(rows.length - 1, index + (e.key === 'ArrowDown' ? 1 : -1)))];
+          e.preventDefault();
+          next.querySelector('button').click();
+          next.querySelector('button').focus({ preventScroll: true });
+          next.scrollIntoView({ block: 'nearest' });
+        } else if (e.key === 'Escape' && !host.querySelector('.network-detail').hidden) {
+          e.preventDefault();
+          host.querySelector('[data-network-close]').click();
         }
       });
       function syncView() {

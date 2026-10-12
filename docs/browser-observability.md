@@ -2,7 +2,13 @@
 
 New runs show a read-only browser preview inside the run view. It refreshes approximately once per second while the checker browser is active. The observer uses the same Playwright context as verification, so the displayed session includes the agent's navigation and actions. It does not open a second session or accept remote clicks. Preparation/login is not broadcast. Stale frames are labeled **Preview paused**; closed/finished sessions show **Last browser frame**. The final replay video remains separate.
 
-The **Network** panel defaults to failures. Clear **Errors only** to inspect successful and pending requests. Expand a request for its method, sanitized URL, resource type, HTTP status or transport failure, duration, stage/action, request/trace ID, and available error fields. **JSON** downloads a bounded diagnostic snapshot. Older runs cannot retroactively gain network evidence.
+The **Network** tab defaults to errors and opens a wider diagnostics workspace. Switch to **All** or **Slow ≥1s**, search loaded URLs/methods/statuses/correlation IDs/actions, and combine request-type and capture-stage filters. Sort by newest, oldest, or slowest. Each row shows method, endpoint, status, duration, and a timing bar. Select a row to inspect **Overview**, a captured **Response**, or the sanitized **Raw** record; copy its URL or diagnostic JSON. Arrow keys navigate rows and tabs; Escape closes the inspector. The inspector stacks below the table on narrow screens.
+
+**Pause feed** freezes the displayed network snapshot while capture and browser preview continue. **Load more** increases the loaded subset by 100, up to 500. Counts distinguish shown, loaded, retained, and omitted records: filters apply only to the loaded subset. **Export JSON** downloads up to 500 retained requests, independently of the UI filters. Older runs cannot retroactively gain network evidence.
+
+Timing bars show request start and duration relative to the loaded capture window. They do not represent DNS/connect/TTFB phases or synchronize with video frames. The Response tab explains omissions; Raw means the sanitized diagnostic record, not a complete HTTP exchange. Copy-as-cURL is intentionally absent because credentials, request bodies, and full headers are not captured.
+
+The layout takes cues from [Jam's network debugger](https://jam.dev/blog/how-jams-engineers-took-over-the-network-debugger/) and [copy actions](https://jam.dev/blog/launching-today-copy-as-curl/), [LogRocket's request table and detail pane](https://docs.logrocket.com/docs/session-replay), and [Contentsquare's filtering and waterfall](https://support.contentsquare.com/hc/en-us/articles/37271834510097-How-to-analyze-Network-Details-in-Session-Replay). These are design references, not integrations.
 
 ## Agent context
 

@@ -20,6 +20,13 @@
     });
     window.setInterval = () => 0;
     window.requests = [];
+    Object.defineProperty(navigator, 'clipboard', {
+      value: {
+        writeText: async (text) => {
+          window.copiedText = text;
+        },
+      },
+    });
     const job = {
       id: 'workspace-test',
       project: 'DEMO',
@@ -98,6 +105,10 @@
         window.requests.push({ path, body: JSON.parse(options.body) });
         return Response.json([job.id]);
       }
+      if (path.startsWith('/api/jobs/' + job.id + '/network')) {
+        window.networkPath = path;
+        return Response.json(window.fixtureObservation.network);
+      }
       if (path.startsWith('/api/jobs/' + job.id + '/observation')) {
         const data = structuredClone(window.fixtureObservation);
         if (!path.includes('errorsOnly=0')) data.network.requests = data.network.requests.filter((r) => r.status >= 400);
@@ -108,15 +119,35 @@
           ? { roles: ['test-user'] }
           : path === '/api/cases'
             ? [
-                { project: 'DEMO', id: 6003, title: 'Multiline note', steps: 3, suite: 'Notes' },
-                { project: 'DEMO', id: 6004, title: 'Note persistence', steps: 2, suite: 'Notes' },
+                {
+                  project: 'DEMO',
+                  id: 6003,
+                  title: 'Multiline note',
+                  steps: 3,
+                  suite: 'Notes',
+                },
+                {
+                  project: 'DEMO',
+                  id: 6004,
+                  title: 'Note persistence',
+                  steps: 2,
+                  suite: 'Notes',
+                },
               ]
             : path === '/api/worktrees'
-              ? [{ path: '/test/tree', branch: 'feature/verification', subject: 'Test' }]
+              ? [
+                  {
+                    path: '/test/tree',
+                    branch: 'feature/verification',
+                    subject: 'Test',
+                  },
+                ]
               : path.startsWith('/api/providers')
                 ? providers
                 : path === '/api/jobs'
-                  ? (window.hideJobFromList ? [] : [job])
+                  ? window.hideJobFromList
+                    ? []
+                    : [job]
                   : path === '/api/jobs/' + job.id
                     ? { ...job, video: '/test/verification.mp4' }
                     : [];
@@ -179,23 +210,28 @@
     w.hideJobFromList = true;
     w.fixtureJob.outcome = 'fail';
     await w.eval('refreshJobs()');
-    assert($('#jobs video') === video && !$('#jobs .job').hidden && w.eval('jobs[0].outcome') === 'fail', 'Selected older run stays fresh outside the recent list');
+    assert(
+      $('#jobs video') === video && !$('#jobs .job').hidden && w.eval('jobs[0].outcome') === 'fail',
+      'Selected older run stays fresh outside the recent list',
+    );
     w.fixtureJob.outcome = 'pass';
     w.hideJobFromList = false;
     await waitFor(() => !!$('.observation .live-frame'));
     assert($('.live-label').textContent === 'Last browser frame', 'Completed runs do not claim their last frame is live');
+    $('[data-observation-tab="network"]').click();
+    $('.network-request-name').click();
     assert(
-      d.querySelectorAll('.network-request').length === 1 && $('.network-request pre').textContent.includes('request-123'),
+      d.querySelectorAll('.network-request').length === 1 && $('.network-detail-body').textContent.includes('request-123'),
       'Network errors show request IDs and diagnostic detail',
     );
+    $('[data-network-detail-tab="response"]').click();
     assert(
-      !$('.network-request pre img') && $('.network-request pre').textContent.includes('<img'),
+      !$('.network-detail-body pre img') && $('.network-detail-body pre').textContent.includes('<img'),
       'Untrusted network responses render as text',
     );
-    $('[data-network-errors]').click();
+    $('[data-network-filter="all"]').click();
     await waitFor(() => d.querySelectorAll('.network-request').length === 2);
     assert(d.querySelectorAll('.network-request').length === 2, 'All requests toggle includes successful requests');
-    $('.network-request').open = true;
     const liveFrame = $('.live-frame');
     w.fixtureJob.status = 'running';
     w.fixtureObservation.browser.frameAt = '2026-01-01T00:00:02Z';
@@ -205,8 +241,135 @@
       $('.live-label').textContent === 'Live browser' && $('.live-frame') === liveFrame,
       'Live frames update without replacing the preview element',
     );
-    assert(liveFrame.src.includes('00%3A00%3A02') && $('.network-request').open, 'Frame refresh preserves expanded request detail');
+    assert(
+      liveFrame.src.includes('00%3A00%3A02') && $('.network-request.selected')?.dataset.request === 'error-1',
+      'Frame refresh preserves selected request detail',
+    );
     assert($('#jobs video') === video, 'Live diagnostics updates preserve replay player identity');
+    const change = (selector, value, event = 'change') => {
+      $(selector).value = value;
+      $(selector).dispatchEvent(new w.Event(event, { bubbles: true }));
+    };
+    const network = w.fixtureObservation.network;
+    network.requests[0].resourceType = 'xhr';
+    network.requests[1].resourceType = 'document';
+    network.requests.push({
+      id: 'slow-1',
+      stage: 'replay-1',
+      at: '2026-01-01T00:00:03Z',
+      method: 'POST',
+      url: 'https://example.test/slow',
+      status: 200,
+      durationMs: 1500,
+      resourceType: 'fetch',
+    });
+    network.total = network.matching = 3;
+    network.capturedStages.push('replay-1');
+    await w.eval('refreshObservation()');
+    change('[data-network-search]', 'REQUEST-123', 'input');
+    assert(
+      d.querySelectorAll('.network-request').length === 1 && $('.network-request').dataset.request === 'error-1',
+      'Search matches request IDs without case sensitivity',
+    );
+    change('[data-network-search]', '', 'input');
+    change('[data-network-type]', 'api');
+    assert(d.querySelectorAll('.network-request').length === 2, 'Fetch/XHR filter includes both request types');
+    change('[data-network-stage]', 'replay-1');
+    assert(
+      d.querySelectorAll('.network-request').length === 1 && $('.network-request').dataset.request === 'slow-1',
+      'Stage and type filters compose',
+    );
+    assert($('.network-detail-body').textContent.includes('<img'), 'Filtering retains the selected response inspector');
+    $('[data-network-clear]').click();
+    await w.eval('refreshObservation()');
+    $('[data-network-filter="slow"]').click();
+    assert(
+      d.querySelectorAll('.network-request').length === 1 && $('.network-request').dataset.request === 'slow-1',
+      'Slow filter applies the one-second threshold',
+    );
+    $('[data-network-filter="all"]').click();
+    change('[data-network-sort]', 'slowest');
+    assert($('.network-request').dataset.request === 'slow-1', 'Slowest sort puts the longest duration first');
+    change('[data-network-sort]', 'oldest');
+    assert($('.network-request').dataset.request === 'success-1', 'Oldest sort follows request timestamps');
+    change('[data-network-sort]', 'newest');
+    $('.network-request-name').click();
+    $('[data-network-detail-tab="response"]').click();
+    assert(
+      $('.network-detail-body').textContent.includes('No response body captured'),
+      'Missing response bodies have an explicit explanation',
+    );
+    $('[data-network-detail-tab="raw"]').click();
+    assert(JSON.parse($('.network-detail-body pre').textContent).id === 'slow-1', 'Raw tab contains the selected diagnostic record');
+    $('[data-network-copy="url"]').click();
+    await waitFor(() => w.copiedText === 'https://example.test/slow');
+    assert(w.copiedText === 'https://example.test/slow', 'Copy URL writes only the selected URL');
+    $('[data-network-copy="details"]').click();
+    await waitFor(() => w.copiedText.startsWith('{'));
+    assert(JSON.parse(w.copiedText).id === 'slow-1', 'Copy details writes the selected sanitized record');
+    $('.network-request-name').focus();
+    $('.network-request-name').dispatchEvent(new w.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    assert(
+      $('.network-request.selected').dataset.request === 'error-1' &&
+        d.activeElement.closest('[data-request]').dataset.request === 'error-1',
+      'Arrow navigation selects and focuses the next request',
+    );
+    d.activeElement.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    assert(
+      $('.network-detail').hidden && d.activeElement.closest('[data-request]').dataset.request === 'error-1',
+      'Escape closes request details and retains list focus',
+    );
+    $('[data-network-pause]').click();
+    network.requests.push({
+      id: 'new-1',
+      stage: 'replay-1',
+      at: '2026-01-01T00:00:04Z',
+      method: 'GET',
+      url: 'https://example.test/new',
+      status: 201,
+      durationMs: 20,
+      resourceType: 'fetch',
+    });
+    network.total = network.matching = 4;
+    await w.eval('refreshObservation()');
+    assert(
+      d.querySelectorAll('.network-request').length === 3 && $('.network-count').textContent.includes('Feed paused'),
+      'Pause feed freezes displayed requests while capture updates',
+    );
+    $('[data-network-pause]').click();
+    await waitFor(() => d.querySelectorAll('.network-request').length === 4);
+    assert(d.querySelectorAll('.network-request').length === 4, 'Resume feed displays newly captured requests');
+    network.matching = 250;
+    network.dropped = 10;
+    await w.eval('refreshObservation()');
+    assert(
+      !$('[data-network-more]').hidden &&
+        $('.network-note').textContent.includes('10 requests were omitted') &&
+        $('.network-note').textContent.includes('Filters apply to loaded requests'),
+      'Partial captures disclose filtering and retention boundaries',
+    );
+    $('[data-network-more]').click();
+    await waitFor(() => w.networkPath?.includes('limit=200'));
+    assert(w.networkPath.includes('errorsOnly=0'), 'Load more requests a larger bounded capture');
+    await waitFor(() => !$('[data-network-more]').disabled);
+    $('.network-request-name').click();
+    frame.style.width = '390px';
+    frame.style.height = '844px';
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    const tableRect = $('.network-table-scroll').getBoundingClientRect();
+    const detailRect = $('.network-detail').getBoundingClientRect();
+    assert(
+      d.documentElement.scrollWidth <= w.innerWidth && detailRect.top >= tableRect.bottom && detailRect.width <= w.innerWidth,
+      'Mobile network inspector stacks below the request list without overflow',
+    );
+    $('#theme-toggle').click();
+    assert(
+      w.getComputedStyle($('.network-table th')).backgroundColor !== 'rgba(0, 0, 0, 0)',
+      'Light theme keeps an opaque sticky table header',
+    );
+    $('#theme-toggle').click();
+    frame.style.width = '1280px';
+    frame.style.height = '800px';
     w.fixtureObservation.browser.status = 'closed';
     await w.eval('refreshObservation()');
     assert($('.live-label').textContent === 'Last browser frame', 'Closed sessions stop displaying the live indicator');
