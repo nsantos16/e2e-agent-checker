@@ -17,6 +17,7 @@ export default defineConfig({
     viewport: { width: 1280, height: 800 },
     video: { mode: 'on', size: { width: 1280, height: 800 } },
     trace: 'on',
+    screenshot: 'only-on-failure',
     actionTimeout: 20_000,
     navigationTimeout: 45_000,
     launchOptions: { slowMo: Number(process.env.E2E_SLOWMO ?? 250) },

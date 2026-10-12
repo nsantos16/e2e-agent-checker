@@ -2,6 +2,8 @@ import { expect, test } from '@playwright/test';
 import { openPage, qaseStep } from '../../qase-step';
 
 test('DEMO-6614: [Ledger Inspector] List filters persist in the URL', { annotation: { type: 'qase', description: 'DEMO-6614' } }, async ({ page }) => {
+  // openPage waits for network idle on every navigation and this page keeps polling, so six navigations need headroom
+  test.setTimeout(420_000);
   const provider = page.getByRole('combobox', { name: /Provider/ });
   const status = page.getByRole('combobox', { name: /Status/ });
   const pager = page.locator('li.ant-pagination-simple-pager');

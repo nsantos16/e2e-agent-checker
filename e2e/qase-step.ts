@@ -37,6 +37,7 @@ export const qaseStep = async <T>(page: Page, position: number, title: string, b
 // Best-effort cleanup of data the test created: failures are recorded, never thrown, so they can't mask the verdict.
 export const cleanup = async (page: Page, what: string, body: () => Promise<void>) => {
   await test.step(`Cleanup: ${what}`, async () => {
+    await showCaption(page, `Cleanup: ${what}`);
     try {
       await body();
     } catch (error) {
