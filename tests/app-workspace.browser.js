@@ -116,7 +116,7 @@
               : path.startsWith('/api/providers')
                 ? providers
                 : path === '/api/jobs'
-                  ? [job]
+                  ? (window.hideJobFromList ? [] : [job])
                   : path === '/api/jobs/' + job.id
                     ? { ...job, video: '/test/verification.mp4' }
                     : [];
@@ -171,9 +171,17 @@
       'Run submission preserves case and subscription targets',
     );
     assert($('#history-panel').hidden === false && !$('#jobs .job').hidden, 'New run opens its focused history view');
+    await w.eval('beginDraft(); jobs = []; renderJobs(); selectJob("workspace-test")');
+    assert(!$('#jobs .job').hidden && $('#jobs video'), 'Direct selection loads a run absent from the recent list');
     const video = $('#jobs video');
     await w.eval('refreshJobs()');
     assert(video && $('#jobs video') === video, 'Focused evidence survives polling');
+    w.hideJobFromList = true;
+    w.fixtureJob.outcome = 'fail';
+    await w.eval('refreshJobs()');
+    assert($('#jobs video') === video && !$('#jobs .job').hidden && w.eval('jobs[0].outcome') === 'fail', 'Selected older run stays fresh outside the recent list');
+    w.fixtureJob.outcome = 'pass';
+    w.hideJobFromList = false;
     await waitFor(() => !!$('.observation .live-frame'));
     assert($('.live-label').textContent === 'Last browser frame', 'Completed runs do not claim their last frame is live');
     assert(

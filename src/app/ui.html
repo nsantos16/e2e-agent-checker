@@ -1551,7 +1551,7 @@
         worktrees = [],
         providers = [],
         submitting = false,
-        activeJob = readPreference('active-job', null),
+        activeJob = new URLSearchParams(location.search).get('job') ?? readPreference('active-job', null),
         sidebarTab = 'cases',
         pickerProvider = 'codex';
       const selected = new Set(),
@@ -1857,9 +1857,17 @@
         renderCases();
         renderHistory();
       }
+      function updateJobUrl(id) {
+        if (!/^https?:$/.test(location.protocol)) return;
+        const url = new URL(location.href);
+        if (id) url.searchParams.set('job', id);
+        else url.searchParams.delete('job');
+        history.replaceState(null, '', url);
+      }
       function beginDraft() {
         activeJob = null;
         localStorage.removeItem('active-job');
+        updateJobUrl(null);
         expanded.clear();
         renderJobs();
         renderHistory();
@@ -1871,7 +1879,11 @@
         localStorage.setItem('active-job', JSON.stringify(id));
         expanded.clear();
         expanded.add(id);
-        details.set(id, await api(`/api/jobs/${id}`));
+        const detail = await api(`/api/jobs/${encodeURIComponent(id)}`);
+        if (activeJob !== id) return;
+        details.set(id, detail);
+        if (!jobs.some((j) => j.id === id)) jobs.unshift(detail);
+        updateJobUrl(id);
         renderJobs();
         renderHistory();
         showTab('history');
@@ -1947,6 +1959,14 @@
         refreshPromise = (async () => {
           try {
             jobs = await api('/api/jobs');
+            if (activeJob && !jobs.some((j) => j.id === activeJob) && details.has(activeJob)) {
+              const id = activeJob;
+              const detail = await api(`/api/jobs/${encodeURIComponent(id)}`);
+              if (activeJob === id) {
+                jobs.unshift(detail);
+                details.set(id, { ...detail, final: terminal(detail) });
+              }
+            }
             for (const id of expanded) {
               const j = jobs.find((x) => x.id === id);
               if (j && terminal(j) && !details.get(id)?.final) details.set(id, { ...(await api(`/api/jobs/${id}`)), final: true });
@@ -2111,7 +2131,7 @@
         if (expanded.has(id)) expanded.delete(id);
         else {
           expanded.add(id);
-          details.set(id, await api(`/api/jobs/${id}`));
+          details.set(id, await api(`/api/jobs/${encodeURIComponent(id)}`));
         }
         renderJobs();
       });
@@ -2257,8 +2277,14 @@
         [cases, worktrees] = await Promise.all([api('/api/cases'), api('/api/worktrees')]);
         renderWorktrees();
         await Promise.all([refreshProviders(), refreshJobs()]);
-        if (activeJob && jobs.some((j) => j.id === activeJob)) await selectJob(activeJob);
-        else {
+        if (activeJob) {
+          try {
+            await selectJob(activeJob);
+          } catch (error) {
+            beginDraft();
+            reportError(error);
+          }
+        } else {
           activeJob = null;
           syncView();
         }

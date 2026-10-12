@@ -48,23 +48,24 @@ Per-dev overrides go in `e2e-agent.local.json` (gitignored), e.g. `{ "frontendRe
 ## Use it from Claude Code, Codex, or Cursor (MCP)
 
 ```sh
+codex mcp add e2e-agent-checker -- node /Users/nico/.t3/projects/e2e-agent-checker/src/mcp-server.ts
 claude mcp add e2e-agent-checker --scope user -- node /Users/nico/.t3/projects/e2e-agent-checker/src/mcp-server.ts
 ```
 
-| Tool                                         | What it does                                                                        |
-| -------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `list_providers` / `list_models`             | Native auth status, model catalog, capability limitations                           |
-| `list_cases` / `list_worktrees`              | Discover imported cases and available worktrees                                     |
-| `verify_case` / `verify_cases`               | Start one case or a case × target batch; optional idempotency key                   |
-| `get_network`                                | Captured HTTP/transport failures, timing, request IDs and sanitized error responses |
-| `get_job` / `list_jobs`                      | Structured status, timing, tokens, costs, evidence and bounded logs                 |
-| `cancel_job`                                 | Cancel queued/running work and retain partial usage                                 |
-| `replay_job`                                 | Replay a saved spec with no new model calls                                         |
-| `attach_to_pr({ jobId, pr, publish: true })` | Explicitly publish evidence to a full GitHub PR URL                                 |
+Use your checkout's absolute path. The [agent MCP guide](docs/agent-mcp.md) includes Cursor configuration, all 18 tools, exact inputs, compact defaults and compatibility changes.
 
-The same stdio server can be configured in any MCP client. Caller and worker are independent: Cursor can start a Codex verification through this MCP. Cursor as a worker is currently gated because its native ACP runtime cannot be configured with verified tool isolation.
+The normal agent workflow is **discover → verify → wait → inspect only relevant evidence**:
 
-Example target: `{"provider":"codex","model":"<id from list_models>","authMode":"subscription"}`. There is no API-key fallback and no credential-copying service. Dollar estimates and billed charges remain unavailable unless a reliable source supplies them; token counts are not a billing record.
+- `get_setup`, searchable `list_cases` / `list_worktrees`, and `list_models` provide readiness and valid inputs. `import_case` / `get_case` make case setup available without the UI.
+- `verify_case` / `verify_cases` return IDs and direct viewer links; stable idempotency keys prevent duplicate submissions.
+- `wait_jobs` waits for a batch in one call and returns only changed summaries when revisions are provided. `get_job` / `list_jobs` return compact status, outcomes, timing and usage.
+- `get_evidence` provides artifact links and bounded pages of logs, reports, specs or comments. `get_network` returns five failures by default; request individual sanitized bodies only when needed.
+- `get_browser_frame` returns the current image on demand and suppresses unchanged frames. The human watches the browser and video at the returned `viewerUrl`.
+- `cancel_job` cancels work; `replay_job` reuses the saved spec without model calls; `attach_to_pr` publishes only on explicit request.
+
+The server includes workflow instructions and tool annotations. Normal status polling omits logs, reports, images and response bodies. Across seven saved runs, compact responses were 92% smaller in JSON bytes; this is not an exact token measurement.
+
+Caller and worker are independent: Cursor can start a Codex verification through this MCP. Cursor as a worker remains gated because its native ACP runtime cannot be configured with verified tool isolation. Example target: `{"provider":"codex","model":"<id from list_models>","authMode":"subscription"}`. There is no API-key fallback or credential-copying service. Dollar cost remains unavailable without a reliable source; token counts are not a billing record.
 
 ## Use it from the shell
 

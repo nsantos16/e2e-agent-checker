@@ -2,14 +2,15 @@ import { execFile, execFileSync } from 'node:child_process';
 import { createReadStream, existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { extname, join, resolve } from 'node:path';
-import { config, requireFrontendRepo } from '../config.ts';
+import { config, frontendRepo, requireFrontendRepo } from '../config.ts';
 import { runDoctor } from '../doctor.ts';
 import { cancelJob, getJob, listJobs, replayJob, submitBatch } from '../jobs.ts';
-import { loadCaseWithRelated, type QaseCase } from '../qase.ts';
+import { fixturePath, loadCaseWithRelated, type QaseCase } from '../qase.ts';
 import { baseUrl, isHealthy, listSlots } from '../slots.ts';
 
 import { listProviders } from '../providers/index.ts';
-import { ZodError } from 'zod';
+import { z, ZodError } from 'zod';
+import { artifactPath, jobSummary, readEvidence, type ArtifactId } from '../agent-view.ts';
 import { liveFrame, readNetwork, readObservation } from '../observations.ts';
 
 // Local app: list Qase cases, pick a worktree, run cases in parallel with agents, watch progress and replay videos.
@@ -35,7 +36,10 @@ const listCases = () =>
     .sort((a, b) => a.suite.localeCompare(b.suite) || a.id - b.id);
 
 const listWorktrees = () => {
-  const out = execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd: requireFrontendRepo(), encoding: 'utf8' });
+  const out = execFileSync('git', ['worktree', 'list', '--porcelain'], {
+    cwd: requireFrontendRepo(),
+    encoding: 'utf8',
+  });
   return out
     .trim()
     .split('\n\n')
@@ -49,7 +53,13 @@ const listWorktrees = () => {
       const branch = get('branch')?.replace('refs/heads/', '');
       const head = get('HEAD')?.slice(0, 10);
       const subject = execFileSync('git', ['log', '-1', '--format=%s', 'HEAD'], { cwd: path, encoding: 'utf8' }).trim();
-      return { path, branch: branch ?? `detached @ ${head}`, head, subject, hasDeps: existsSync(join(path, 'node_modules')) };
+      return {
+        path,
+        branch: branch ?? `detached @ ${head}`,
+        head,
+        subject,
+        hasDeps: existsSync(join(path, 'node_modules')),
+      };
     })
     .filter((w) => existsSync(join(w.path, 'package.json')));
 };
@@ -108,7 +118,11 @@ const serveFile = (req: IncomingMessage, res: ServerResponse, requested: string)
       .on('error', () => res.destroy())
       .pipe(res);
   } else {
-    res.writeHead(200, { 'content-type': type, 'content-length': size, 'accept-ranges': 'bytes' });
+    res.writeHead(200, {
+      'content-type': type,
+      'content-length': size,
+      'accept-ranges': 'bytes',
+    });
     createReadStream(path)
       .on('error', () => res.destroy())
       .pipe(res);
@@ -133,22 +147,61 @@ const server = createServer(async (req, res) => {
       return res.end(readFileSync(join(root, 'src/app/ui.html')));
     }
     if (req.method === 'GET' && url.pathname === '/api/config')
-      return json(res, 200, { roles: ROLES, frontendRepo: requireFrontendRepo() });
+      return json(res, 200, {
+        roles: ROLES,
+        frontendRepo: frontendRepo(),
+        defaultTarget: {
+          provider: 'claude-code',
+          model: config.model,
+          authMode: 'subscription',
+        },
+      });
     if (req.method === 'GET' && url.pathname === '/api/providers')
       return json(res, 200, await listProviders(url.searchParams.get('fresh') === '1'));
     if (req.method === 'GET' && url.pathname === '/api/doctor') return json(res, 200, await runDoctor());
     if (req.method === 'GET' && url.pathname === '/api/cases') return json(res, 200, listCases());
     if (req.method === 'POST' && url.pathname === '/api/cases') {
-      const { project = 'DEMO', id } = await readBody(req);
+      const { project, id } = z
+        .object({
+          project: z
+            .string()
+            .regex(/^[A-Z0-9_]+$/)
+            .default(config.qase.project),
+          id: z.number().int().positive(),
+        })
+        .parse(await readBody(req));
       const { testCase, related } = await loadCaseWithRelated(project, Number(id));
-      return json(res, 200, { id: testCase.id, title: testCase.title, related: related.length });
+      return json(res, 200, {
+        id: testCase.id,
+        title: testCase.title,
+        related: related.length,
+      });
+    }
+    const caseMatch = url.pathname.match(/^\/api\/cases\/([A-Z0-9_]+)\/(\d+)$/);
+    if (req.method === 'GET' && caseMatch) {
+      const path = fixturePath(caseMatch[1], Number(caseMatch[2]));
+      if (!existsSync(path))
+        return json(res, 404, {
+          code: 'NOT_FOUND',
+          error: 'Case not imported. Use import_case first.',
+        });
+      return json(res, 200, JSON.parse(readFileSync(path, 'utf8')));
     }
     if (req.method === 'GET' && url.pathname === '/api/worktrees') {
-      const slots = await Promise.all(listSlots().map(async (s) => ({ ...s, url: baseUrl(s), healthy: await isHealthy(s) })));
+      const slots = await Promise.all(
+        listSlots().map(async (s) => ({
+          ...s,
+          url: baseUrl(s),
+          healthy: await isHealthy(s),
+        })),
+      );
       return json(
         res,
         200,
-        listWorktrees().map((w) => ({ ...w, slot: slots.find((s) => s.worktree === w.path) })),
+        listWorktrees().map((w) => ({
+          ...w,
+          slot: slots.find((s) => s.worktree === w.path),
+        })),
       );
     }
     if (req.method === 'POST' && url.pathname === '/api/jobs') {
@@ -159,18 +212,66 @@ const server = createServer(async (req, res) => {
       );
     }
     if (req.method === 'GET' && url.pathname === '/api/jobs') {
-      const t = titles();
+      const t = url.searchParams.get('view') === 'summary' ? new Map() : titles();
+      const ids = url.searchParams.has('ids') ? new Set(url.searchParams.get('ids')!.split(',')) : undefined;
+      const cursor = Math.max(0, Math.floor(Number(url.searchParams.get('cursor')) || 0));
+      const limit = Math.min(1000, Math.max(1, Number(url.searchParams.get('limit') ?? 60) || 60));
       return json(
         res,
         200,
         listJobs()
-          .slice(0, Math.min(1000, Math.max(1, Number(url.searchParams.get('limit') ?? 60) || 60)))
-          .map((j) => ({
-            ...j,
-            title: t.get(`${j.project}-${j.caseId}`),
-            log: j.log.slice(-6),
-            canReplay: !!j.runDir && existsSync(join(j.runDir, 'codify', `${j.project}-${j.caseId}.spec.ts`)),
-          })),
+          .filter(
+            (j) =>
+              (!ids || ids.has(j.id)) &&
+              (!url.searchParams.has('status') || j.status === url.searchParams.get('status')) &&
+              (!url.searchParams.has('provider') || j.target?.provider === url.searchParams.get('provider')) &&
+              (!url.searchParams.has('batchId') || j.batchId === url.searchParams.get('batchId')),
+          )
+          .slice(cursor, cursor + limit)
+          .map((j) =>
+            url.searchParams.get('view') === 'summary'
+              ? jobSummary(j, `http://localhost:${PORT}`)
+              : {
+                  ...j,
+                  title: t.get(`${j.project}-${j.caseId}`),
+                  log: j.log.slice(-6),
+                  canReplay: !!j.runDir && existsSync(join(j.runDir, 'codify', `${j.project}-${j.caseId}.spec.ts`)),
+                },
+          ),
+      );
+    }
+    const artifactMatch = url.pathname.match(/^\/api\/jobs\/([\w-]+)\/artifacts\/(report|spec|comment|video|trace)$/);
+    if (req.method === 'GET' && artifactMatch) {
+      const job = getJob(artifactMatch[1]);
+      const path = job && artifactPath(job, artifactMatch[2] as ArtifactId);
+      if (!path)
+        return json(res, 404, {
+          code: 'ARTIFACT_MISSING',
+          error: 'Artifact not available',
+        });
+      res.setHeader('cache-control', 'no-store');
+      if (artifactMatch[2] === 'video') return serveFile(req, res, path);
+      res.writeHead(200, {
+        'content-type': TYPES[extname(path)] ?? 'application/octet-stream',
+        'content-disposition': `attachment; filename="${artifactMatch[2]}${extname(path)}"`,
+        'content-length': statSync(path).size,
+      });
+      return createReadStream(path)
+        .on('error', () => res.destroy())
+        .pipe(res);
+    }
+    const evidenceMatch = url.pathname.match(/^\/api\/jobs\/([\w-]+)\/evidence$/);
+    if (req.method === 'GET' && evidenceMatch) {
+      const job = getJob(evidenceMatch[1]);
+      if (!job) return json(res, 404, { error: 'unknown job', code: 'NOT_FOUND' });
+      return json(
+        res,
+        200,
+        readEvidence(job, `http://localhost:${PORT}`, {
+          artifact: url.searchParams.get('artifact') ?? undefined,
+          offset: Number(url.searchParams.get('offset')) || 0,
+          limit: Number(url.searchParams.get('limit')) || 4000,
+        }),
       );
     }
     const observationMatch = url.pathname.match(/^\/api\/jobs\/([\w-]+)\/(observation|frame|network)$/);
@@ -194,12 +295,25 @@ const server = createServer(async (req, res) => {
                 errorsOnly: url.searchParams.get('errorsOnly') !== '0',
                 limit: Number(url.searchParams.get('limit')) || 50,
                 stage: url.searchParams.get('stage') ?? undefined,
+                offset: Number(url.searchParams.get('cursor')) || 0,
+                requestId: url.searchParams.get('requestId') ?? undefined,
               })
-            : { requests: [], capturedStages: [], total: 0, errorCount: 0, dropped: 0, matching: 0 },
+            : {
+                requests: [],
+                capturedStages: [],
+                total: 0,
+                errorCount: 0,
+                dropped: 0,
+                matching: 0,
+              },
         );
       }
       const path = job.runDir && liveFrame(job.runDir);
-      if (!path) return json(res, 404, { error: 'No browser frame yet', code: 'FRAME_UNAVAILABLE' });
+      if (!path)
+        return json(res, 404, {
+          error: 'No browser frame yet',
+          code: 'FRAME_UNAVAILABLE',
+        });
       res.writeHead(200, { 'content-type': 'image/jpeg' });
       return createReadStream(path)
         .on('error', () => res.destroy())
@@ -212,6 +326,7 @@ const server = createServer(async (req, res) => {
     if (req.method === 'GET' && jobMatch) {
       const job = getJob(jobMatch[1]);
       if (!job) return json(res, 404, { error: 'unknown job', code: 'NOT_FOUND' });
+      if (url.searchParams.get('view') === 'summary') return json(res, 200, jobSummary(job, `http://localhost:${PORT}`));
       const comment = job.prComment && existsSync(job.prComment) ? readFileSync(job.prComment, 'utf8') : undefined;
       const summary =
         job.runDir && existsSync(join(job.runDir, 'summary.json'))

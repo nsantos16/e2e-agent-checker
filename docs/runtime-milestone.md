@@ -73,3 +73,7 @@ The real Sample run `job-1586d88c-ee0f-44b6-a60e-7213df121994` / `DEMO-6003` was
 4. Freeze case/worktree fingerprints, add fixture leases/reset checks and provider-specific rate-limit handling.
 5. Add durable event cursors and resumable stages; current restart behavior deliberately terminates interrupted jobs.
 6. Exercise authorized PR publication and coordinate concurrent publication attempts.
+
+## Agent MCP v0.4
+
+See [the implemented agent workflow](agent-mcp.md) for compact status, searchable discovery, setup/case tools, batch waits, bounded evidence and network reads, browser frames, and viewer links. The server now exposes 18 tools. These are local stdio capabilities; native login and the Cursor worker gate are unchanged.

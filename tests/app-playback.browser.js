@@ -89,6 +89,7 @@ const frame = document.createElement('iframe');
 frame.hidden = true;
 const loaded = new Promise(resolve => { frame.onload = resolve; });
 frame.srcdoc = html.replace('<script>', `<script>
+  Object.defineProperty(window, 'localStorage', { value: { getItem: () => null, setItem: () => {}, removeItem: () => {} } });
   window.setInterval = () => 0;
   window.fetch = async (path) => Response.json(path === '/api/config' ? { roles: [] } : []);
 </script><script>`);
