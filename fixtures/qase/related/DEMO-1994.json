@@ -1,0 +1,24 @@
+{
+  "project": "DEMO",
+  "id": 1994,
+  "url": "https://app.qase.io/case/DEMO-1994",
+  "title": "General - Notification inbox",
+  "priority": 2,
+  "severity": 4,
+  "preconditions": null,
+  "description": "[Migrated: TC-15149]",
+  "steps": [
+    {
+      "position": 1,
+      "action": "- Login to Sample using email and password",
+      "expected_result": "- Able to login\n\n- Redirect to client list page",
+      "data": null
+    },
+    {
+      "position": 2,
+      "action": "- Click on the Notification Bell in the Top Right in the Header",
+      "expected_result": "- Comment Inbox Modal will open",
+      "data": null
+    }
+  ]
+}

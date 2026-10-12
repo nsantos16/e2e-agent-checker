@@ -1,0 +1,36 @@
+{
+  "project": "DEMO",
+  "id": 634,
+  "url": "https://app.qase.io/case/DEMO-634",
+  "title": "General",
+  "priority": 2,
+  "severity": 4,
+  "preconditions": null,
+  "description": "[Migrated: TC-16063]",
+  "steps": [
+    {
+      "position": 1,
+      "action": "- Login to Sample using email and password",
+      "expected_result": "- Able to login\n\n- Redirect to client list page",
+      "data": null
+    },
+    {
+      "position": 2,
+      "action": "- Choose one client and click",
+      "expected_result": "- Redirect to the close page",
+      "data": null
+    },
+    {
+      "position": 3,
+      "action": "- Go to the section Account Reconciliation",
+      "expected_result": "- Able to see Account Reconciliation section",
+      "data": null
+    },
+    {
+      "position": 4,
+      "action": "Click on arrow icon from any transaction",
+      "expected_result": "Able to see Similar Historical Transactions tab transactions",
+      "data": null
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "project": "DEMO",
+  "id": 184,
+  "url": "https://app.qase.io/case/DEMO-184",
+  "title": "General: Firm > Comments",
+  "priority": 2,
+  "severity": 4,
+  "preconditions": null,
+  "description": "[Migrated: TC-15143]",
+  "steps": [
+    {
+      "position": 1,
+      "action": "- Login to Sample using email and password",
+      "expected_result": "- Able to login\n\n- Redirect to client list page",
+      "data": null
+    },
+    {
+      "position": 2,
+      "action": "- Click on Firm Task tab",
+      "expected_result": "- Redirect to Firm Task page",
+      "data": null
+    },
+    {
+      "position": 3,
+      "action": "Click on Comments",
+      "expected_result": "The comments modal opens",
+      "data": null
+    }
+  ]
+}

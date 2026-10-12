@@ -1,0 +1,24 @@
+{
+  "project": "DEMO",
+  "id": 182,
+  "url": "https://app.qase.io/case/DEMO-182",
+  "title": "General - Firm",
+  "priority": 2,
+  "severity": 4,
+  "preconditions": null,
+  "description": "[Migrated: TC-15142]",
+  "steps": [
+    {
+      "position": 1,
+      "action": "- Login to Sample using email and password",
+      "expected_result": "- Able to login\n\n- Redirect to client list page",
+      "data": null
+    },
+    {
+      "position": 2,
+      "action": "- Click on Firm Task tab",
+      "expected_result": "- Redirect to Firm Task page",
+      "data": null
+    }
+  ]
+}

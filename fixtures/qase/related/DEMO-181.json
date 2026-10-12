@@ -1,0 +1,30 @@
+{
+  "project": "DEMO",
+  "id": 181,
+  "url": "https://app.qase.io/case/DEMO-181",
+  "title": "General - Task List > Tax Task Modal",
+  "priority": 2,
+  "severity": 4,
+  "preconditions": null,
+  "description": "[Migrated: TC-15894]",
+  "steps": [
+    {
+      "position": 1,
+      "action": "- Login to Sample using email and password",
+      "expected_result": "- Able to login\n\n- Redirect to client list page",
+      "data": null
+    },
+    {
+      "position": 2,
+      "action": "- Click on Task tab",
+      "expected_result": "- Redirect to task list page",
+      "data": null
+    },
+    {
+      "position": 3,
+      "action": "Click on a Tax task",
+      "expected_result": "The Tax task modal opens",
+      "data": null
+    }
+  ]
+}

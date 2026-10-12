@@ -1,0 +1,30 @@
+{
+  "project": "DEMO",
+  "id": 178,
+  "url": "https://app.qase.io/case/DEMO-178",
+  "title": "General - Task List > Custom Task Modal",
+  "priority": 2,
+  "severity": 4,
+  "preconditions": null,
+  "description": "[Migrated: TC-15891]",
+  "steps": [
+    {
+      "position": 1,
+      "action": "- Login to Sample using email and password",
+      "expected_result": "- Able to login\n\n- Redirect to client list page",
+      "data": null
+    },
+    {
+      "position": 2,
+      "action": "- Click on Task tab",
+      "expected_result": "- Redirect to task list page",
+      "data": null
+    },
+    {
+      "position": 3,
+      "action": "Click on a Custom task",
+      "expected_result": "The Custom task modal opens",
+      "data": null
+    }
+  ]
+}

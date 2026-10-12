@@ -1,0 +1,30 @@
+{
+  "project": "DEMO",
+  "id": 2294,
+  "url": "https://app.qase.io/case/DEMO-2294",
+  "title": "General: Personal Inbox",
+  "priority": 1,
+  "severity": 4,
+  "preconditions": null,
+  "description": "[Migrated: TC-15148]",
+  "steps": [
+    {
+      "position": 1,
+      "action": "- Login to Sample using email and password",
+      "expected_result": "- Able to login\n\n- Redirect to client list page",
+      "data": null
+    },
+    {
+      "position": 2,
+      "action": "- Go to Inbox tab",
+      "expected_result": "- Emails connected displays",
+      "data": null
+    },
+    {
+      "position": 3,
+      "action": "- Go to Personal inbox",
+      "expected_result": "- Able to see inbox",
+      "data": null
+    }
+  ]
+}

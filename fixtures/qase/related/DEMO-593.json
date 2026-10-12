@@ -1,0 +1,30 @@
+{
+  "project": "DEMO",
+  "id": 593,
+  "url": "https://app.qase.io/case/DEMO-593",
+  "title": "General - Custom tasks",
+  "priority": 2,
+  "severity": 4,
+  "preconditions": null,
+  "description": "[Migrated: TC-15067]",
+  "steps": [
+    {
+      "position": 1,
+      "action": "- Login to Sample using email and password",
+      "expected_result": "- Able to login\n\n- Redirect to client list page",
+      "data": null
+    },
+    {
+      "position": 2,
+      "action": "- Choose one client and click",
+      "expected_result": "- Redirect to the close page",
+      "data": null
+    },
+    {
+      "position": 3,
+      "action": "- Go to any Custom Task section",
+      "expected_result": "- Able to see the Custom task section",
+      "data": null
+    }
+  ]
+}

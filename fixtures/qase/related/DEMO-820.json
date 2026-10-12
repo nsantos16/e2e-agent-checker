@@ -1,0 +1,36 @@
+{
+  "project": "DEMO",
+  "id": 820,
+  "url": "https://app.qase.io/case/DEMO-820",
+  "title": "General - Q's from Client",
+  "priority": 2,
+  "severity": 4,
+  "preconditions": null,
+  "description": "[Migrated: TC-15123]",
+  "steps": [
+    {
+      "position": 1,
+      "action": "- Login to Sample using email and password",
+      "expected_result": "- Able to login\n\n- Redirect to client list page",
+      "data": null
+    },
+    {
+      "position": 2,
+      "action": "- Choose one client and click",
+      "expected_result": "- Redirect to the close page",
+      "data": null
+    },
+    {
+      "position": 3,
+      "action": "- Click on Client questions",
+      "expected_result": "- The Client Communication modal opens",
+      "data": null
+    },
+    {
+      "position": 4,
+      "action": "- Click on 'Questions from Client' tab",
+      "expected_result": "- Questions from Client displays",
+      "data": null
+    }
+  ]
+}

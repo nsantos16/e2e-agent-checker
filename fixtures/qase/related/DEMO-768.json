@@ -1,0 +1,30 @@
+{
+  "project": "DEMO",
+  "id": 768,
+  "url": "https://app.qase.io/case/DEMO-768",
+  "title": "General - Close > Comments",
+  "priority": 2,
+  "severity": 4,
+  "preconditions": null,
+  "description": "[Migrated: TC-15129]",
+  "steps": [
+    {
+      "position": 1,
+      "action": "- Login to Sample using email and password",
+      "expected_result": "- Able to login\n\n- Redirect to client list page",
+      "data": null
+    },
+    {
+      "position": 2,
+      "action": "- Choose one client and click",
+      "expected_result": "- Redirect to the close page",
+      "data": null
+    },
+    {
+      "position": 3,
+      "action": "- Click on Comments",
+      "expected_result": "- Client Comment Modal will open",
+      "data": null
+    }
+  ]
+}

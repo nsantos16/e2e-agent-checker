@@ -1,0 +1,24 @@
+{
+  "project": "DEMO",
+  "id": 120,
+  "url": "https://app.qase.io/case/DEMO-120",
+  "title": "General - Client List > Tax",
+  "priority": 2,
+  "severity": 4,
+  "preconditions": null,
+  "description": "[Migrated: TC-15152]",
+  "steps": [
+    {
+      "position": 1,
+      "action": "- Login to Sample using email and password",
+      "expected_result": "- Able to login\n\n- Redirect to client list page",
+      "data": null
+    },
+    {
+      "position": 2,
+      "action": "- \nSelect the Tax view from the view dropdown",
+      "expected_result": "- Able to see the tax view",
+      "data": null
+    }
+  ]
+}

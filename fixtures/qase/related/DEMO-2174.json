@@ -1,0 +1,36 @@
+{
+  "project": "DEMO",
+  "id": 2174,
+  "url": "https://app.qase.io/case/DEMO-2174",
+  "title": "General - Search Transactions (tax)",
+  "priority": 2,
+  "severity": 4,
+  "preconditions": null,
+  "description": "[Migrated: TC-15297]",
+  "steps": [
+    {
+      "position": 1,
+      "action": "- Login to Sample using email and password",
+      "expected_result": "- Able to login\n\n- Redirect to client list page",
+      "data": null
+    },
+    {
+      "position": 2,
+      "action": "- Choose one client and click",
+      "expected_result": "- Redirect to the close page",
+      "data": null
+    },
+    {
+      "position": 3,
+      "action": "- \nClick on Tax return button\tnext to the close picker",
+      "expected_result": "I will be on the tax return page",
+      "data": null
+    },
+    {
+      "position": 4,
+      "action": "I click on Search Transactions",
+      "expected_result": "The Search Transactions modal opens",
+      "data": null
+    }
+  ]
+}

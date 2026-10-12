@@ -1,0 +1,30 @@
+{
+  "project": "DEMO",
+  "id": 179,
+  "url": "https://app.qase.io/case/DEMO-179",
+  "title": "General - Task List > Closing Task Modal",
+  "priority": 2,
+  "severity": 4,
+  "preconditions": null,
+  "description": "[Migrated: TC-15892]",
+  "steps": [
+    {
+      "position": 1,
+      "action": "- Login to Sample using email and password",
+      "expected_result": "- Able to login\n\n- Redirect to client list page",
+      "data": null
+    },
+    {
+      "position": 2,
+      "action": "- Click on Task tab",
+      "expected_result": "- Redirect to task list page",
+      "data": null
+    },
+    {
+      "position": 3,
+      "action": "Click on a Closing task",
+      "expected_result": "The Closing task modal opens",
+      "data": null
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "project": "DEMO",
+  "id": 603,
+  "url": "https://app.qase.io/case/DEMO-603",
+  "title": "General - Pre Close",
+  "priority": 2,
+  "severity": 4,
+  "preconditions": null,
+  "description": "[Migrated: TC-15145]",
+  "steps": [
+    {
+      "position": 1,
+      "action": "- Login to Sample using email and password",
+      "expected_result": "- Able to login\n\n- Redirect to client list page",
+      "data": null
+    },
+    {
+      "position": 2,
+      "action": "- Choose one client and click",
+      "expected_result": "- Redirect to the close page",
+      "data": null
+    },
+    {
+      "position": 3,
+      "action": "- Go to the section Pre-Close",
+      "expected_result": "- Able to see section Pre-Close",
+      "data": null
+    }
+  ]
+}

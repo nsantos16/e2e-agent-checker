@@ -1,0 +1,30 @@
+{
+  "project": "DEMO",
+  "id": 2291,
+  "url": "https://app.qase.io/case/DEMO-2291",
+  "title": "General - Practice Inbox",
+  "priority": 1,
+  "severity": 4,
+  "preconditions": null,
+  "description": "[Migrated: TC-15147]",
+  "steps": [
+    {
+      "position": 1,
+      "action": "- Login to Sample using email and password",
+      "expected_result": "- Able to login\n\n- Redirect to client list page",
+      "data": null
+    },
+    {
+      "position": 2,
+      "action": "- Go to Inbox tab",
+      "expected_result": "- Emails connected displays",
+      "data": null
+    },
+    {
+      "position": 3,
+      "action": "- Go to Practice inbox",
+      "expected_result": "- Able to see inbox",
+      "data": null
+    }
+  ]
+}

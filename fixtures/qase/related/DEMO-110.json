@@ -1,0 +1,30 @@
+{
+  "project": "DEMO",
+  "id": 110,
+  "url": "https://app.qase.io/case/DEMO-110",
+  "title": "General - Client List > Latest",
+  "priority": 2,
+  "severity": 4,
+  "preconditions": null,
+  "description": "[Migrated: TC-15115]",
+  "steps": [
+    {
+      "position": 1,
+      "action": "- Login to Sample using email and password",
+      "expected_result": "- Able to login\n\n- Redirect to client list page",
+      "data": null
+    },
+    {
+      "position": 2,
+      "action": "Click on Special Filters",
+      "expected_result": "The Special filters popover opens",
+      "data": null
+    },
+    {
+      "position": 3,
+      "action": "Click on closes: Latest\n\nClose the popover",
+      "expected_result": "The latest close for each client displays",
+      "data": null
+    }
+  ]
+}
