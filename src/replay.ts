@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { writeReplayEnv } from './codify.ts';
+import { config } from './config.ts';
 
 // Stage 3: run the codified spec deterministically with video, then package an MP4 small enough for a PR.
 
@@ -24,7 +25,7 @@ const findVideo = (dir: string): string | undefined => {
 
 export const toPrMp4 = async (webm: string, mp4: string) => {
   // H.264 + faststart so it plays inline on GitHub; capped at 1280 wide and CRF 30 to stay well under 10 MB.
-  await exec('ffmpeg', ['-y', '-loglevel', 'error', '-i', webm, '-vf', 'scale=1280:-2', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '30', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-an', mp4]);
+  await exec(config.ffmpeg, ['-y', '-loglevel', 'error', '-i', webm, '-vf', 'scale=1280:-2', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '30', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-an', mp4]);
   return statSync(mp4).size;
 };
 

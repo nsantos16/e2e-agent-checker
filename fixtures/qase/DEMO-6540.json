@@ -1,0 +1,48 @@
+{
+  "project": "DEMO",
+  "id": 6540,
+  "url": "https://app.qase.io/case/DEMO-6540",
+  "title": "Notification inbox (View all) - Switching All / Open / Unread tabs returns the list to the top with matching threads",
+  "priority": 2,
+  "severity": 4,
+  "preconditions": "Logged in as a practice user whose notification inbox holds more threads than one page, including some unread and some resolved threads.",
+  "description": null,
+  "steps": [
+    {
+      "position": 1,
+      "action": "Click the notification bell, then click 'View all'.",
+      "expected_result": "The full notification inbox modal opens on the currently selected filter tab.",
+      "data": null
+    },
+    {
+      "position": 2,
+      "action": "Scroll down the list several screens so that additional threads load.",
+      "expected_result": "More threads load as you scroll; you are now well below the top of the list.",
+      "data": null
+    },
+    {
+      "position": 3,
+      "action": "Switch to the 'Unread' tab.",
+      "expected_result": "The list jumps back to the top and shows only unread threads (purple dot). The count matches the unread badge on the bell.",
+      "data": null
+    },
+    {
+      "position": 4,
+      "action": "Switch to the 'Open' tab.",
+      "expected_result": "The list is back at the top and shows only open (unresolved) threads.",
+      "data": null
+    },
+    {
+      "position": 5,
+      "action": "Switch to the 'All' tab.",
+      "expected_result": "The list is back at the top and shows all threads, including resolved ones.",
+      "data": null
+    },
+    {
+      "position": 6,
+      "action": "Scroll to the bottom of the 'All' tab.",
+      "expected_result": "Older threads keep loading in batches on this tab as well.",
+      "data": null
+    }
+  ]
+}

@@ -1,5 +1,4 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { lastJsonObject, runClaude } from './claude.ts';
 import { statePath } from './login.ts';
@@ -9,7 +8,7 @@ import { statePath } from './login.ts';
 export type CodifyResult = { specPath: string; attempts: number; outcome: 'passed' | 'failed-as-expected' | 'could-not-stabilize'; failingStep: number | null; notes?: string };
 
 const root = new URL('..', import.meta.url).pathname;
-const FRONTEND = join(homedir(), 'Keeper/sample-frontend');
+import { requireFrontendRepo } from './config.ts';
 
 export const specLocation = (runDir: string, project: string, caseId: number) => {
   const runId = runDir.split('/').pop()!;
@@ -37,7 +36,7 @@ export const codify = async (opts: { project: string; caseId: number; runDir: st
       .replaceAll('{{REPORT_PATH}}', join(opts.runDir, 'explore/report.json'))
       .replaceAll('{{ACTIONS_PATH}}', join(opts.runDir, 'explore/actions.js'))
       .replaceAll('{{APP_CONTEXT_PATH}}', join(root, 'context/sample-app.md'))
-      .replaceAll('{{FRONTEND}}', FRONTEND)
+      .replaceAll('{{requireFrontendRepo()}}', requireFrontendRepo())
       .replaceAll('{{SPEC_PATH}}', specPath)
       .replaceAll('{{RUN_DIR}}', opts.runDir)
       .replaceAll('{{PROJECT}}', opts.project)
@@ -51,8 +50,8 @@ export const codify = async (opts: { project: string; caseId: number; runDir: st
     cwd: root,
     model: opts.model,
     tools: ['Read', 'Glob', 'Grep', 'Write', 'Edit', 'Bash'],
-    allowedTools: ['Read', 'Glob', 'Grep', `Write(/${specDir}/**)`, `Edit(/${specDir}/**)`, 'Bash(./scripts/try-spec.sh:*)'],
-    addDirs: [FRONTEND],
+    allowedTools: ['Read', 'Glob', 'Grep', `Write(/${specDir}/**)`, `Edit(/${specDir}/**)`, 'Bash(./scripts/try-spec.sh:*)', `Bash(${root}scripts/try-spec.sh:*)`],
+    addDirs: [requireFrontendRepo()],
     transcriptPath: join(dir, 'transcript.jsonl'),
     log: opts.log,
   });

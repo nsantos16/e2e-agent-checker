@@ -1,0 +1,16 @@
+{
+  "frontendRepoCandidates": [
+    "~/work/sample-frontend",
+    "~/apps/sample-frontend",
+    "~/code/sample-frontend",
+    "~/src/sample-frontend",
+    "~/dev/sample-frontend",
+    "~/projects/sample-frontend",
+    "~/sample-frontend"
+  ],
+  "onePasswordAccount": "example.1password.com",
+  "qase": { "project": "DEMO", "mcpPackage": "@qase/mcp-server@2.7.5", "tokenEnv": "QASE_API_TOKEN", "keychainService": "qase-api-token" },
+  "app": { "port": 4100, "maxParallel": 4, "maxPerWorktree": 3 },
+  "model": "sonnet",
+  "ffmpeg": "ffmpeg"
+}

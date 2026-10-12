@@ -15,18 +15,29 @@ verify_case(worktree, DEMO-6003)
 
 Design and decisions: [docs/architecture-proposals.md](docs/architecture-proposals.md), [ADRs](docs/adr/), results: [docs/poc-results.md](docs/poc-results.md).
 
-## Requirements
-
-- Node ≥ 24 (runs `.ts` directly), `ffmpeg`, `gh` ≥ 2.99 (for `--attach`), `claude` CLI
-- 1Password CLI signed in to `example-team` (test-user credentials, [ADR-0002](docs/adr/0002-1password-service-account-for-test-credentials.md))
-- Qase MCP server as `~/.local/bin/qase-mcp` (token in the macOS Keychain, service `qase-api-token`)
-- A `sample-frontend` checkout at `~/work/sample-frontend`
+## Quick start (any dev)
 
 ```sh
-npm install
-npx playwright install chromium
-npx -y @playwright/mcp@0.0.83 install-browser chromium
+git clone <this repo> && cd e2e-agent-checker
+npm run setup        # installs deps + browsers, then runs the readiness check
+npm run app          # opens http://localhost:4100
 ```
+
+In the app: pick the **worktree** you want to test (every worktree of your `sample-frontend` checkout is listed, e.g. the one an agent just implemented a ticket in), then click **Run ▶** on a use case, or tick several and press **Run N in parallel**. Each run shows its pipeline (slot → explore → codify → replay), per-step verdicts, cost, and the replay video when it finishes. Use **Add** to pull any Qase case by id.
+
+`npm run doctor` tells you exactly what's missing. You need:
+
+| What | Why | Fix |
+|---|---|---|
+| Node ≥ 24 | runs the TypeScript directly | the frontend already pins 26 |
+| `sample-frontend` checkout | the app under test | found automatically in common locations, or set `frontendRepo` in `e2e-agent.local.json` |
+| Claude Code CLI, logged in | runs the agents on **your** Claude account | `npm i -g @anthropic-ai/claude-code && claude` |
+| 1Password CLI + `example-team` account | test-user credentials (never shown to the agent) | `brew install 1password-cli`, enable CLI integration in 1Password → Settings → Developer |
+| Qase API token | reads test cases | create at app.qase.io/user/api/token → `security add-generic-password -s qase-api-token -a "$USER" -w` |
+| ffmpeg | MP4 packaging | `brew install ffmpeg` |
+| gh ≥ 2.99 (optional) | publishing evidence to a PR | `brew install gh && gh auth login` |
+
+Per-dev overrides go in `e2e-agent.local.json` (gitignored), e.g. `{ "frontendRepo": "~/work/sample-frontend", "app": { "maxParallel": 2 } }`. Team defaults: `e2e-agent.config.json`.
 
 ## Use it from Claude Code (MCP)
 

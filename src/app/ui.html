@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>e2e agent checker</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #fff; --line: #e4e7ec; --text: #101828; --muted: #667085; --accent: #4f46e5;
+    --pass: #12b76a; --pass-bg: #ecfdf3; --fail: #f04438; --fail-bg: #fef3f2; --blocked: #f79009; --blocked-bg: #fffaeb;
+    --run: #2e90fa; --run-bg: #eff8ff;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif; color: var(--text); background: var(--bg); }
+  header { display: flex; align-items: center; gap: 12px; padding: 12px 20px; background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 2; }
+  header h1 { font-size: 15px; margin: 0 12px 0 0; white-space: nowrap; }
+  header h1 span { color: var(--muted); font-weight: 500; }
+  select, input, button { font: inherit; }
+  select, input[type=text], input[type=number] { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; background: #fff; min-width: 0; }
+  #worktree { flex: 1; max-width: 560px; }
+  button { border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+  button:hover { border-color: #cfd4dc; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button.primary:disabled { opacity: .45; cursor: default; }
+  .slot-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background: #d0d5dd; }
+  .slot-dot.up { background: var(--pass); }
+  main { display: grid; grid-template-columns: minmax(380px, 46%) 1fr; gap: 16px; padding: 16px 20px; align-items: start; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .section-head { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  .section-head h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 auto 0 0; }
+  #search { width: 180px; }
+  #add-id { width: 90px; }
+  .suite { padding: 8px 14px 4px; font-size: 12px; color: var(--muted); background: #fafbfc; border-top: 1px solid var(--line); }
+  .case { display: grid; grid-template-columns: 20px auto 1fr auto auto; gap: 10px; align-items: center; padding: 8px 14px; border-top: 1px solid #f2f4f7; cursor: pointer; }
+  .case:hover { background: #f9fafb; }
+  .case .id { font: 600 12px ui-monospace, SFMono-Regular, monospace; color: var(--accent); }
+  .case .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .case .meta { font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .case .run { padding: 3px 10px; font-size: 12px; }
+  .chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px; white-space: nowrap; }
+  .chip.pass { color: var(--pass); background: var(--pass-bg); } .chip.fail { color: var(--fail); background: var(--fail-bg); }
+  .chip.blocked, .chip.codify-failed { color: var(--blocked); background: var(--blocked-bg); }
+  .chip.running, .chip.queued { color: var(--run); background: var(--run-bg); } .chip.failed { color: var(--fail); background: var(--fail-bg); }
+  #jobs { display: flex; flex-direction: column; gap: 0; }
+  .job { border-top: 1px solid var(--line); padding: 12px 14px; }
+  .job:first-child { border-top: 0; }
+  .job-head { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .job-head .title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .job-sub { display: flex; gap: 12px; color: var(--muted); font-size: 12px; margin-top: 2px; flex-wrap: wrap; }
+  .pipeline { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin: 10px 0 6px; }
+  .pipeline div { font-size: 11px; text-align: center; padding: 3px 0; border-radius: 6px; background: #f2f4f7; color: var(--muted); }
+  .pipeline div.done { background: #e0e7ff; color: var(--accent); }
+  .pipeline div.active { background: var(--accent); color: #fff; animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .65; } }
+  .log { font: 11px/1.4 ui-monospace, SFMono-Regular, monospace; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .steps { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
+  .step { font: 600 11px ui-monospace, monospace; padding: 2px 7px; border-radius: 6px; }
+  .step.pass { background: var(--pass-bg); color: var(--pass); } .step.fail { background: var(--fail-bg); color: var(--fail); } .step.blocked { background: var(--blocked-bg); color: var(--blocked); }
+  .detail { margin-top: 12px; display: grid; gap: 12px; }
+  .detail video { width: 100%; border-radius: 8px; background: #000; }
+  .detail table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .detail td { border-top: 1px solid #f2f4f7; padding: 6px 4px; vertical-align: top; }
+  .detail td:first-child { width: 70px; white-space: nowrap; }
+  .notes { background: #f9fafb; border-radius: 8px; padding: 8px 10px; font-size: 13px; color: #344054; }
+  .links { display: flex; gap: 12px; font-size: 13px; }
+  .links a { color: var(--accent); }
+  .empty { padding: 28px; text-align: center; color: var(--muted); }
+  .error { color: var(--fail); font-size: 12px; }
+  #doctor { display: none; margin: 16px 20px 0; padding: 12px 14px; border-radius: 12px; background: var(--fail-bg); border: 1px solid #fecdca; }
+  #doctor h3 { margin: 0 0 6px; font-size: 14px; color: var(--fail); }
+  #doctor li { margin: 4px 0; }
+  #doctor code { font: 12px ui-monospace, monospace; background: #fff; padding: 1px 6px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>e2e agent checker <span>· Qase cases × worktrees</span></h1>
+  <span class="slot-dot" id="slot-dot" title="dev server for this worktree"></span>
+  <select id="worktree" title="Worktree to test"></select>
+  <select id="role" title="Test user"></select>
+  <button class="primary" id="run-selected" disabled>Run selected</button>
+</header>
+<div id="doctor"></div>
+<main>
+  <section>
+    <div class="section-head">
+      <h2>Use cases</h2>
+      <input type="text" id="search" placeholder="Filter…">
+      <input type="number" id="add-id" placeholder="Qase id">
+      <button id="add">Add</button>
+    </div>
+    <div id="cases"></div>
+  </section>
+  <section>
+    <div class="section-head"><h2>Runs</h2><span class="meta" id="running-count"></span></div>
+    <div id="jobs"><div class="empty">Click a use case to test it on the selected worktree.<br>Select several and press “Run selected” to test them in parallel.</div></div>
+  </section>
+</main>
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const api = async (path, body) => {
+  const res = await fetch(path, body ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : undefined);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error ?? res.statusText);
+  return data;
+};
+const fileUrl = (p) => `/files?path=${encodeURIComponent(p)}`;
+
+let cases = [], jobs = [], worktrees = [];
+const selected = new Set();
+const expanded = new Set();
+const details = new Map();
+
+const STAGES = ['slot', 'explore', 'codify', 'replay'];
+const outcomeLabel = { pass: '✓ pass', fail: '✗ fail', blocked: '⛔ blocked', 'codify-failed': '⚠ not codified' };
+
+const latestJobFor = (c) => jobs.find((j) => j.project === c.project && j.caseId === c.id);
+
+function renderCases() {
+  const q = $('#search').value.toLowerCase();
+  const visible = cases.filter((c) => !q || `${c.project}-${c.id} ${c.title} ${c.suite}`.toLowerCase().includes(q));
+  let html = '', suite = null;
+  for (const c of visible) {
+    if (c.suite !== suite) { suite = c.suite; html += `<div class="suite">${esc(suite || 'Other')}</div>`; }
+    const key = `${c.project}-${c.id}`;
+    const j = latestJobFor(c);
+    const chip = !j ? '' : j.status === 'done' ? `<span class="chip ${j.outcome}">${outcomeLabel[j.outcome] ?? j.outcome}</span>` : `<span class="chip ${j.status}">${j.status}</span>`;
+    html += `<div class="case" data-key="${key}">
+      <input type="checkbox" ${selected.has(key) ? 'checked' : ''} data-select="${key}">
+      <span class="id">${key}</span>
+      <span class="title" title="${esc(c.title)}">${esc(c.title)}</span>
+      <span class="meta">${chip} ${c.steps} steps</span>
+      <button class="run" data-run="${key}">Run ▶</button>
+    </div>`;
+  }
+  $('#cases').innerHTML = html || '<div class="empty">No cases</div>';
+  $('#run-selected').disabled = selected.size === 0;
+  $('#run-selected').textContent = selected.size ? `Run ${selected.size} in parallel` : 'Run selected';
+}
+
+function stageIndex(job) {
+  if (job.status === 'done') return STAGES.length;
+  if (job.status === 'queued') return -1;
+  return Math.max(0, STAGES.indexOf(job.stage));
+}
+
+function renderJob(j) {
+  const idx = stageIndex(j);
+  const status = j.status === 'done' ? `<span class="chip ${j.outcome}">${outcomeLabel[j.outcome] ?? j.outcome}</span>` : `<span class="chip ${j.status}">${j.status}</span>`;
+  const wt = worktrees.find((w) => w.path === j.worktree);
+  const elapsed = Math.round(((j.finishedAt ? Date.parse(j.finishedAt) : Date.now()) - Date.parse(j.createdAt)) / 1000);
+  const steps = (j.steps ?? []).map((s) => `<span class="step ${s.verdict}" title="${esc(s.evidence)}">${s.position}${s.verdict === 'pass' ? '✓' : s.verdict === 'fail' ? '✗' : '–'}${s.inferred ? '*' : ''}</span>`).join('');
+  const replay = j.replay ? `replay ${j.replay.status}${j.replay.failedStep ? ` at “${esc(j.replay.failedStep)}”` : ''}` : '';
+  const d = details.get(j.id);
+  const open = expanded.has(j.id);
+  return `<div class="job" data-job="${j.id}">
+    <div class="job-head" data-toggle="${j.id}">
+      <span class="id" style="font:600 12px ui-monospace,monospace;color:var(--accent)">${j.project}-${j.caseId}</span>
+      <span class="title">${esc(j.title ?? '')}</span>${status}
+    </div>
+    <div class="job-sub">
+      <span>${esc(wt?.branch ?? j.worktree.split('/').pop())}${j.slot ? ` · slot ${j.slot}` : ''}</span>
+      <span>${elapsed}s</span>${j.costUsd != null ? `<span>$${j.costUsd.toFixed(2)}</span>` : ''}<span>${replay}</span>
+    </div>
+    ${j.status === 'done' || j.status === 'failed' ? '' : `<div class="pipeline">${STAGES.map((s, i) => `<div class="${i < idx ? 'done' : i === idx ? 'active' : ''}">${s}</div>`).join('')}</div>
+      <div class="log">${esc(j.log?.at(-1) ?? 'waiting for a free agent…')}</div>`}
+    ${steps ? `<div class="steps">${steps}</div>` : ''}
+    ${j.error ? `<div class="error">${esc(j.error)}</div>` : ''}
+    ${open && d ? `<div class="detail">
+      ${d.video ? `<video src="${fileUrl(d.video)}" controls preload="metadata"></video>` : ''}
+      <table>${(d.steps ?? []).map((s) => `<tr><td><span class="step ${s.verdict}">${s.position} ${s.verdict}${s.inferred ? ' *' : ''}</span></td><td>${esc(s.evidence)}</td></tr>`).join('')}</table>
+      ${d.notes ? `<div class="notes">${esc(d.notes)}</div>` : ''}
+      <div class="links">${d.prComment ? `<a href="${fileUrl(d.prComment)}" target="_blank">PR comment</a>` : ''}${d.spec ? `<a href="${fileUrl(d.spec)}" target="_blank">Generated spec</a>` : ''}${d.runDir ? `<span class="meta">${esc(d.runDir.split('/').pop())}</span>` : ''}</div>
+    </div>` : ''}
+  </div>`;
+}
+
+function renderJobs() {
+  if (!jobs.length) return;
+  $('#jobs').innerHTML = jobs.map(renderJob).join('');
+  const running = jobs.filter((j) => j.status === 'running').length, queued = jobs.filter((j) => j.status === 'queued').length;
+  $('#running-count').textContent = running || queued ? `${running} running · ${queued} queued` : '';
+}
+
+function renderWorktrees() {
+  const current = $('#worktree').value || localStorage.getItem('worktree');
+  $('#worktree').innerHTML = worktrees.map((w) => `<option value="${esc(w.path)}">${esc(w.branch)} — ${esc(w.subject).slice(0, 60)}${w.slot ? ` · :${w.slot.port}` : ''}</option>`).join('');
+  if (current && worktrees.some((w) => w.path === current)) $('#worktree').value = current;
+  const w = worktrees.find((x) => x.path === $('#worktree').value);
+  $('#slot-dot').className = `slot-dot ${w?.slot?.healthy ? 'up' : ''}`;
+  $('#slot-dot').title = w?.slot ? `slot ${w.slot.slot} on ${w.slot.url} (${w.slot.healthy ? 'up' : 'down'})` : 'no dev server yet: it starts on first run';
+}
+
+async function run(keys) {
+  const worktree = $('#worktree').value;
+  const list = keys.map((k) => { const [project, id] = k.split(/-(?=\d+$)/); return { project, id: Number(id) }; });
+  await api('/api/jobs', { cases: list, worktree, role: $('#role').value });
+  selected.clear();
+  await refreshJobs();
+  renderCases();
+}
+
+async function refreshJobs() {
+  jobs = await api('/api/jobs');
+  for (const id of expanded) {
+    const j = jobs.find((x) => x.id === id);
+    if (j && (j.status === 'done' || j.status === 'failed') && !details.get(id)?.final) details.set(id, { ...(await api(`/api/jobs/${id}`)), final: true });
+  }
+  renderJobs();
+  renderCases();
+}
+
+$('#cases').addEventListener('click', async (e) => {
+  const sel = e.target.closest('[data-select]');
+  if (sel) { sel.checked ? selected.add(sel.dataset.select) : selected.delete(sel.dataset.select); renderCases(); return; }
+  const runBtn = e.target.closest('[data-run]');
+  if (runBtn) { await run([runBtn.dataset.run]); return; }
+  const row = e.target.closest('.case');
+  if (row) { const k = row.dataset.key; selected.has(k) ? selected.delete(k) : selected.add(k); renderCases(); }
+});
+$('#jobs').addEventListener('click', async (e) => {
+  const t = e.target.closest('[data-toggle]');
+  if (!t) return;
+  const id = t.dataset.toggle;
+  if (expanded.has(id)) expanded.delete(id); else { expanded.add(id); details.set(id, await api(`/api/jobs/${id}`)); }
+  renderJobs();
+});
+$('#run-selected').addEventListener('click', () => run([...selected]));
+$('#search').addEventListener('input', renderCases);
+$('#worktree').addEventListener('change', () => { localStorage.setItem('worktree', $('#worktree').value); renderWorktrees(); });
+$('#add').addEventListener('click', async () => {
+  const id = Number($('#add-id').value);
+  if (!id) return;
+  $('#add').disabled = true;
+  try { await api('/api/cases', { project: 'DEMO', id }); cases = await api('/api/cases'); $('#add-id').value = ''; renderCases(); }
+  catch (err) { alert(err.message); }
+  finally { $('#add').disabled = false; }
+});
+
+async function checkSetup() {
+  const checks = await api('/api/doctor');
+  const missing = checks.filter((c) => !c.ok && c.required);
+  $('#doctor').style.display = missing.length ? 'block' : 'none';
+  $('#doctor').innerHTML = missing.length ? `<h3>Setup incomplete: runs will fail until these are fixed</h3><ul>${missing.map((c) => `<li><b>${esc(c.name)}</b>: ${esc(c.detail)} → <code>${esc(c.fix)}</code></li>`).join('')}</ul>` : '';
+}
+
+(async () => {
+  checkSetup();
+  const config = await api('/api/config');
+  $('#role').innerHTML = config.roles.map((r) => `<option>${esc(r)}</option>`).join('');
+  [cases, worktrees] = await Promise.all([api('/api/cases'), api('/api/worktrees')]);
+  renderWorktrees();
+  await refreshJobs();
+  setInterval(refreshJobs, 2000);
+  setInterval(async () => { worktrees = await api('/api/worktrees'); renderWorktrees(); }, 10000);
+})();
+</script>
+</body>
+</html>

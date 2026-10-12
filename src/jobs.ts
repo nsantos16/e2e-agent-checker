@@ -1,9 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { config } from './config.ts';
 import { ensureSlotForWorktree } from './slots.ts';
 import { verify } from './verify.ts';
 
-// Background verification jobs: one job per slot at a time, at most MAX_RUNNING overall (docs/adr/0003 caps parallelism).
+// Background verification jobs. Several agents can share one worktree's dev server (each gets its own browser context),
+// so the only limits are MAX_RUNNING overall and MAX_PER_WORKTREE per worktree (docs/adr/0003 caps parallelism).
 
 export type JobStatus = 'queued' | 'running' | 'done' | 'failed';
 export type Job = {
@@ -31,7 +33,8 @@ export type Job = {
 
 const root = new URL('..', import.meta.url).pathname;
 const jobsPath = join(root, '.state/jobs.json');
-const MAX_RUNNING = Number(process.env.E2E_MAX_PARALLEL ?? 4);
+const MAX_RUNNING = config.app.maxParallel;
+const MAX_PER_WORKTREE = config.app.maxPerWorktree;
 
 const jobs = new Map<string, Job>(existsSync(jobsPath) ? (JSON.parse(readFileSync(jobsPath, 'utf8')) as Job[]).map((j) => [j.id, j]) : []);
 // Jobs interrupted by a restart can't resume mid-agent; mark them so callers re-submit.
@@ -42,13 +45,24 @@ const persist = () => {
   writeFileSync(jobsPath, JSON.stringify([...jobs.values()].slice(-200), null, 2));
 };
 
-const slotChains = new Map<string, Promise<void>>();
+const queue: Job[] = [];
+const runningByWorktree = new Map<string, number>();
 let running = 0;
-const waiting: (() => void)[] = [];
-const acquire = () => (running < MAX_RUNNING ? (running++, Promise.resolve()) : new Promise<void>((r) => waiting.push(() => (running++, r()))));
-const release = () => {
-  running--;
-  waiting.shift()?.();
+
+const pump = () => {
+  for (const job of [...queue]) {
+    const onWorktree = runningByWorktree.get(job.worktree) ?? 0;
+    if (running >= MAX_RUNNING) return;
+    if (onWorktree >= MAX_PER_WORKTREE) continue;
+    queue.splice(queue.indexOf(job), 1);
+    running++;
+    runningByWorktree.set(job.worktree, onWorktree + 1);
+    void execute(job).finally(() => {
+      running--;
+      runningByWorktree.set(job.worktree, (runningByWorktree.get(job.worktree) ?? 1) - 1);
+      pump();
+    });
+  }
 };
 
 const sumCost = (summary: Record<string, unknown>) => {
@@ -59,7 +73,7 @@ const sumCost = (summary: Record<string, unknown>) => {
 
 const execute = async (job: Job) => {
   const log = (line: string) => {
-    job.stage = line.trim().split(':')[0];
+    job.stage = line.trim().split(/[\s:]/)[0];
     job.log.push(`${new Date().toISOString().slice(11, 19)} ${line}`);
     job.log = job.log.slice(-80);
     persist();
@@ -69,7 +83,7 @@ const execute = async (job: Job) => {
     job.slot = slot.slot;
     job.status = 'running';
     persist();
-    const summary = await verify({ project: job.project, caseId: job.caseId, slot: slot.slot, model: process.env.E2E_MODEL ?? 'sonnet', log });
+    const summary = await verify({ project: job.project, caseId: job.caseId, slot: slot.slot, model: config.model, log });
     const runDir = String(summary.runDir);
     const report = existsSync(join(runDir, 'explore/report.json')) ? JSON.parse(readFileSync(join(runDir, 'explore/report.json'), 'utf8')) : undefined;
     const replays = (summary.replays as { status: string; failedStep?: string; video?: string }[] | undefined) ?? [];
@@ -93,22 +107,12 @@ const execute = async (job: Job) => {
 };
 
 export const submitJob = (input: { project: string; caseId: number; worktree: string; role: string }) => {
-  const id = `job-${Date.now().toString(36)}-${input.caseId}`;
-  const job: Job = { id, ...input, status: 'queued', createdAt: new Date().toISOString(), log: [] };
+  const id = `job-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}-${input.caseId}`;
+  const job: Job = { id, ...input, worktree: resolve(input.worktree), status: 'queued', createdAt: new Date().toISOString(), log: [] };
   jobs.set(id, job);
   persist();
-  // Serialise per worktree (a worktree maps to one slot) and bound overall concurrency.
-  const key = input.worktree;
-  const previous = slotChains.get(key) ?? Promise.resolve();
-  const next = previous.then(async () => {
-    await acquire();
-    try {
-      await execute(job);
-    } finally {
-      release();
-    }
-  });
-  slotChains.set(key, next.catch(() => {}));
+  queue.push(job);
+  pump();
   return job;
 };
 

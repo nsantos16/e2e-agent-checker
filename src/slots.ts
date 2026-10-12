@@ -102,8 +102,20 @@ const ensureNodeModules = (worktree: string) => {
   symlinkSync(join(mainCheckout, 'node_modules'), join(worktree, 'node_modules'));
 };
 
+// Concurrent jobs for the same worktree share one in-flight allocation instead of racing for two slots.
+const allocating = new Map<string, Promise<Slot>>();
+
+export const ensureSlotForWorktree = (worktreePath: string, role = 'eugene', log: (l: string) => void = () => {}) => {
+  const key = `${resolve(worktreePath)}|${role}`;
+  const inFlight = allocating.get(key);
+  if (inFlight) return inFlight;
+  const p = allocateSlot(worktreePath, role, log).finally(() => allocating.delete(key));
+  allocating.set(key, p);
+  return p;
+};
+
 // Finds the slot already serving this worktree, or allocates the next free one; starts it and logs the role in when needed.
-export const ensureSlotForWorktree = async (worktreePath: string, role = 'eugene', log: (l: string) => void = () => {}) => {
+const allocateSlot = async (worktreePath: string, role: string, log: (l: string) => void): Promise<Slot> => {
   const worktree = resolve(worktreePath);
   if (!existsSync(join(worktree, 'package.json'))) throw new Error(`${worktree} is not a frontend checkout (no package.json)`);
   const registry = readRegistry();

@@ -1,9 +1,9 @@
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { config, qaseToken } from './config.ts';
 
-// Read-only access to Qase through the self-run Qase MCP server (~/.local/bin/qase-mcp reads its token from the Keychain).
+// Read-only access to Qase through the official Qase MCP server, run locally with the dev's own API token.
 
 export type QaseStep = { position: number; action: string | null; expected_result: string | null; data: string | null };
 export type QaseCase = {
@@ -23,7 +23,9 @@ const root = new URL('..', import.meta.url).pathname;
 export const fixturePath = (project: string, id: number) => join(root, 'fixtures/qase', `${project}-${id}.json`);
 
 const withQaseMcp = async <T>(fn: (call: (tool: string, args: object) => Promise<string>) => Promise<T>): Promise<T> => {
-  const child = spawn(join(homedir(), '.local/bin/qase-mcp'), [], { stdio: ['pipe', 'pipe', 'ignore'] });
+  const token = qaseToken();
+  if (!token) throw new Error(`No Qase API token. Set ${config.qase.tokenEnv} or run: security add-generic-password -s ${config.qase.keychainService} -a "$USER" -w`);
+  const child = spawn('npx', ['-y', config.qase.mcpPackage], { stdio: ['pipe', 'pipe', 'ignore'], env: { ...process.env, QASE_API_TOKEN: token } });
   const pending = new Map<number, (m: { result?: { content: { text: string }[] }; error?: unknown }) => void>();
   let buf = '';
   let nextId = 0;

@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { promisify } from 'node:util';
 import sdk from '@1password/sdk';
+import { config as appConfig } from './config.ts';
 
 // See docs/adr/0002: secrets are resolved here, in the harness, and never reach the agent.
 // Service account when OP_SERVICE_ACCOUNT_TOKEN is set, otherwise desktop-app auth (one approval per process).
@@ -9,7 +10,7 @@ import sdk from '@1password/sdk';
 // which uses the CLI's desktop integration.
 
 type RoleRefs = { description: string; username: string; password: string; totp?: string };
-type RolesConfig = { account: string; roles: Record<string, RoleRefs> };
+type RolesConfig = { roles: Record<string, RoleRefs> };
 
 export type Credentials = {
   username: string;
@@ -23,7 +24,7 @@ const config: RolesConfig = JSON.parse(readFileSync(new URL('../config/roles.jso
 type Resolver = (ref: string) => Promise<string>;
 
 const opRead: Resolver = async (ref) => {
-  const { stdout } = await promisify(execFile)('op', ['read', '--no-newline', '--account', config.account, ref]);
+  const { stdout } = await promisify(execFile)('op', ['read', '--no-newline', '--account', appConfig.onePasswordAccount, ref]);
   return stdout;
 };
 
@@ -32,7 +33,7 @@ let resolverPromise: Promise<Resolver> | undefined;
 const resolver = () => {
   resolverPromise ??= sdk
     .createClient({
-      auth: process.env.OP_SERVICE_ACCOUNT_TOKEN ?? new sdk.DesktopAuth(config.account),
+      auth: process.env.OP_SERVICE_ACCOUNT_TOKEN ?? new sdk.DesktopAuth(appConfig.onePasswordAccount),
       integrationName: 'e2e-agent-checker',
       integrationVersion: '0.0.1',
     })

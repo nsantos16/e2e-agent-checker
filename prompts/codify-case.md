@@ -7,6 +7,10 @@ You are turning a verified manual QA run into a deterministic Playwright test.
 - App map: `{{APP_CONTEXT_PATH}}`
 - Conventions of the app's own e2e suite (read for style only, don't import from it): page objects in `{{FRONTEND}}/tests/poms/`, e.g. `CommentModal.poms.ts`, `TaskListPage.poms.ts`
 
+## Tools
+- Read, search and write files only with the **Read, Glob, Grep, Write and Edit** tools.
+- The shell is locked down: the **only** command you can run is exactly `./scripts/try-spec.sh {{RUN_DIR}}` (no `cd`, no `&&`, no other prefixes). Any other shell command is denied. That denial doesn't mean the spec runner is denied, so keep using it.
+
 ## Write
 `{{SPEC_PATH}}`, a single `@playwright/test` file:
 

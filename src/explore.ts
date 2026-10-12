@@ -108,7 +108,8 @@ export const explore = async (opts: ExploreOptions) => {
 
 export const newRunDir = (project: string, caseId: number, slot: string, label = '') => {
   const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15);
-  const dir = join(root, 'runs', `${stamp}-${project}-${caseId}-slot${slot}${label ? `-${label}` : ''}`);
+  const unique = Math.random().toString(36).slice(2, 5);
+  const dir = join(root, 'runs', `${stamp}-${project}-${caseId}-slot${slot}${label ? `-${label}` : ''}-${unique}`);
   mkdirSync(dir, { recursive: true });
   return dir;
 };
