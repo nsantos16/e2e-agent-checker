@@ -1237,17 +1237,59 @@
         background: var(--surface);
         overflow: hidden;
       }
-      .content-column:has(.job:not([hidden]) .observation[data-pane='network']) {
-        max-width: 1120px;
+      .workspace:has(.job:not([hidden]) .observation[data-network-open='true']) {
+        margin-right: clamp(400px, 40vw, 600px);
       }
-      .observation-tabs {
+      .workspace:has(.job:not([hidden]) .observation[data-network-open='true']) .composer-toolbar {
+        flex-wrap: wrap;
+      }
+      .network-pane {
+        position: fixed;
+        inset: 0 0 0 auto;
+        width: clamp(400px, 40vw, 600px);
+        z-index: 20;
+        overflow: auto;
+        overscroll-behavior: contain;
+        background: var(--surface);
+        border-left: 1px solid var(--border);
+        box-shadow: -12px 0 30px -24px #0009;
+      }
+      .network-panel-head {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        min-height: 54px;
+        padding: 10px 14px;
+        background: var(--surface);
+        border-bottom: 1px solid var(--border);
+        font-size: 12px;
+      }
+      .network-panel-head small { color: var(--muted); }
+      .network-panel-head button { margin-left: auto; }
+      .network-pane .network-split.has-selection { grid-template-columns: minmax(0, 1fr); }
+      .network-pane .network-detail {
+        border-left: 0;
+        border-top: 1px solid var(--border);
+        max-height: 420px;
+      }
+      .network-pane .network-table-scroll { max-height: 42vh; }
+      .network-pane .network-search { flex-basis: 100%; }
+      .network-pane .network-filters select { flex: 1; min-width: 0; }
+      @media (max-width: 1100px) {
+        .workspace:has(.job:not([hidden]) .observation[data-network-open='true']) { margin-right: 0; }
+        .network-pane { width: min(520px, calc(100vw - 24px)); }
+      }
+      .observation-controls {
         display: flex;
         align-items: center;
         gap: 4px;
         padding: 0 14px;
         border-bottom: 1px solid var(--border);
       }
-      .observation-tab {
+      .observation-control {
         display: flex;
         align-items: center;
         gap: 7px;
@@ -1257,11 +1299,11 @@
         color: var(--muted);
         font-size: 12px;
       }
-      .observation-tab svg {
+      .observation-control svg {
         width: 15px;
         height: 15px;
       }
-      .observation-tab[aria-selected='true'] {
+      .observation-control[aria-expanded='true'] {
         color: var(--text);
         border-bottom-color: var(--text);
       }
@@ -2273,7 +2315,7 @@
       function networkView(id) {
         if (!networkViews.has(id))
           networkViews.set(id, {
-            pane: 'browser',
+            open: false,
             filter: 'errors',
             query: '',
             type: 'all',
@@ -2338,15 +2380,16 @@
       }
       function initObservation(host, id) {
         const uid = `observation-${id}`;
-        host.innerHTML = `<div class="observation-tabs" role="tablist" aria-label="Run diagnostics">
-          <button class="observation-tab" data-observation-tab="browser" role="tab" id="${uid}-browser-tab" aria-controls="${uid}-browser" aria-selected="true">${networkIcon('browser')}Browser</button>
-          <button class="observation-tab" data-observation-tab="network" role="tab" id="${uid}-network-tab" aria-controls="${uid}-network" aria-selected="false" tabindex="-1">${networkIcon('network')}Network <span class="network-badge" hidden></span></button>
+        host.innerHTML = `<div class="observation-controls">
+          <span class="observation-control">${networkIcon('browser')}Browser</span>
+          <button class="observation-control" data-network-toggle aria-controls="${uid}-network" aria-expanded="false">${networkIcon('network')}Network <span class="network-badge" hidden></span></button>
           <span class="capture-state"><span class="status-dot"></span><span class="capture-label">Waiting</span></span></div>
           <div class="observation-error" role="status" hidden></div>
-          <div class="browser-pane" id="${uid}-browser" role="tabpanel" aria-labelledby="${uid}-browser-tab">
+          <div class="browser-pane" id="${uid}-browser">
             <div class="observation-head"><span class="status-dot live-dot"></span><strong class="live-label">Browser</strong><small>Read only · 1s refresh</small></div><img class="live-frame" alt="Latest frame from the verification browser" hidden><div class="live-waiting"></div><div class="live-caption"></div>
           </div>
-          <div class="network-pane" id="${uid}-network" role="tabpanel" aria-labelledby="${uid}-network-tab" hidden>
+          <aside class="network-pane" id="${uid}-network" aria-labelledby="${uid}-network-title" hidden>
+            <header class="network-panel-head">${networkIcon('network')}<strong id="${uid}-network-title">Network</strong><small>${esc(jobs.find((j) => j.id === id)?.project ?? '')} ${esc(jobs.find((j) => j.id === id)?.caseId ?? '')}</small><button class="icon-btn" data-network-dismiss aria-label="Close network panel">${networkIcon('close')}</button></header>
             <div class="network-toolbar"><div class="network-segments" role="group" aria-label="Filter requests">
               <button data-network-filter="all" aria-pressed="false">All <span data-count="all"></span></button><button data-network-filter="errors" aria-pressed="true">Errors <span data-count="errors"></span></button><button data-network-filter="slow" aria-pressed="false" title="Requests taking one second or longer">Slow ≥1s</button></div>
               <div class="network-actions"><button class="network-action" data-network-pause aria-pressed="false" title="Freeze this request list. Capture continues.">${networkIcon('pause')}Pause feed</button><a class="network-action" href="/api/jobs/${id}/network?errorsOnly=0&limit=500&download=1" title="Download up to 500 retained requests as sanitized JSON">${networkIcon('download')}Export JSON</a></div></div>
@@ -2359,7 +2402,7 @@
                 <div class="network-detail-tabs" role="tablist" aria-label="Request details">${['overview', 'response', 'raw'].map((tab) => `<button role="tab" id="${uid}-${tab}-tab" aria-controls="${uid}-detail" data-network-detail-tab="${tab}" aria-selected="${tab === 'overview'}" tabindex="${tab === 'overview' ? 0 : -1}">${tab[0].toUpperCase() + tab.slice(1)}</button>`).join('')}</div>
                 <div class="network-detail-body" id="${uid}-detail" role="tabpanel"></div><div class="network-detail-foot"><button class="network-action" data-network-copy="details">${networkIcon('copy')}Copy details</button><button class="network-action" data-network-copy="url">Copy URL</button><span class="network-copy-feedback" role="status"></span></div></aside></div>
             <div class="network-footer"><span class="network-count"></span><button data-network-more hidden>Load more</button><button data-network-clear hidden>Clear filters</button></div>
-            <div class="network-note">${networkIcon('shield')}<span></span></div></div>`;
+            <div class="network-note">${networkIcon('shield')}<span></span></div></aside>`;
       }
       function renderNetwork(host, id, network) {
         const state = networkView(id),
@@ -2510,15 +2553,10 @@
             };
         host.hidden = terminal(job) && !browser && !network.capturedStages?.length;
         if (host.hidden) return;
-        if (!host.querySelector('.observation-tabs')) initObservation(host, id);
-        host.dataset.pane = state.pane;
-        for (const b of host.querySelectorAll('[data-observation-tab]')) {
-          const selected = b.dataset.observationTab === state.pane;
-          b.setAttribute('aria-selected', String(selected));
-          b.tabIndex = selected ? 0 : -1;
-        }
-        host.querySelector('.browser-pane').hidden = state.pane !== 'browser';
-        host.querySelector('.network-pane').hidden = state.pane !== 'network';
+        if (!host.querySelector('.observation-controls')) initObservation(host, id);
+        host.dataset.networkOpen = String(state.open);
+        host.querySelector('[data-network-toggle]').setAttribute('aria-expanded', String(state.open));
+        host.querySelector('.network-pane').hidden = !state.open;
         host.querySelector('.network-badge').hidden = !network.errorCount;
         host.querySelector('.network-badge').textContent = number(network.errorCount ?? 0);
         const live = browser?.status === 'active' && !terminal(job);
@@ -2575,7 +2613,7 @@
           const host = document.querySelector('.job:not([hidden]) .observation');
           if (host && activeJob === id) {
             host.hidden = false;
-            if (!host.querySelector('.observation-tabs')) initObservation(host, id);
+            if (!host.querySelector('.observation-controls')) initObservation(host, id);
             host.querySelector('.observation-error').hidden = false;
             host.querySelector('.observation-error').textContent = 'Diagnostics could not refresh. ' + error.message;
           }
@@ -2596,9 +2634,10 @@
         const id = host.closest('.job').dataset.job,
           state = networkView(id),
           button = e.target.closest('button');
-        if (button?.matches('[data-observation-tab]')) {
-          state.pane = button.dataset.observationTab;
+        if (button?.matches('[data-network-toggle], [data-network-dismiss]')) {
+          state.open = button.matches('[data-network-dismiss]') ? false : !state.open;
           redrawNetwork(id);
+          host.querySelector(state.open ? '[data-network-search]' : '[data-network-toggle]').focus({ preventScroll: true });
         } else if (button?.matches('[data-network-filter]')) {
           state.filter = button.dataset.networkFilter;
           state.frozen = null;
@@ -2711,6 +2750,9 @@
         } else if (e.key === 'Escape' && !host.querySelector('.network-detail').hidden) {
           e.preventDefault();
           host.querySelector('[data-network-close]').click();
+        } else if (e.key === 'Escape' && !host.querySelector('.network-pane').hidden) {
+          e.preventDefault();
+          host.querySelector('[data-network-dismiss]').click();
         }
       });
       function syncView() {

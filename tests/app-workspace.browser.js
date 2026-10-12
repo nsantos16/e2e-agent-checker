@@ -218,7 +218,17 @@
     w.hideJobFromList = false;
     await waitFor(() => !!$('.observation .live-frame'));
     assert($('.live-label').textContent === 'Last browser frame', 'Completed runs do not claim their last frame is live');
-    $('[data-observation-tab="network"]').click();
+    $('[data-network-toggle]').click();
+    const preview = $('.live-frame');
+    assert(!$('.browser-pane').hidden && !$('.network-pane').hidden && $('[data-network-toggle]').getAttribute('aria-expanded') === 'true',
+      'Network opens alongside the browser without hiding it');
+    const browserRect = $('.browser-pane').getBoundingClientRect();
+    const panelRect = $('.network-pane').getBoundingClientRect();
+    assert(panelRect.left >= browserRect.right && panelRect.right <= w.innerWidth, 'Desktop network panel docks beside the browser');
+    $('[data-network-dismiss]').click();
+    assert($('.network-pane').hidden && $('.live-frame') === preview && d.activeElement === $('[data-network-toggle]'),
+      'Closing the side panel preserves the browser and restores focus');
+    $('[data-network-toggle]').click();
     $('.network-request-name').click();
     assert(
       d.querySelectorAll('.network-request').length === 1 && $('.network-detail-body').textContent.includes('request-123'),
