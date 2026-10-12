@@ -2,7 +2,7 @@ You are turning a verified manual QA run into a deterministic Playwright test.
 
 ## Inputs
 
-- Qase case: `{{CASE_PATH}}`
+- Case snapshot: `{{CASE_PATH}}`
 - Verification report from the agent that executed the case in a real browser: `{{REPORT_PATH}}`
 - Every browser action it executed, in order, as Playwright code (including dead ends and retries): `{{ACTIONS_PATH}}`
 - Sanitized exploration network evidence: `{{NETWORK_PATH}}` (when a browser was opened).
@@ -32,7 +32,7 @@ test(
     await qaseStep(page, 1, '<short step title>', async () => {
       // action(s), then web-first assertion(s) of that step's expected_result
     });
-    // ...one qaseStep per Qase step, same positions
+    // ...one qaseStep per case step, same positions
   },
 );
 ```
@@ -40,7 +40,7 @@ test(
 Rules:
 
 1. The session is preloaded (`storageState`). Navigate with `await openPage(page, '/clients/5670')` (relative URL, `baseURL` is set) instead of `page.goto`: it waits for the app's loading spinner and reloads a stalled page. Never log in.
-2. **Assertions come from the Qase `expected_result`.** Where the report marks a step `inferred`, use its `check` and add `// inferred: <why>`. Don't add assertions the case doesn't ask for, and **never weaken or remove an assertion to make the test pass.**
+2. **Assertions come from the case `expected_result`.** Where the report marks a step `inferred`, use its `check` and add `// inferred: <why>`. Don't add assertions the case doesn't ask for, and **never weaken or remove an assertion to make the test pass.**
 3. Reconstruct the _successful_ path from the action log; drop dead ends. Locators, in order of preference: `getByTestId`, `getByRole`/`getByLabel`/`getByPlaceholder`, then `getByText`. Never use generated CSS classes (`sc-…`, `css-…`, `Nav-sc-…`) or `nth()` unless nothing else identifies the element.
 4. Use web-first assertions (`await expect(locator).toHaveText(...)`) and explicit waits for app state. Never use `waitForTimeout` except to let an auto-save debounce elapse, with a comment.
 5. Data: name anything you create `e2e-agent-${Date.now()}`, and clean it up in a `finally` (or the case's own deletion step). Never edit or delete data you didn't create. **Cleanup must never fail the test**: wrap it in `await cleanup(page, 'what', async () => { ... })` from `../../qase-step`, which logs failures as an annotation instead of throwing. Scope cleanup locators to the dialog or row you created (e.g. `page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true })`).

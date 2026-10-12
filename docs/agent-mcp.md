@@ -1,4 +1,4 @@
-# Agent MCP workflow (implemented, v0.4)
+# Agent MCP workflow (implemented, v0.5)
 
 One local stdio MCP server connects Claude Code, Codex and Cursor to the same job service used by the app. The caller and verification worker are independent. Credentials stay in the native provider; no credentials are accepted as tool arguments. The server starts the local app when needed.
 
@@ -52,6 +52,10 @@ A human can open `viewerUrl` to watch the browser inside the app and view the fi
 
 `replay_job` runs the saved spec without model calls, creating a new job on every call. `cancel_job` retains partial usage and evidence. `attach_to_pr` is the only publication tool and requires the user's explicit request plus `publish:true`.
 
+## Case authoring
+
+Use `create_case`, `get_case`, `update_case` and `delete_case` for native case management. Qase remains optional through `import_case` and explicit `sync_case`. See [case management](case-management.md) for schemas, revision conflicts, archive/restore, snapshots, sync boundaries and examples. Prefer `caseId` over the legacy `qaseCaseId` argument.
+
 ## Compact defaults
 
 | Tool | Default response / bound |
@@ -59,7 +63,8 @@ A human can open `viewerUrl` to watch the browser inside the app and view the fi
 | `get_setup` | Checks, fixes and provider readiness; no model catalogs |
 | `list_providers` / `list_models` | Readiness only / one provider's catalog |
 | `list_cases` / `list_worktrees` | Searchable pages of 10, maximum 50 |
-| `get_case` / `import_case` | One case / import acknowledgment |
+| `get_case` | One case including its revision and steps |
+| `create_case` / `update_case` / `delete_case` / `sync_case` / `import_case` | Compact mutation acknowledgment |
 | `verify_case` / `verify_cases` | Job IDs and viewer links; no blocking model call |
 | `get_job` / `list_jobs` | Status/outcome, timing/usage, up to 3 failure IDs; no logs/report bodies |
 | `wait_jobs` | One batch request per second inside the server; up to 240 IDs, changed summaries only when revisions supplied |
@@ -69,7 +74,7 @@ A human can open `viewerUrl` to watch the browser inside the app and view the fi
 | `cancel_job` / `replay_job` | Compact state / new job ID |
 | `attach_to_pr` | Publication acknowledgment |
 
-All 18 tools advertise schemas and read/write annotations. Initialization includes a short workflow; `checker://workflow` exposes the same guidance as an MCP resource. Successful tool calls include structured data and a JSON text fallback for clients that only consume text. Operational errors use `isError`, a code, a bounded message and a suggested next action. Standard schema errors are handled by the MCP SDK.
+All 22 tools advertise schemas and read/write annotations. Initialization includes a short workflow; `checker://workflow` exposes the same guidance as an MCP resource. Successful tool calls include structured data and a JSON text fallback for clients that only consume text. Operational errors use `isError`, a code, a bounded message and a suggested next action. Standard schema errors are handled by the MCP SDK.
 
 Network pagination is a newest-first offset over retained rows. During a live run, new rows may shift offsets; use returned row IDs for follow-up diagnosis. Logs are the last 80 retained entries, not a complete transcript. Artifacts are resolved by fixed IDs and canonical paths within the selected job's run directory; arbitrary filesystem reads are not exposed. Traces stay local and may contain application data.
 

@@ -29,6 +29,7 @@ function populate(dir: string) {
   mkdirSync(join(dir, 'explore'), { recursive: true });
   mkdirSync(join(dir, 'codify'), { recursive: true });
   writeFileSync(join(dir, 'codify/DEMO-6003.spec.ts'), 'spec contents');
+  atomicJson(join(dir, 'explore/case.json'), { project: 'LOCAL', id: 1, title: 'Original case snapshot' });
   atomicJson(join(dir, 'explore/report.json'), { verdict: 'fail', notes: 'report '.repeat(1000) });
   atomicJson(join(dir, 'explore/network.json'), {
     version: 1,
@@ -65,6 +66,7 @@ test('agent summaries stay small; evidence is paged and constrained to the job d
     assert.equal(compact.revision, jobSummary(job, 'http://localhost:4100').revision);
     assert.notEqual(compact.revision, jobSummary({ ...job, status: 'failed' }, 'http://localhost:4100').revision);
     assert.equal('log' in compact, false);
+    assert.match(readEvidence(job, '', { artifact: 'case' }).text!, /Original case snapshot/);
     const evidence = readEvidence(job, 'http://localhost:4100');
     assert.equal(evidence.failedSteps?.[0].position, 1);
     const first = readEvidence(job, '', { artifact: 'report', limit: 20 });
@@ -95,7 +97,13 @@ test('real local API and stdio MCP expose compact jobs, selected diagnostics, pa
   await new Promise<void>((r) => probe.listen(0, '127.0.0.1', r));
   const port = (probe.address() as any).port;
   await new Promise<void>((r) => probe.close(() => r()));
-  const env = { ...process.env, E2E_APP_PORT: String(port), E2E_APP_OPEN: '0', E2E_JOBS_PATH: jobs } as Record<string, string>;
+  const env = {
+    ...process.env,
+    E2E_APP_PORT: String(port),
+    E2E_APP_OPEN: '0',
+    E2E_JOBS_PATH: jobs,
+    E2E_CASES_PATH: join(dir, 'cases.json'),
+  } as Record<string, string>;
   const app = spawn(process.execPath, ['src/app/server.ts'], { env, stdio: 'ignore' });
   const closed = new Promise<void>((r) => app.once('exit', () => r()));
   const client = new Client({ name: 'real-api-test', version: '1' });
@@ -117,6 +125,46 @@ test('real local API and stdio MCP expose compact jobs, selected diagnostics, pa
       assert.ok(!response.isError, JSON.stringify(response.content));
       return (response.structuredContent as any).data;
     };
+    const created = await call('create_case', { title: 'Native case', idempotencyKey: 'native-1' });
+    assert.equal(created.project, 'LOCAL');
+    assert.equal(created.status, 'draft');
+    assert.equal(created.steps, 0, 'mutation acknowledgment does not echo full steps');
+    assert.equal((await call('create_case', { title: 'Native case', idempotencyKey: 'native-1' })).id, created.id);
+    const full = await call('get_case', { project: 'LOCAL', caseId: created.id });
+    assert.equal(full.source.kind, 'local');
+    const activated = await call('update_case', {
+      project: 'LOCAL',
+      caseId: full.id,
+      expectedRevision: full.revision,
+      changes: { status: 'active', tags: ['smoke'], steps: [{ action: 'Open page', expected_result: 'Heading visible' }] },
+    });
+    const stale = await client.callTool({
+      name: 'update_case',
+      arguments: { project: 'LOCAL', caseId: full.id, expectedRevision: full.revision, changes: { title: 'Stale edit' } },
+    });
+    assert.equal(stale.isError, true);
+    assert.match(JSON.stringify(stale.content), /REVISION_CONFLICT/);
+    assert.equal((await call('list_cases', { project: 'LOCAL', tag: 'smoke', status: 'active' })).total, 1);
+    const archived = await call('delete_case', { project: 'LOCAL', caseId: full.id, expectedRevision: activated.revision });
+    assert.equal((await call('list_cases', { project: 'LOCAL' })).total, 0);
+    assert.equal((await call('list_cases', { project: 'LOCAL', status: 'archived' })).total, 1);
+    assert.equal(
+      (await call('get_case', { project: 'LOCAL', qaseCaseId: full.id })).status,
+      'archived',
+      'legacy ID alias remains supported',
+    );
+    await call('update_case', { project: 'LOCAL', caseId: full.id, expectedRevision: archived.revision, changes: { status: 'active' } });
+    const ambiguous = await client.callTool({
+      name: 'get_case',
+      arguments: { project: 'LOCAL', caseId: full.id, qaseCaseId: full.id + 1 },
+    });
+    assert.equal(ambiguous.isError, true);
+    const crossOrigin = await fetch(base + '/api/cases/create', {
+      method: 'POST',
+      headers: { origin: 'https://example.test', 'content-type': 'application/json' },
+      body: JSON.stringify({ title: 'Forbidden' }),
+    });
+    assert.equal(crossOrigin.status, 403);
     const job = await call('get_job', { jobId: 'agent-test' });
     assert.equal(job.outcome, 'fail');
     assert.equal(job.log, undefined);

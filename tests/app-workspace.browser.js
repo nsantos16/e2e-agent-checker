@@ -100,6 +100,10 @@
         models: [],
       },
     ];
+    window.fixtureCases = [
+      { project: 'DEMO', id: 6003, title: 'Multiline note', steps: 3, suite: 'Notes' },
+      { project: 'DEMO', id: 6004, title: 'Note persistence', steps: 2, suite: 'Notes' },
+    ];
     window.fetch = async (path, options) => {
       if (options?.method === 'POST') {
         window.requests.push({ path, body: JSON.parse(options.body) });
@@ -118,22 +122,7 @@
         path === '/api/config'
           ? { roles: ['test-user'] }
           : path === '/api/cases'
-            ? [
-                {
-                  project: 'DEMO',
-                  id: 6003,
-                  title: 'Multiline note',
-                  steps: 3,
-                  suite: 'Notes',
-                },
-                {
-                  project: 'DEMO',
-                  id: 6004,
-                  title: 'Note persistence',
-                  steps: 2,
-                  suite: 'Notes',
-                },
-              ]
+            ? window.fixtureCases
             : path === '/api/worktrees'
               ? [
                   {
@@ -170,6 +159,20 @@
       $ = (selector) => d.querySelector(selector);
     await waitFor(() => $('#model-label').textContent === 'Model A');
     assert(!$('.topbar #providers') && !$('#settings-dialog').open, 'Connection setup is outside the main workspace');
+    w.fixtureCases.push({ project: 'LOCAL', id: 1, title: 'New draft', steps: 0, suite: 'Native', status: 'draft' });
+    await w.eval('refreshCases()');
+    assert(
+      $('[data-select="LOCAL-1"]').disabled && $('[data-run="LOCAL-1"]').disabled,
+      'MCP-created drafts appear with disabled run controls',
+    );
+    w.fixtureCases[2].status = 'active';
+    w.fixtureCases[2].steps = 1;
+    await w.eval('refreshCases()');
+    assert(!$('[data-select="LOCAL-1"]').disabled, 'Activated cases become runnable after catalog refresh');
+    $('[data-select="LOCAL-1"]').click();
+    w.fixtureCases.pop();
+    await w.eval('refreshCases()');
+    assert(!$('[data-select="LOCAL-1"]') && w.eval('selected.size') === 0, 'Archived cases disappear and leave the pending selection');
     $('[data-select="DEMO-6003"]').click();
     assert(!$('#run-selected').disabled && $('#case-summary').textContent.includes('1 case'), 'Case selection enables a run');
     $('#model-button').click();
@@ -220,14 +223,18 @@
     assert($('.live-label').textContent === 'Last browser frame', 'Completed runs do not claim their last frame is live');
     $('[data-network-toggle]').click();
     const preview = $('.live-frame');
-    assert(!$('.browser-pane').hidden && !$('.network-pane').hidden && $('[data-network-toggle]').getAttribute('aria-expanded') === 'true',
-      'Network opens alongside the browser without hiding it');
+    assert(
+      !$('.browser-pane').hidden && !$('.network-pane').hidden && $('[data-network-toggle]').getAttribute('aria-expanded') === 'true',
+      'Network opens alongside the browser without hiding it',
+    );
     const browserRect = $('.browser-pane').getBoundingClientRect();
     const panelRect = $('.network-pane').getBoundingClientRect();
     assert(panelRect.left >= browserRect.right && panelRect.right <= w.innerWidth, 'Desktop network panel docks beside the browser');
     $('[data-network-dismiss]').click();
-    assert($('.network-pane').hidden && $('.live-frame') === preview && d.activeElement === $('[data-network-toggle]'),
-      'Closing the side panel preserves the browser and restores focus');
+    assert(
+      $('.network-pane').hidden && $('.live-frame') === preview && d.activeElement === $('[data-network-toggle]'),
+      'Closing the side panel preserves the browser and restores focus',
+    );
     $('[data-network-toggle]').click();
     $('.network-request-name').click();
     assert(

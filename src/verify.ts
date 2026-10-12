@@ -1,3 +1,4 @@
+import type { TestCase } from './cases.ts';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -10,6 +11,7 @@ import type { RunMetrics } from './usage.ts';
 export type VerifyOptions = {
   project: string;
   caseId: number;
+  caseSnapshot?: TestCase;
   slot: string;
   role?: string;
   replaySlots?: string[];
@@ -51,6 +53,8 @@ export const verify = async (opts: VerifyOptions) => {
     copyFileSync(saved, spec.specPath);
     copyFileSync(saved, join(runDir, 'codify', spec.specFile));
     copyFileSync(reportPath, join(runDir, 'explore/report.json'));
+    const oldCase = join(opts.fromRun, 'explore/case.json');
+    if (existsSync(oldCase)) copyFileSync(oldCase, join(runDir, 'explore/case.json'));
     report = JSON.parse(readFileSync(reportPath, 'utf8'));
     summary.reusedFrom = opts.fromRun;
     summary.explore = { verdict: report.verdict, reused: true };
@@ -60,6 +64,7 @@ export const verify = async (opts: VerifyOptions) => {
     const explored = await explore({
       project: opts.project,
       caseId: opts.caseId,
+      caseSnapshot: opts.caseSnapshot,
       base: baseUrl(slot),
       role: opts.role ?? slot.role,
       slot: opts.slot,

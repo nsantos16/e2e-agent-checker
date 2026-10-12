@@ -14,6 +14,7 @@ export function jobSummary(job: Job, base: string) {
     id: job.id,
     project: job.project,
     caseId: job.caseId,
+    caseRevision: job.caseSnapshot?.revision,
     status: job.status,
     stage: job.stage,
     outcome: job.outcome,
@@ -61,10 +62,11 @@ export function jobSummary(job: Job, base: string) {
   };
 }
 
-export type ArtifactId = 'report' | 'spec' | 'comment' | 'video' | 'trace';
+export type ArtifactId = 'case' | 'report' | 'spec' | 'comment' | 'video' | 'trace';
 export function artifactPath(job: Job, id: ArtifactId): string | undefined {
   if (!job.runDir || !existsSync(job.runDir)) return;
   const candidates = {
+    case: join(job.runDir, 'explore/case.json'),
     report: join(job.runDir, 'explore/report.json'),
     spec: join(job.runDir, 'codify', `${job.project}-${job.caseId}.spec.ts`),
     comment: join(job.runDir, 'pr-comment.md'),
@@ -78,7 +80,7 @@ export function artifactPath(job: Job, id: ArtifactId): string | undefined {
   return canonical.startsWith(realpathSync(job.runDir) + '/') && statSync(canonical).isFile() ? canonical : undefined;
 }
 export function readEvidence(job: Job, base: string, options: { artifact?: string; offset?: number; limit?: number } = {}) {
-  const ids: ArtifactId[] = ['report', 'spec', 'comment', 'video', 'trace'];
+  const ids: ArtifactId[] = ['case', 'report', 'spec', 'comment', 'video', 'trace'];
   const artifacts = ids.flatMap((id) => {
     const path = artifactPath(job, id);
     return path
@@ -110,7 +112,7 @@ export function readEvidence(job: Job, base: string, options: { artifact?: strin
     };
   }
   const id = options.artifact;
-  if (!['logs', 'report', 'spec', 'comment'].includes(id))
+  if (!['logs', 'case', 'report', 'spec', 'comment'].includes(id))
     throw Object.assign(new Error('Use an artifact URL to read binary evidence'), { code: 'INVALID_INPUT' });
   const path = id === 'logs' ? undefined : artifactPath(job, id as ArtifactId);
   if (id !== 'logs' && !path)

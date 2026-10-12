@@ -60,9 +60,11 @@ export const codify = async (opts: {
   mkdirSync(specDir, { recursive: true });
   writeReplayEnv(opts.runDir, specDir, specFile, opts.base, opts.slot, opts.role);
 
+  const capturedCase = join(opts.runDir, 'explore/case.json');
+  const casePath = existsSync(capturedCase) ? capturedCase : join(root, 'fixtures/qase', `${opts.project}-${opts.caseId}.json`);
   const fill = (s: string) =>
     s
-      .replaceAll('{{CASE_PATH}}', join(root, 'fixtures/qase', `${opts.project}-${opts.caseId}.json`))
+      .replaceAll('{{CASE_PATH}}', casePath)
       .replaceAll('{{REPORT_PATH}}', join(opts.runDir, 'explore/report.json'))
       .replaceAll('{{NETWORK_PATH}}', join(opts.runDir, 'explore/network.json'))
       .replaceAll('{{ACTIONS_PATH}}', join(opts.runDir, 'explore/actions.js'))
@@ -85,7 +87,7 @@ export const codify = async (opts: {
       runDir: opts.runDir,
       maxAttempts: opts.maxAttempts,
       readFiles: [
-        join(root, 'fixtures/qase', `${opts.project}-${opts.caseId}.json`),
+        casePath,
         join(opts.runDir, 'explore/report.json'),
         join(opts.runDir, 'explore/actions.js'),
         join(opts.runDir, 'explore/network.json'),

@@ -81,8 +81,8 @@ export const runDoctor = async (): Promise<Check[]> => {
       fix: `op account add --address ${config.onePasswordAccount}`,
     },
     {
-      name: 'Qase API token',
-      required: true,
+      name: 'Qase API token (optional import/sync)',
+      required: false,
       ok: !!qaseToken(),
       detail: qaseToken() ? 'found' : 'missing',
       fix: `Create one at https://app.qase.io/user/api/token, then: security add-generic-password -s ${config.qase.keychainService} -a "$USER" -w`,

@@ -1,3 +1,4 @@
+import { assertRunnable, type TestCase } from './cases.ts';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -22,6 +23,7 @@ export type ExploreReport = {
 };
 
 export type ExploreOptions = {
+  caseSnapshot?: TestCase;
   project: string;
   caseId: number;
   base: string;
@@ -64,7 +66,10 @@ export const explore = async (opts: ExploreOptions) => {
   const dir = join(opts.runDir, 'explore');
   mkdirSync(join(dir, 'video'), { recursive: true });
 
-  const { testCase, related } = await loadCaseWithRelated(opts.project, opts.caseId);
+  const { testCase, related } = await loadCaseWithRelated(opts.project, opts.caseId, opts.caseSnapshot);
+  assertRunnable(testCase);
+
+  writeFileSync(join(dir, 'case.json'), JSON.stringify(testCase, null, 2));
 
   const observerPath = join(dir, 'observe-page.cjs');
   writeFileSync(

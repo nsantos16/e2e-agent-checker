@@ -1,11 +1,12 @@
 import { execFile, execFileSync } from 'node:child_process';
-import { createReadStream, existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { createReadStream, existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { extname, join, resolve } from 'node:path';
 import { config, frontendRepo, requireFrontendRepo } from '../config.ts';
 import { runDoctor } from '../doctor.ts';
 import { cancelJob, getJob, listJobs, replayJob, submitBatch } from '../jobs.ts';
-import { fixturePath, loadCaseWithRelated, type QaseCase } from '../qase.ts';
+import { fetchCases, loadCaseWithRelated } from '../qase.ts';
+import { caseCatalog, caseSummary, syncCaseSchema } from '../cases.ts';
 import { baseUrl, isHealthy, listSlots } from '../slots.ts';
 
 import { listProviders } from '../providers/index.ts';
@@ -19,21 +20,7 @@ const root = new URL('../..', import.meta.url).pathname;
 const PORT = config.app.port;
 const ROLES = Object.keys(JSON.parse(readFileSync(join(root, 'config/roles.json'), 'utf8')).roles);
 
-const fixturesDir = join(root, 'fixtures/qase');
-const listCases = () =>
-  readdirSync(fixturesDir)
-    .filter((f) => /^[A-Z0-9_]+-\d+\.json$/.test(f))
-    .map((f) => JSON.parse(readFileSync(join(fixturesDir, f), 'utf8')) as QaseCase)
-    .map((c) => ({
-      project: c.project,
-      id: c.id,
-      title: c.title,
-      suite: c.suite_path ?? '',
-      priority: c.priority,
-      steps: c.steps.length,
-      url: c.url,
-    }))
-    .sort((a, b) => a.suite.localeCompare(b.suite) || a.id - b.id);
+const listCases = (includeArchived = false) => caseCatalog.list(includeArchived).map(caseSummary);
 
 const listWorktrees = () => {
   const out = execFileSync('git', ['worktree', 'list', '--porcelain'], {
@@ -159,7 +146,8 @@ const server = createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/providers')
       return json(res, 200, await listProviders(url.searchParams.get('fresh') === '1'));
     if (req.method === 'GET' && url.pathname === '/api/doctor') return json(res, 200, await runDoctor());
-    if (req.method === 'GET' && url.pathname === '/api/cases') return json(res, 200, listCases());
+    if (req.method === 'GET' && url.pathname === '/api/cases')
+      return json(res, 200, listCases(url.searchParams.get('includeArchived') === '1'));
     if (req.method === 'POST' && url.pathname === '/api/cases') {
       const { project, id } = z
         .object({
@@ -170,6 +158,12 @@ const server = createServer(async (req, res) => {
           id: z.number().int().positive(),
         })
         .parse(await readBody(req));
+      try {
+        if (caseCatalog.get(project, id).source.kind !== 'qase')
+          throw Object.assign(new Error('This ID belongs to a local case'), { code: 'SOURCE_CONFLICT' });
+      } catch (e) {
+        if ((e as any).code !== 'NOT_FOUND') throw e;
+      }
       const { testCase, related } = await loadCaseWithRelated(project, Number(id));
       return json(res, 200, {
         id: testCase.id,
@@ -177,15 +171,21 @@ const server = createServer(async (req, res) => {
         related: related.length,
       });
     }
-    const caseMatch = url.pathname.match(/^\/api\/cases\/([A-Z0-9_]+)\/(\d+)$/);
-    if (req.method === 'GET' && caseMatch) {
-      const path = fixturePath(caseMatch[1], Number(caseMatch[2]));
-      if (!existsSync(path))
-        return json(res, 404, {
-          code: 'NOT_FOUND',
-          error: 'Case not imported. Use import_case first.',
-        });
-      return json(res, 200, JSON.parse(readFileSync(path, 'utf8')));
+    if (req.method === 'POST' && url.pathname === '/api/cases/create')
+      return json(res, 201, caseSummary(caseCatalog.create(await readBody(req))));
+    if (req.method === 'POST' && url.pathname === '/api/cases/sync') {
+      const input = syncCaseSchema.parse(await readBody(req));
+      const remote = (await fetchCases(input.project, [input.caseId]))[0];
+      return json(res, 200, caseSummary(caseCatalog.syncQase(remote, input.expectedRevision, input.overwriteLocal)));
+    }
+    const caseMatch = url.pathname.match(/^\/api\/cases\/([A-Z0-9_]+)\/(\d+)(?:\/(update|delete))?$/);
+    if (caseMatch) {
+      const [, project, id, action] = caseMatch;
+      if (req.method === 'GET' && !action) return json(res, 200, caseCatalog.get(project, Number(id)));
+      if (req.method === 'POST' && action === 'update')
+        return json(res, 200, caseSummary(caseCatalog.update(project, Number(id), await readBody(req))));
+      if (req.method === 'POST' && action === 'delete')
+        return json(res, 200, caseSummary(caseCatalog.archive(project, Number(id), await readBody(req))));
     }
     if (req.method === 'GET' && url.pathname === '/api/worktrees') {
       const slots = await Promise.all(
@@ -233,14 +233,16 @@ const server = createServer(async (req, res) => {
               ? jobSummary(j, `http://localhost:${PORT}`)
               : {
                   ...j,
-                  title: t.get(`${j.project}-${j.caseId}`),
+                  caseSnapshot: undefined,
+                  caseRevision: j.caseSnapshot?.revision,
+                  title: j.caseSnapshot?.title ?? t.get(`${j.project}-${j.caseId}`),
                   log: j.log.slice(-6),
                   canReplay: !!j.runDir && existsSync(join(j.runDir, 'codify', `${j.project}-${j.caseId}.spec.ts`)),
                 },
           ),
       );
     }
-    const artifactMatch = url.pathname.match(/^\/api\/jobs\/([\w-]+)\/artifacts\/(report|spec|comment|video|trace)$/);
+    const artifactMatch = url.pathname.match(/^\/api\/jobs\/([\w-]+)\/artifacts\/(case|report|spec|comment|video|trace)$/);
     if (req.method === 'GET' && artifactMatch) {
       const job = getJob(artifactMatch[1]);
       const path = job && artifactPath(job, artifactMatch[2] as ArtifactId);
@@ -334,6 +336,8 @@ const server = createServer(async (req, res) => {
           : undefined;
       return json(res, 200, {
         ...job,
+        caseSnapshot: undefined,
+        caseRevision: job.caseSnapshot?.revision,
         network: job.runDir ? readNetwork(job.runDir, { errorsOnly: true, limit: 10 }) : undefined,
         comment,
         spec: summary?.spec,
@@ -347,7 +351,7 @@ const server = createServer(async (req, res) => {
     json(res, 404, { error: 'not found' });
   } catch (error) {
     const e = error as Error & { code?: string };
-    json(res, error instanceof ZodError ? 400 : e.code ? 422 : 500, {
+    json(res, error instanceof ZodError ? 400 : e.code === 'NOT_FOUND' ? 404 : e.code?.endsWith('CONFLICT') ? 409 : e.code ? 422 : 500, {
       error: e.message,
       code: e.code ?? (error instanceof ZodError ? 'INVALID_INPUT' : 'INTERNAL_ERROR'),
     });

@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { join, resolve } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
 import { z } from 'zod';
+import { caseCatalog, assertRunnable, type TestCase } from './cases.ts';
 import { config } from './config.ts';
 import { ensureSlotForWorktree } from './slots.ts';
 import { verify } from './verify.ts';
@@ -14,6 +15,7 @@ export type Job = {
   id: string;
   project: string;
   caseId: number;
+  caseSnapshot?: TestCase;
   worktree: string;
   role: string;
   slot?: string;
@@ -142,6 +144,7 @@ async function execute(job: Job) {
     const summary = await verify({
       project: job.project,
       caseId: job.caseId,
+      caseSnapshot: job.caseSnapshot,
       slot: slot.slot,
       role: job.role,
       model: job.target?.model ?? config.model,
@@ -223,9 +226,6 @@ async function submitBatchLocked(input: unknown) {
   const worktree = resolve(b.worktree);
   if (!roles.includes(role)) throw new RunError('FIXTURE_UNAVAILABLE', 'Unknown test identity');
   if (!existsSync(join(worktree, 'package.json'))) throw new RunError('FIXTURE_UNAVAILABLE', 'Worktree has no package.json');
-  for (const c of b.cases)
-    if (!existsSync(join(root, 'fixtures/qase', `${c.project}-${c.id}.json`)))
-      throw new RunError('FIXTURE_UNAVAILABLE', `Import ${c.project}-${c.id} before running it`);
   const targets = b.targets ?? [{ provider: 'claude-code', model: config.model, authMode: 'subscription' }];
   const hash = createHash('sha256')
     .update(JSON.stringify({ ...b, worktree, role, targets, idempotencyKey: undefined }))
@@ -235,15 +235,21 @@ async function submitBatchLocked(input: unknown) {
     if (existing[0].requestHash !== hash) throw new RunError('IDEMPOTENCY_CONFLICT', 'Key already used with different inputs');
     return existing;
   }
+  const snapshots = b.cases.map((c) => {
+    const record = caseCatalog.get(c.project, c.id);
+    assertRunnable(record);
+    return record;
+  });
   for (const t of targets) await preflight(t);
   const batchId = randomUUID();
-  const created = b.cases.flatMap((c) =>
+  const created = b.cases.flatMap((c, index) =>
     targets.map(
       (target) =>
         ({
           id: `job-${randomUUID()}`,
           project: c.project,
           caseId: c.id,
+          caseSnapshot: snapshots[index],
           worktree,
           role,
           target,
@@ -289,6 +295,7 @@ export function replayJob(id: string) {
     id: `job-${randomUUID()}`,
     project: old.project,
     caseId: old.caseId,
+    caseSnapshot: old.caseSnapshot,
     worktree: old.worktree,
     role: old.role,
     target: old.target,

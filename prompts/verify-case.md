@@ -1,4 +1,4 @@
-You are verifying one manual QA test case from Qase against a running web app, using only the Playwright browser tools.
+You are verifying one QA test case against a running web app, using only the Playwright browser tools.
 
 ## Target
 
@@ -12,7 +12,7 @@ You are verifying one manual QA test case from Qase against a running web app, u
 {{CASE_JSON}}
 ```
 
-## Related Qase cases (linked from this case; they usually describe how to reach the page)
+## Related cases (linked from this case; they usually describe how to reach the page)
 {{RELATED_CASES}}
 
 ## App map

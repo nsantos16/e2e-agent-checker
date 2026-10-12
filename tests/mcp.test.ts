@@ -62,7 +62,7 @@ test('MCP schemas, structured responses, operational errors, and batch forwardin
   );
   try {
     const { tools } = await client.listTools();
-    assert.equal(tools.length, 18);
+    assert.equal(tools.length, 22);
     assert.ok(tools.every((t) => t.outputSchema));
     assert.equal(tools.find((t) => t.name === 'get_job')?.annotations?.readOnlyHint, true);
     assert.equal(tools.find((t) => t.name === 'verify_case')?.annotations?.readOnlyHint, false);
@@ -84,6 +84,15 @@ test('MCP schemas, structured responses, operational errors, and batch forwardin
     assert.deepEqual((batch.structuredContent as any).data.jobIds, ['one', 'two']);
     assert.equal(requests.at(-1).body.targets[0].authMode, 'subscription');
     assert.equal(requests.at(-1).body.idempotencyKey, 'retry');
+    const nativeRun = await client.callTool({
+      name: 'verify_case',
+      arguments: { project: 'LOCAL', caseId: 8, worktreePath: '/checkout', target: { provider: 'codex', model: 'model' } },
+    });
+    assert.equal(nativeRun.isError, undefined);
+    assert.deepEqual(requests.at(-1).body.cases, [{ project: 'LOCAL', id: 8 }]);
+    assert.equal(tools.find((t) => t.name === 'create_case')?.annotations?.readOnlyHint, false);
+    assert.equal(tools.find((t) => t.name === 'delete_case')?.annotations?.destructiveHint, true);
+    assert.equal(tools.find((t) => t.name === 'sync_case')?.annotations?.openWorldHint, true);
     const network = await client.callTool({ name: 'get_network', arguments: { jobId: 'one', stage: 'explore' } });
     assert.equal((network.structuredContent as any).data.requests[0].status, 503);
     assert.match(requests.at(-1).path, /errorsOnly=1/);

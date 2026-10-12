@@ -2123,7 +2123,7 @@
 
       function renderCases() {
         const q = $('#search').value.toLowerCase();
-        const visible = cases.filter((c) => !q || `${c.project}-${c.id} ${c.title} ${c.suite}`.toLowerCase().includes(q));
+        const visible = cases.filter((c) => !q || `${c.project}-${c.id} ${c.title} ${c.suite} ${(c.tags ?? []).join(' ')}`.toLowerCase().includes(q));
         let html = '',
           suite = null;
         for (const c of visible) {
@@ -2134,12 +2134,19 @@
           const key = `${c.project}-${c.id}`,
             j = latestJobFor(c),
             status = j?.outcome ?? j?.status ?? '';
-          html += `<div class="case ${selected.has(key) ? 'selected' : ''}" data-key="${key}"><input type="checkbox" aria-label="Select ${key}" ${selected.has(key) ? 'checked' : ''} data-select="${key}"><div class="case-copy"><span class="title" title="${esc(c.title)}">${esc(c.title)}</span><span class="meta"><span>${key}</span><span>·</span><span>${c.steps} steps</span>${j ? `<span class="status-dot ${esc(status)}" title="${esc(status)}"></span>` : ''}</span></div><button class="run" data-run="${key}" aria-label="Run ${key}" title="Run case"><svg viewBox="0 0 24 24"><path d="m9 6 9 6-9 6Z"/></svg></button></div>`;
+          html += `<div class="case ${selected.has(key) ? 'selected' : ''}" data-key="${key}"><input type="checkbox" aria-label="Select ${key}" ${selected.has(key) ? 'checked' : ''} data-select="${key}" ${c.status && c.status !== 'active' ? 'disabled' : ''}><div class="case-copy"><span class="title" title="${esc(c.title)}">${esc(c.title)}</span><span class="meta"><span>${key}</span><span>·</span><span>${c.steps} steps</span>${c.status === 'draft' ? '<span>· Draft</span>' : ''}${j ? `<span class="status-dot ${esc(status)}" title="${esc(status)}"></span>` : ''}</span></div><button class="run" data-run="${key}" aria-label="Run ${key}" title="${c.status === 'draft' ? 'Activate this draft through MCP to run it' : 'Run case'}" ${c.status && c.status !== 'active' ? 'disabled' : ''}><svg viewBox="0 0 24 24"><path d="m9 6 9 6-9 6Z"/></svg></button></div>`;
         }
-        markup($('#cases'), html || '<div class="empty">No matching cases.<br>Use + to import a case from Qase.</div>');
+        markup($('#cases'), html || '<div class="empty">No matching cases.<br>Create cases through MCP or use + to import from Qase.</div>');
         $('#case-count').textContent = cases.length;
         renderComposer();
         renderSelection();
+      }
+      async function refreshCases() {
+        const updated = await api('/api/cases');
+        if (JSON.stringify(updated) === JSON.stringify(cases)) return;
+        cases = updated;
+        for (const key of selected) if (!cases.some((c) => `${c.project}-${c.id}` === key && (!c.status || c.status === 'active'))) selected.delete(key);
+        renderCases();
       }
       function renderHistory() {
         const q = $('#search').value.toLowerCase();
@@ -3205,6 +3212,7 @@
           syncView();
         }
         setInterval(() => refreshJobs().catch(reportError), 2000);
+        setInterval(() => { if (!document.hidden) void refreshCases().catch(reportError); }, 5000);
         setInterval(() => {
           if (activeJob && !document.hidden) void refreshObservation();
         }, 1000);

@@ -7,7 +7,9 @@ import { tmpdir } from 'node:os';
 test('job recovery, atomic preflight, idempotency, queued cancellation and replay guard', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'e2e-jobs-')),
     oldPath = process.env.PATH,
-    oldJobs = process.env.E2E_JOBS_PATH;
+    oldJobs = process.env.E2E_JOBS_PATH,
+    oldCases = process.env.E2E_CASES_PATH;
+  process.env.E2E_CASES_PATH = join(dir, 'cases.json');
   process.env.E2E_JOBS_PATH = join(dir, 'jobs.json');
   process.env.PATH = dir + ':' + oldPath;
   writeFileSync(join(dir, 'package.json'), '{}');
@@ -58,6 +60,15 @@ test('job recovery, atomic preflight, idempotency, queued cancellation and repla
     };
     const batch = await submitBatch(input);
     assert.equal(batch.length, 2);
+    const { caseCatalog } = await import('../src/cases.ts');
+    const snapshot = batch[1].caseSnapshot!;
+    assert.equal(snapshot.id, 6003);
+    caseCatalog.update('DEMO', 6003, { expectedRevision: snapshot.revision, changes: { title: 'Edited after queueing' } });
+    assert.notEqual(batch[1].caseSnapshot!.title, 'Edited after queueing', 'queued job keeps submitted case revision');
+    const native = caseCatalog.create({ title: 'Native draft' });
+    await assert.rejects(submitBatch({ ...input, idempotencyKey: 'draft', cases: [{ project: native.project, id: native.id }] }), {
+      code: 'CASE_NOT_ACTIVE',
+    });
     assert.equal(batch[0].status, 'running');
     assert.equal(batch[1].status, 'queued');
     assert.equal(cancelJob(batch[1].id).status, 'cancelled');
@@ -73,6 +84,8 @@ test('job recovery, atomic preflight, idempotency, queued cancellation and repla
     assert.equal(getJob(batch[0].id)?.status, 'cancelled');
     assert.ok(getJob(batch[0].id)?.timing?.activeMs);
   } finally {
+    if (oldCases === undefined) delete process.env.E2E_CASES_PATH;
+    else process.env.E2E_CASES_PATH = oldCases;
     process.env.PATH = oldPath;
     if (oldJobs === undefined) delete process.env.E2E_JOBS_PATH;
     else process.env.E2E_JOBS_PATH = oldJobs;

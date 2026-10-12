@@ -2,7 +2,7 @@
 
 # e2e-agent-checker
 
-Proof of concept: an agent verifies **Qase test cases** against **any git worktree** of the Sample frontend, turns what it did into a **Playwright spec**, replays that spec deterministically with **video**, and hands back evidence a coding agent can attach to a PR. It runs in parallel across worktrees and is exposed over **MCP**.
+Proof of concept: an agent verifies **local or Qase test cases** against **any git worktree** of the Sample frontend, turns what it did into a **Playwright spec**, replays that spec deterministically with **video**, and hands back evidence a coding agent can attach to a PR. It runs in parallel across worktrees and is exposed over **MCP**.
 
 ```
 verify_case(worktree, DEMO-6003)
@@ -39,7 +39,7 @@ In the app: pick the **worktree** you want to test (every worktree of your `samp
 | `sample-frontend` checkout                | the app under test                               | found automatically in common locations, or set `frontendRepo` in `e2e-agent.local.json`               |
 | Codex CLI or Claude Code CLI, subscription login | runs on your existing subscription               | `codex login` or `claude auth login`; API-key mode is rejected                                         |
 | 1Password CLI + `example-team` account            | test-user credentials (never shown to the agent) | `brew install 1password-cli`, enable CLI integration in 1Password → Settings → Developer               |
-| Qase API token                                   | reads test cases                                 | create at app.qase.io/user/api/token → `security add-generic-password -s qase-api-token -a "$USER" -w` |
+| Qase API token                                   | optional Qase import/sync                                 | create at app.qase.io/user/api/token → `security add-generic-password -s qase-api-token -a "$USER" -w` |
 | ffmpeg                                           | MP4 packaging                                    | `brew install ffmpeg`                                                                                  |
 | gh ≥ 2.99 (optional)                             | publishing evidence to a PR                      | `brew install gh && gh auth login`                                                                     |
 
@@ -52,11 +52,12 @@ codex mcp add e2e-agent-checker -- node /Users/nico/.t3/projects/e2e-agent-check
 claude mcp add e2e-agent-checker --scope user -- node /Users/nico/.t3/projects/e2e-agent-checker/src/mcp-server.ts
 ```
 
-Use your checkout's absolute path. The [agent MCP guide](docs/agent-mcp.md) includes Cursor configuration, all 18 tools, exact inputs, compact defaults and compatibility changes.
+Use your checkout's absolute path. The [agent MCP guide](docs/agent-mcp.md) includes Cursor configuration, all 22 tools, exact inputs, compact defaults and compatibility changes.
 
 The normal agent workflow is **discover → verify → wait → inspect only relevant evidence**:
 
 - `get_setup`, searchable `list_cases` / `list_worktrees`, and `list_models` provide readiness and valid inputs. `import_case` / `get_case` make case setup available without the UI.
+- Native case CRUD, conflict-aware Qase refresh and run snapshots are available through MCP. See [case management and QA roadmap](docs/case-management.md).
 - `verify_case` / `verify_cases` return IDs and direct viewer links; stable idempotency keys prevent duplicate submissions.
 - `wait_jobs` waits for a batch in one call and returns only changed summaries when revisions are provided. `get_job` / `list_jobs` return compact status, outcomes, timing and usage.
 - `get_evidence` provides artifact links and bounded pages of logs, reports, specs or comments. `get_network` returns five failures by default; request individual sanitized bodies only when needed.
