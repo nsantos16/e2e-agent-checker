@@ -66,6 +66,12 @@ export const explore = async (opts: ExploreOptions) => {
 
   const { testCase, related } = await loadCaseWithRelated(opts.project, opts.caseId);
 
+  const observerPath = join(dir, 'observe-page.cjs');
+  writeFileSync(
+    observerPath,
+    `exports.default = ({ page }) => { require(${JSON.stringify(join(root, 'src/browser-observer.ts'))}).observeBrowser(page, ${JSON.stringify({ runDir: opts.runDir, artifactDir: dir, stage: 'explore' })}); };`,
+  );
+
   const mcpConfigPath = join(dir, 'playwright-mcp.config.json');
   writeFileSync(
     mcpConfigPath,
@@ -74,6 +80,7 @@ export const explore = async (opts: ExploreOptions) => {
         browser: {
           browserName: 'chromium',
           isolated: true,
+          initPage: [observerPath],
           launchOptions: { headless: !opts.headed },
           contextOptions: {
             storageState: state,
@@ -103,7 +110,7 @@ export const explore = async (opts: ExploreOptions) => {
     target: opts.target,
     signal: opts.signal,
     onMetrics: opts.onMetrics,
-    stageConfig: { browserConfig: mcpConfigPath, actionsPath: join(dir, 'actions.js') },
+    stageConfig: { browserConfig: mcpConfigPath, actionsPath: join(dir, 'actions.js'), runDir: opts.runDir },
     prompt,
     cwd: dir,
     model: opts.model,

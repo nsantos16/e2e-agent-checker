@@ -64,6 +64,7 @@ export const codify = async (opts: {
     s
       .replaceAll('{{CASE_PATH}}', join(root, 'fixtures/qase', `${opts.project}-${opts.caseId}.json`))
       .replaceAll('{{REPORT_PATH}}', join(opts.runDir, 'explore/report.json'))
+      .replaceAll('{{NETWORK_PATH}}', join(opts.runDir, 'explore/network.json'))
       .replaceAll('{{ACTIONS_PATH}}', join(opts.runDir, 'explore/actions.js'))
       .replaceAll('{{APP_CONTEXT_PATH}}', join(root, 'context/sample-app.md'))
       .replaceAll('{{HELPER_PATH}}', join(root, 'e2e/qase-step.ts'))
@@ -87,6 +88,7 @@ export const codify = async (opts: {
         join(root, 'fixtures/qase', `${opts.project}-${opts.caseId}.json`),
         join(opts.runDir, 'explore/report.json'),
         join(opts.runDir, 'explore/actions.js'),
+        join(opts.runDir, 'explore/network.json'),
         join(root, 'context/sample-app.md'),
         join(root, 'e2e/qase-step.ts'),
       ],

@@ -17,6 +17,8 @@ Design and decisions: [docs/architecture-proposals.md](docs/architecture-proposa
 
 Design baseline: [run metrics and selectable runtimes](docs/next-milestone.md), [subscription authentication research](docs/research/multi-provider-auth.md), and the [MCP contract](docs/mcp-contract.md).
 
+Live browser and request diagnostics: [docs/browser-observability.md](docs/browser-observability.md).
+
 Implementation status and verified limitations: [docs/runtime-milestone.md](docs/runtime-milestone.md).
 
 ## Quick start (any dev)
@@ -27,7 +29,7 @@ npm run setup        # installs deps + browsers, then runs the readiness check
 npm run app          # opens http://localhost:4100
 ```
 
-In the app: pick the **worktree** you want to test (every worktree of your `sample-frontend` checkout is listed, e.g. the one an agent just implemented a ticket in), select one or more **provider models**, then click **Run ▶** or select several cases. Every case × model gets its own run. Runs show queue/stage timing, input/output/cache tokens, reported cost when available, per-step verdicts, and replay video. Cancel active runs or replay a saved spec without new model calls. Runs sharing a test identity are serialized. Use **+** beside the Cases/Runs tabs to import a Qase case. Subscription login and readiness live in **Connections** in the sidebar; model selection lives in the bottom composer.
+In the app: pick the **worktree** you want to test (every worktree of your `sample-frontend` checkout is listed, e.g. the one an agent just implemented a ticket in), select one or more **provider models**, then click **Run ▶** or select several cases. Every case × model gets its own run. Open a running job to watch its live browser preview and inspect captured network requests. The agent receives failure summaries and can query detailed diagnostics. Runs show queue/stage timing, input/output/cache tokens, reported cost when available, per-step verdicts, and replay video. Cancel active runs or replay a saved spec without new model calls. Runs sharing a test identity are serialized. Use **+** beside the Cases/Runs tabs to import a Qase case. Subscription login and readiness live in **Connections** in the sidebar; model selection lives in the bottom composer.
 
 `npm run doctor` tells you exactly what's missing. You need:
 
@@ -49,15 +51,16 @@ Per-dev overrides go in `e2e-agent.local.json` (gitignored), e.g. `{ "frontendRe
 claude mcp add e2e-agent-checker --scope user -- node /Users/nico/.t3/projects/e2e-agent-checker/src/mcp-server.ts
 ```
 
-| Tool                                         | What it does                                                        |
-| -------------------------------------------- | ------------------------------------------------------------------- |
-| `list_providers` / `list_models`             | Native auth status, model catalog, capability limitations           |
-| `list_cases` / `list_worktrees`              | Discover imported cases and available worktrees                     |
-| `verify_case` / `verify_cases`               | Start one case or a case × target batch; optional idempotency key   |
-| `get_job` / `list_jobs`                      | Structured status, timing, tokens, costs, evidence and bounded logs |
-| `cancel_job`                                 | Cancel queued/running work and retain partial usage                 |
-| `replay_job`                                 | Replay a saved spec with no new model calls                         |
-| `attach_to_pr({ jobId, pr, publish: true })` | Explicitly publish evidence to a full GitHub PR URL                 |
+| Tool                                         | What it does                                                                        |
+| -------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `list_providers` / `list_models`             | Native auth status, model catalog, capability limitations                           |
+| `list_cases` / `list_worktrees`              | Discover imported cases and available worktrees                                     |
+| `verify_case` / `verify_cases`               | Start one case or a case × target batch; optional idempotency key                   |
+| `get_network`                                | Captured HTTP/transport failures, timing, request IDs and sanitized error responses |
+| `get_job` / `list_jobs`                      | Structured status, timing, tokens, costs, evidence and bounded logs                 |
+| `cancel_job`                                 | Cancel queued/running work and retain partial usage                                 |
+| `replay_job`                                 | Replay a saved spec with no new model calls                                         |
+| `attach_to_pr({ jobId, pr, publish: true })` | Explicitly publish evidence to a full GitHub PR URL                                 |
 
 The same stdio server can be configured in any MCP client. Caller and worker are independent: Cursor can start a Codex verification through this MCP. Cursor as a worker is currently gated because its native ACP runtime cannot be configured with verified tool isolation.
 

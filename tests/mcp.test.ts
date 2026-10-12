@@ -18,6 +18,17 @@ test('MCP schemas, structured responses, operational errors, and batch forwardin
           { id: 'codex', name: 'Codex', installed: true, auth: 'subscription', ready: true, models: [{ id: 'model', name: 'Model' }] },
         ]),
       );
+    if (req.url?.startsWith('/api/jobs/one/network?'))
+      return res.end(
+        JSON.stringify({
+          total: 1,
+          errorCount: 1,
+          dropped: 0,
+          matching: 1,
+          capturedStages: ['explore'],
+          requests: [{ id: 'request-1', method: 'GET', url: 'https://example.test/failure', status: 503, requestId: 'req-1' }],
+        }),
+      );
     if (req.url === '/api/jobs' && req.method === 'POST') return res.end('["one","two"]');
     res.statusCode = 404;
     res.end(JSON.stringify({ code: 'NOT_FOUND', error: 'unknown job' }));
@@ -35,7 +46,7 @@ test('MCP schemas, structured responses, operational errors, and batch forwardin
   );
   try {
     const { tools } = await client.listTools();
-    assert.equal(tools.length, 11);
+    assert.equal(tools.length, 12);
     assert.ok(tools.every((t) => t.outputSchema));
     const result = await client.callTool({ name: 'list_providers', arguments: {} });
     assert.equal((result.structuredContent as any).data.providers[0].auth, 'subscription');
@@ -54,6 +65,10 @@ test('MCP schemas, structured responses, operational errors, and batch forwardin
     assert.deepEqual((batch.structuredContent as any).data.jobIds, ['one', 'two']);
     assert.equal(requests.at(-1).body.targets[0].authMode, 'subscription');
     assert.equal(requests.at(-1).body.idempotencyKey, 'retry');
+    const network = await client.callTool({ name: 'get_network', arguments: { jobId: 'one', stage: 'explore' } });
+    assert.equal((network.structuredContent as any).data.requests[0].status, 503);
+    assert.match(requests.at(-1).path, /errorsOnly=1/);
+    assert.match(requests.at(-1).path, /stage=explore/);
     const publish = await client.callTool({
       name: 'attach_to_pr',
       arguments: { jobId: 'one', pr: 'https://github.com/example/repo/pull/1' },

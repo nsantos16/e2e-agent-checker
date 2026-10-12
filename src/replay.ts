@@ -71,6 +71,7 @@ export const replay = async (opts: {
     cwd: join(root, 'e2e'),
     env: {
       ...process.env,
+      E2E_OBSERVATION_RUN_DIR: opts.runDir,
       E2E_SPEC_DIR: opts.specDir,
       E2E_OUTPUT_DIR: outDir,
       E2E_BASE_URL: opts.base,

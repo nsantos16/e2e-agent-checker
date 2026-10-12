@@ -1,28 +1,65 @@
 import { test, type Page } from '@playwright/test';
+import { join, basename } from 'node:path';
+import { observeBrowser } from '../src/browser-observer.ts';
+import { atomicJson } from '../src/network.ts';
+
+// The shared helper is imported by generated specs, including previously saved replays.
+const observers = new WeakMap<Page, ReturnType<typeof observeBrowser>>();
+if (process.env.E2E_OBSERVATION_RUN_DIR) {
+  test.beforeEach(async ({ page }) => {
+    const artifactDir = process.env.E2E_OUTPUT_DIR!;
+    observers.set(
+      page,
+      observeBrowser(page, {
+        runDir: process.env.E2E_OBSERVATION_RUN_DIR!,
+        artifactDir,
+        stage: artifactDir.includes('/codify/attempts/') ? `codify/${basename(artifactDir)}` : basename(artifactDir),
+      }),
+    );
+  });
+  test.afterEach(async ({ page }) => {
+    await observers.get(page)?.close();
+  });
+}
 
 // Wraps one Qase step: shows a caption in the page (so the replay video explains itself) and groups the report.
 
 const showCaption = (page: Page, text: string) =>
-  process.env.E2E_CAPTIONS === '0' ? Promise.resolve() :
-  page
-    .evaluate((caption) => {
-      const id = 'e2e-agent-caption';
-      document.getElementById(id)?.remove();
-      const el = document.createElement('div');
-      el.id = id;
-      el.textContent = caption;
-      el.setAttribute('aria-hidden', 'true');
-      Object.assign(el.style, {
-        position: 'fixed', left: '50%', bottom: '16px', transform: 'translateX(-50%)', zIndex: '2147483647',
-        maxWidth: '80%', padding: '8px 14px', borderRadius: '8px', pointerEvents: 'none',
-        background: 'rgba(17, 24, 39, 0.88)', color: '#fff', font: '600 14px/1.4 system-ui, sans-serif',
-      });
-      document.body.appendChild(el);
-    }, text)
-    .catch(() => {});
+  process.env.E2E_CAPTIONS === '0'
+    ? Promise.resolve()
+    : page
+        .evaluate((caption) => {
+          const id = 'e2e-agent-caption';
+          document.getElementById(id)?.remove();
+          const el = document.createElement('div');
+          el.id = id;
+          el.textContent = caption;
+          el.setAttribute('aria-hidden', 'true');
+          Object.assign(el.style, {
+            position: 'fixed',
+            left: '50%',
+            bottom: '16px',
+            transform: 'translateX(-50%)',
+            zIndex: '2147483647',
+            maxWidth: '80%',
+            padding: '8px 14px',
+            borderRadius: '8px',
+            pointerEvents: 'none',
+            background: 'rgba(17, 24, 39, 0.88)',
+            color: '#fff',
+            font: '600 14px/1.4 system-ui, sans-serif',
+          });
+          document.body.appendChild(el);
+        }, text)
+        .catch(() => {});
 
 export const qaseStep = async <T>(page: Page, position: number, title: string, body: () => Promise<T>): Promise<T> =>
   test.step(`Step ${position}: ${title}`, async () => {
+    if (process.env.E2E_OBSERVATION_RUN_DIR)
+      atomicJson(join(process.env.E2E_OBSERVATION_RUN_DIR, 'live/action.json'), {
+        name: `Step ${position}: ${title}`,
+        at: new Date().toISOString(),
+      });
     await showCaption(page, `Step ${position}: ${title}`);
     // Re-show after navigations so the caption survives page loads during the step.
     const reshow = () => void showCaption(page, `Step ${position}: ${title}`);
@@ -57,7 +94,10 @@ export const openPage = async (page: Page, url: string, home = '/client-list') =
   // The spinner may not have mounted yet right after navigation, so wait for the network to go quiet first.
   const settled = async () => {
     await page.waitForLoadState('networkidle', { timeout: 30_000 }).catch(() => {});
-    return spinner.waitFor({ state: 'hidden', timeout: 25_000 }).then(() => true, () => false);
+    return spinner.waitFor({ state: 'hidden', timeout: 25_000 }).then(
+      () => true,
+      () => false,
+    );
   };
   if (!warmed.has(page)) {
     await page.goto(home);

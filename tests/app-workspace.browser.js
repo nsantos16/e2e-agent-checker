@@ -32,6 +32,45 @@
       finishedAt: '2026-01-01T00:01:00Z',
       steps: [],
     };
+    window.fixtureJob = job;
+    window.fixtureObservation = {
+      browser: {
+        status: 'active',
+        stage: 'explore',
+        updatedAt: new Date().toISOString(),
+        frameAt: '2026-01-01T00:00:01Z',
+        pageUrl: 'https://example.test/app',
+      },
+      network: {
+        total: 2,
+        errorCount: 1,
+        dropped: 0,
+        matching: 2,
+        capturedStages: ['explore'],
+        requests: [
+          {
+            id: 'error-1',
+            stage: 'explore',
+            at: '2026-01-01T00:00:01Z',
+            method: 'GET',
+            url: 'https://example.test/api',
+            status: 503,
+            durationMs: 125,
+            requestId: 'request-123',
+            errorBody: { message: '<img src=x onerror=alert(1)>' },
+          },
+          {
+            id: 'success-1',
+            stage: 'explore',
+            at: '2026-01-01T00:00:00Z',
+            method: 'GET',
+            url: 'https://example.test/ok',
+            status: 200,
+            durationMs: 10,
+          },
+        ],
+      },
+    };
     const providers = [
       {
         id: 'codex',
@@ -58,6 +97,11 @@
       if (options?.method === 'POST') {
         window.requests.push({ path, body: JSON.parse(options.body) });
         return Response.json([job.id]);
+      }
+      if (path.startsWith('/api/jobs/' + job.id + '/observation')) {
+        const data = structuredClone(window.fixtureObservation);
+        if (!path.includes('errorsOnly=0')) data.network.requests = data.network.requests.filter((r) => r.status >= 400);
+        return Response.json(data);
       }
       const data =
         path === '/api/config'
@@ -130,6 +174,34 @@
     const video = $('#jobs video');
     await w.eval('refreshJobs()');
     assert(video && $('#jobs video') === video, 'Focused evidence survives polling');
+    await waitFor(() => !!$('.observation .live-frame'));
+    assert($('.live-label').textContent === 'Last browser frame', 'Completed runs do not claim their last frame is live');
+    assert(
+      d.querySelectorAll('.network-request').length === 1 && $('.network-request pre').textContent.includes('request-123'),
+      'Network errors show request IDs and diagnostic detail',
+    );
+    assert(
+      !$('.network-request pre img') && $('.network-request pre').textContent.includes('<img'),
+      'Untrusted network responses render as text',
+    );
+    $('[data-network-errors]').click();
+    await waitFor(() => d.querySelectorAll('.network-request').length === 2);
+    assert(d.querySelectorAll('.network-request').length === 2, 'All requests toggle includes successful requests');
+    $('.network-request').open = true;
+    const liveFrame = $('.live-frame');
+    w.fixtureJob.status = 'running';
+    w.fixtureObservation.browser.frameAt = '2026-01-01T00:00:02Z';
+    await w.eval('refreshJobs()');
+    await w.eval('refreshObservation()');
+    assert(
+      $('.live-label').textContent === 'Live browser' && $('.live-frame') === liveFrame,
+      'Live frames update without replacing the preview element',
+    );
+    assert(liveFrame.src.includes('00%3A00%3A02') && $('.network-request').open, 'Frame refresh preserves expanded request detail');
+    assert($('#jobs video') === video, 'Live diagnostics updates preserve replay player identity');
+    w.fixtureObservation.browser.status = 'closed';
+    await w.eval('refreshObservation()');
+    assert($('.live-label').textContent === 'Last browser frame', 'Closed sessions stop displaying the live indicator');
     $('#new-run').click();
     assert(
       !$('#welcome').hidden && $('#clear-selection').hidden && !$('#case-panel').hidden,

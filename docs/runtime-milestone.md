@@ -2,6 +2,8 @@
 
 Implemented and checked on 2026-10-12. This document describes the shipped scope; [next-milestone.md](next-milestone.md) and [mcp-contract.md](mcp-contract.md) retain the broader design baseline.
 
+Live browser/network capture is described in [browser-observability.md](browser-observability.md).
+
 ## Workspace
 
 Cases and run history live in a compact sidebar. Selecting a run opens its timing, usage, evidence and recording in the main workspace. The bottom composer contains a searchable multi-model picker, worktree selector, run options and submit button. Each selected case × model becomes a separate job. Subscription status and login instructions live in **Connections**, accessed from the sidebar footer. Dark/light preferences and target/worktree selection persist locally. Narrow screens use a collapsible sidebar and a two-row composer.
@@ -35,22 +37,22 @@ Generated Playwright code executes locally. Scoped tools limit what the model ca
 
 ## Actual MCP surface
 
-All 11 tools advertise input/output schemas and return `structuredContent.data`; operational errors use `isError`.
+All 12 tools advertise input/output schemas and return `structuredContent.data`; operational errors use `isError`.
 
-| Tools                           | Current behavior                                                                                                 |
-| ------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `list_providers`, `list_models` | Native readiness/auth mode, login instructions and available model IDs                                           |
-| `list_cases`, `list_worktrees`  | Imported cases and discovered frontend worktrees                                                                 |
-| `verify_case`, `verify_cases`   | Background job ID(s), explicit subscription targets, limits and optional idempotency key                         |
-| `get_job`, `list_jobs`          | Bounded logs, usage/timing and evidence; job listing supports status/provider/batch filters and an offset cursor |
-| `cancel_job`, `replay_job`      | Idempotent cancellation; new replay job on the original worktree                                                 |
-| `attach_to_pr`                  | Requires a full GitHub PR URL and `publish: true`; checks a job marker before posting                            |
+| Tools                                 | Current behavior                                                                                                 |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `list_providers`, `list_models`       | Native readiness/auth mode, login instructions and available model IDs                                           |
+| `list_cases`, `list_worktrees`        | Imported cases and discovered frontend worktrees                                                                 |
+| `verify_case`, `verify_cases`         | Background job ID(s), explicit subscription targets, limits and optional idempotency key                         |
+| `get_job`, `list_jobs`, `get_network` | Bounded logs, usage/timing and evidence; job listing supports status/provider/batch filters and an offset cursor |
+| `cancel_job`, `replay_job`            | Idempotent cancellation; new replay job on the original worktree                                                 |
+| `attach_to_pr`                        | Requires a full GitHub PR URL and `publish: true`; checks a job marker before posting                            |
 
 The marker prevents ordinary sequential duplicate publication; it is not a distributed lock across concurrent MCP processes. Publishing was not exercised against a real PR in this milestone.
 
 ## Verification evidence
 
-`npm test`: 9 passing tests for token normalization, partial usage/cancellation, timeouts, scoped tool paths, real stabilization exit codes, attempts limits, job recovery/idempotency and MCP contracts. `npm run check`: passing. Browser checks: 12 playback assertions and 16 workspace assertions, using the actual HTML with isolated API fixtures. Desktop dark and mobile light layouts were inspected through the T3 browser recording tool; the snapshot tool failed in this session. A real saved recording advanced from 10.66s to 17.16s across polling while retaining the same player node.
+`npm test`: 11 passing tests for token normalization, partial usage/cancellation, timeouts, scoped tool paths, real stabilization exit codes, attempts limits, job recovery/idempotency MCP contracts and network diagnostics. `npm run check`: passing. Browser checks: 12 playback assertions and 24 workspace assertions, using the actual HTML with isolated API fixtures. Desktop dark and mobile light layouts were inspected through the T3 browser recording tool; the snapshot tool failed in this session. A real saved recording advanced from 10.66s to 17.16s across polling while retaining the same player node.
 
 Live Codex runs used `gpt-6.1-sol` and a disposable local multiline-note page. They consumed the existing ChatGPT allowance. IDs below are local `runs/` directories, intentionally excluded from Git.
 

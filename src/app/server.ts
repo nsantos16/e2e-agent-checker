@@ -10,6 +10,7 @@ import { baseUrl, isHealthy, listSlots } from '../slots.ts';
 
 import { listProviders } from '../providers/index.ts';
 import { ZodError } from 'zod';
+import { liveFrame, readNetwork, readObservation } from '../observations.ts';
 
 // Local app: list Qase cases, pick a worktree, run cases in parallel with agents, watch progress and replay videos.
 
@@ -172,6 +173,38 @@ const server = createServer(async (req, res) => {
           })),
       );
     }
+    const observationMatch = url.pathname.match(/^\/api\/jobs\/([\w-]+)\/(observation|frame|network)$/);
+    if (req.method === 'GET' && observationMatch) {
+      const job = getJob(observationMatch[1]);
+      if (!job) return json(res, 404, { error: 'unknown job', code: 'NOT_FOUND' });
+      res.setHeader('cache-control', 'no-store');
+      if (observationMatch[2] === 'observation')
+        return json(
+          res,
+          200,
+          readObservation(job.runDir, ['running', 'cancelling'].includes(job.status), url.searchParams.get('errorsOnly') !== '0'),
+        );
+      if (observationMatch[2] === 'network') {
+        if (url.searchParams.get('download') === '1') res.setHeader('content-disposition', `attachment; filename="${job.id}-network.json"`);
+        return json(
+          res,
+          200,
+          job.runDir
+            ? readNetwork(job.runDir, {
+                errorsOnly: url.searchParams.get('errorsOnly') !== '0',
+                limit: Number(url.searchParams.get('limit')) || 50,
+                stage: url.searchParams.get('stage') ?? undefined,
+              })
+            : { requests: [], capturedStages: [], total: 0, errorCount: 0, dropped: 0, matching: 0 },
+        );
+      }
+      const path = job.runDir && liveFrame(job.runDir);
+      if (!path) return json(res, 404, { error: 'No browser frame yet', code: 'FRAME_UNAVAILABLE' });
+      res.writeHead(200, { 'content-type': 'image/jpeg' });
+      return createReadStream(path)
+        .on('error', () => res.destroy())
+        .pipe(res);
+    }
     const actionMatch = url.pathname.match(/^\/api\/jobs\/([\w-]+)\/(cancel|replay)$/);
     if (req.method === 'POST' && actionMatch)
       return json(res, 200, actionMatch[2] === 'cancel' ? cancelJob(actionMatch[1]) : replayJob(actionMatch[1]));
@@ -186,6 +219,7 @@ const server = createServer(async (req, res) => {
           : undefined;
       return json(res, 200, {
         ...job,
+        network: job.runDir ? readNetwork(job.runDir, { errorsOnly: true, limit: 10 }) : undefined,
         comment,
         spec: summary?.spec,
         notes:

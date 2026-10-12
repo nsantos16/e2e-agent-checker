@@ -1230,6 +1230,122 @@
           scroll-behavior: auto !important;
         }
       }
+      .observation {
+        margin: 22px 0;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        overflow: hidden;
+      }
+      .observation-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 11px 14px;
+        border-bottom: 1px solid var(--line);
+        font-size: 11px;
+      }
+      .observation-head strong {
+        font-weight: 500;
+      }
+      .observation-head small {
+        color: var(--subtle);
+        margin-left: auto;
+      }
+      .live-frame {
+        display: block;
+        width: 100%;
+        max-height: 430px;
+        object-fit: contain;
+        background: #000;
+      }
+      .live-caption {
+        padding: 8px 14px;
+        color: var(--subtle);
+        font-size: 10px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .network-toolbar {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        padding: 12px 14px;
+        font-size: 11px;
+        border-top: 1px solid var(--line);
+      }
+      .network-toolbar strong {
+        font-weight: 500;
+      }
+      .network-toolbar label {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        margin-left: auto;
+        color: var(--muted);
+        font-size: 10px;
+      }
+      .network-toolbar a {
+        font-size: 10px;
+      }
+      .network-list {
+        max-height: 310px;
+        overflow: auto;
+        padding: 0 10px 10px;
+      }
+      .network-request {
+        border-top: 1px solid var(--line);
+        font-size: 11px;
+      }
+      .network-request summary {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 9px 3px;
+        cursor: pointer;
+        list-style: none;
+      }
+      .network-request summary .request-url {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: var(--muted);
+      }
+      .network-status {
+        font-variant-numeric: tabular-nums;
+        width: 38px;
+        color: var(--green);
+        flex-shrink: 0;
+      }
+      .network-status.error {
+        color: var(--red);
+        margin: 0;
+        font-size: 11px;
+      }
+      .network-request pre {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font:
+          10px/1.7 ui-monospace,
+          monospace;
+        color: var(--muted);
+        background: var(--bg);
+        padding: 10px;
+        border-radius: 7px;
+        margin: 0 0 10px;
+      }
+      .network-note {
+        color: var(--subtle);
+        font-size: 10px;
+        line-height: 1.6;
+        padding: 0 14px 12px;
+      }
+      .live-waiting {
+        padding: 22px 14px;
+        color: var(--subtle);
+        font-size: 12px;
+      }
     </style>
   </head>
   <body>
@@ -1570,6 +1686,7 @@
     ${steps ? `<div class="steps">${steps}</div>` : ''}${j.error ? `<div class="error">${esc(j.error)}</div>` : ''}
     <div class="job-actions">${!terminal(j) ? `<button data-cancel="${j.id}" ${j.status === 'cancelling' ? 'disabled' : ''}>${j.status === 'cancelling' ? 'Cancelling…' : 'Cancel run'}</button>` : j.canReplay ? `<button data-replay="${j.id}"><svg viewBox="0 0 24 24"><path d="M4 10a8 8 0 1 1 1 8M4 4v6h6"/></svg>Replay saved spec</button>` : ''}${terminal(j) ? `<button data-rerun="${j.id}">Run again</button>` : ''}</div>
     </div>
+    <section class="observation" aria-label="Browser and network evidence" hidden></section>
     ${
       open && d
         ? `<div class="detail">${d.video ? `<video src="${fileUrl(d.video)}" controls preload="metadata"></video>` : ''}<div class="detail-content">
@@ -1640,9 +1757,92 @@
         $('#running-count').textContent = running || queued ? `${running} running · ${queued} queued` : '';
       }
 
+      const observationCache = new Map(),
+        networkFilters = new Map();
+      let observationRequest = null;
+      function renderObservation(id, data) {
+        const job = jobs.find((j) => j.id === id),
+          card = [...document.querySelectorAll('.job')].find((el) => el.dataset.job === id),
+          host = card?.querySelector('.observation');
+        if (!host || !job) return;
+        const browser = data.browser,
+          network = data.network ?? { requests: [], total: 0, errorCount: 0, capturedStages: [] };
+        host.hidden = terminal(job) && !browser && !network.capturedStages?.length;
+        if (host.hidden) return;
+        if (!host.children.length)
+          host.innerHTML = `<div class="observation-head"><span class="status-dot live-dot"></span><strong class="live-label">Browser</strong><small>Read only · 1s refresh</small></div><img class="live-frame" alt="Latest frame from the verification browser" hidden><div class="live-waiting"></div><div class="live-caption"></div><div class="network-toolbar"><strong class="network-count">Network</strong><label><input type="checkbox" data-network-errors checked>Errors only</label><a href="/api/jobs/${id}/network?errorsOnly=0&limit=500&download=1">JSON ↗</a></div><div class="network-list"></div><div class="network-note"></div>`;
+        const live = browser?.status === 'active' && !terminal(job);
+        host.querySelector('.live-dot').className = 'status-dot live-dot' + (live ? ' ready' : '');
+        host.querySelector('.live-label').textContent = live
+          ? 'Live browser'
+          : browser?.status === 'stale'
+            ? 'Preview paused'
+            : browser?.frameAt
+              ? 'Last browser frame'
+              : 'Browser';
+        const img = host.querySelector('.live-frame');
+        if (browser?.frameAt) {
+          img.hidden = false;
+          if (img.dataset.frame !== browser.frameAt) {
+            img.src = `/api/jobs/${id}/frame?t=${encodeURIComponent(browser.frameAt)}`;
+            img.dataset.frame = browser.frameAt;
+          }
+        } else img.hidden = true;
+        const waiting = host.querySelector('.live-waiting');
+        waiting.hidden = !!browser?.frameAt;
+        waiting.textContent = terminal(job) ? 'No browser preview was captured.' : 'Waiting for the browser to open…';
+        host.querySelector('.live-caption').textContent = browser
+          ? `${browser.stage} · ${browser.pageUrl ?? 'Opening page…'}${live ? '' : browser.status === 'stale' ? ' · Waiting for a fresh frame' : ' · Browser session ended'}`
+          : '';
+        host.querySelector('.network-count').textContent = `Network · ${network.total ?? 0} requests · ${network.errorCount ?? 0} errors`;
+        const errorsOnly = networkFilters.get(id) !== false;
+        host.querySelector('[data-network-errors]').checked = errorsOnly;
+        const rows = (network.requests ?? []).filter((r) => !errorsOnly || r.failure || r.status >= 400);
+        const list = host.querySelector('.network-list'),
+          opened = new Set([...list.querySelectorAll('details[open]')].map((el) => el.dataset.request));
+        markup(
+          list,
+          rows
+            .map(
+              (r) =>
+                `<details class="network-request" data-request="${esc(r.id)}" ${opened.has(r.id) ? 'open' : ''}><summary><span class="network-status ${r.failure || r.status >= 400 ? 'error' : ''}">${r.failure ? 'ERR' : (r.status ?? '…')}</span><span>${esc(r.method)}</span><span class="request-url" title="${esc(r.url)}">${esc(r.url)}</span><small class="muted">${r.durationMs == null ? (r.incomplete ? 'incomplete' : 'pending') : Math.round(r.durationMs) + 'ms'}</small></summary><pre>${esc(JSON.stringify(r, null, 2))}</pre></details>`,
+            )
+            .join('') ||
+            `<div class="empty">${network.capturedStages?.length ? (errorsOnly ? 'No network errors in the retained requests.' : 'No requests captured yet.') : 'Network capture starts with the browser.'}</div>`,
+        );
+        host.querySelector('.network-note').textContent =
+          `Sanitized diagnostics · no request bodies, cookies or authorization headers.${network.dropped ? ' ' + network.dropped + ' older requests omitted.' : ''}${network.matching > network.requests?.length ? ' Showing the latest ' + network.requests.length + ' retained requests.' : ''}`;
+      }
+      async function refreshObservation() {
+        const id = activeJob;
+        if (!id || observationRequest) return;
+        observationRequest = id;
+        try {
+          const data = await api(`/api/jobs/${id}/observation?errorsOnly=${networkFilters.get(id) === false ? '0' : '1'}`);
+          observationCache.set(id, data);
+          if (activeJob === id) renderObservation(id, data);
+        } catch (error) {
+          const host = document.querySelector('.job:not([hidden]) .observation');
+          if (host && activeJob === id) {
+            host.hidden = false;
+            host.textContent = 'Browser diagnostics unavailable: ' + error.message;
+          }
+        } finally {
+          observationRequest = null;
+        }
+      }
+      $('#jobs').addEventListener('change', (e) => {
+        if (e.target.matches('[data-network-errors]')) {
+          const id = e.target.closest('.job').dataset.job;
+          networkFilters.set(id, e.target.checked);
+          renderObservation(id, observationCache.get(id) ?? {});
+          void refreshObservation();
+        }
+      });
       function syncView() {
         const job = jobs.find((j) => j.id === activeJob);
         $('#welcome').hidden = !!job;
+        if (job && observationCache.has(job.id)) renderObservation(job.id, observationCache.get(job.id));
         $('#view-title').textContent = job ? `${job.project}-${job.caseId}` : 'New verification';
         document.title = job ? `${job.project}-${job.caseId} · e2e checker` : 'New verification · e2e checker';
       }
@@ -1677,6 +1877,7 @@
         showTab('history');
         $('#thread-scroll').scrollTop = 0;
         document.body.classList.remove('sidebar-open');
+        void refreshObservation();
       }
       function renderWorktrees() {
         const current = $('#worktree').value || localStorage.getItem('worktree');
@@ -2062,6 +2263,9 @@
           syncView();
         }
         setInterval(() => refreshJobs().catch(reportError), 2000);
+        setInterval(() => {
+          if (activeJob && !document.hidden) void refreshObservation();
+        }, 1000);
         setInterval(async () => {
           try {
             worktrees = await api('/api/worktrees');

@@ -8,4 +8,8 @@ It exercises the real rendering and refresh functions to check that polling, pro
 
 ## Workspace regression
 
-Evaluate `app-workspace.browser.js` the same way. Success returns 16 checks covering case selection, multi-model batch submission, model search, keyboard focus, unavailable-provider guidance, separate Connections settings, focused run history, polling, new drafts, theme persistence and mobile layout. Requests, preferences and polling are mocked inside an isolated frame; this test does not consume subscription allowance or start real jobs.
+Evaluate `app-workspace.browser.js` the same way. Success returns 24 checks covering case selection, multi-model batch submission, model search, keyboard focus, unavailable-provider guidance, separate Connections settings, focused run history, polling, new drafts, theme persistence mobile layout, network filtering, escaped response text, live frame identity and closed-session labeling. Requests, preferences and polling are mocked inside an isolated frame; this test does not consume subscription allowance or start real jobs.
+
+## Browser/network runtime smoke
+
+Run `node tests/observability-smoke.ts` after browser setup. This uses the real checker Playwright MCP and replay pipeline against a disposable localhost page, with no model calls. It checks live frames, HTTP 503 and transport failures, request IDs, redaction, automatic agent-tool context, and capture through stabilization and replay. Evidence remains in the printed gitignored `runs/observation-smoke-*` directory.
