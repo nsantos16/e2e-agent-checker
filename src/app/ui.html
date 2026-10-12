@@ -57,6 +57,7 @@
   .step { font: 600 11px ui-monospace, monospace; padding: 2px 7px; border-radius: 6px; }
   .step.pass { background: var(--pass-bg); color: var(--pass); } .step.fail { background: var(--fail-bg); color: var(--fail); } .step.blocked { background: var(--blocked-bg); color: var(--blocked); }
   .detail { margin-top: 12px; display: grid; gap: 12px; }
+  .detail-content { display: contents; }
   .detail video { width: 100%; border-radius: 8px; background: #000; }
   .detail table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .detail td { border-top: 1px solid #f2f4f7; padding: 6px 4px; vertical-align: top; }
@@ -155,6 +156,7 @@ function renderJob(j) {
   const d = details.get(j.id);
   const open = expanded.has(j.id);
   return `<div class="job" data-job="${j.id}">
+    <div class="job-summary">
     <div class="job-head" data-toggle="${j.id}">
       <span class="id" style="font:600 12px ui-monospace,monospace;color:var(--accent)">${j.project}-${j.caseId}</span>
       <span class="title">${esc(j.title ?? '')}</span>${status}
@@ -167,18 +169,52 @@ function renderJob(j) {
       <div class="log">${esc(j.log?.at(-1) ?? 'waiting for a free agent…')}</div>`}
     ${steps ? `<div class="steps">${steps}</div>` : ''}
     ${j.error ? `<div class="error">${esc(j.error)}</div>` : ''}
+    </div>
     ${open && d ? `<div class="detail">
       ${d.video ? `<video src="${fileUrl(d.video)}" controls preload="metadata"></video>` : ''}
+      <div class="detail-content">
       <table>${(d.steps ?? []).map((s) => `<tr><td><span class="step ${s.verdict}">${s.position} ${s.verdict}${s.inferred ? ' *' : ''}</span></td><td>${esc(s.evidence)}</td></tr>`).join('')}</table>
       ${d.notes ? `<div class="notes">${esc(d.notes)}</div>` : ''}
       <div class="links">${d.prComment ? `<a href="${fileUrl(d.prComment)}" target="_blank">PR comment</a>` : ''}${d.spec ? `<a href="${fileUrl(d.spec)}" target="_blank">Generated spec</a>` : ''}${d.runDir ? `<span class="meta">${esc(d.runDir.split('/').pop())}</span>` : ''}</div>
+      </div>
     </div>` : ''}
   </div>`;
 }
 
 function renderJobs() {
-  if (!jobs.length) return;
-  $('#jobs').innerHTML = jobs.map(renderJob).join('');
+  // Keep each player's DOM node mounted while polling updates summaries and evidence.
+  const container = $('#jobs');
+  const existing = new Map([...container.querySelectorAll('.job')].map((el) => [el.dataset.job, el]));
+  if (jobs.length) container.querySelector('.empty')?.remove();
+  jobs.forEach((j, index) => {
+    const template = document.createElement('template');
+    template.innerHTML = renderJob(j);
+    const next = template.content.firstElementChild;
+    const card = existing.get(j.id) ?? next;
+    existing.delete(j.id);
+    if (card !== next) {
+      const summary = card.querySelector('.job-summary'), nextSummary = next.querySelector('.job-summary');
+      if (summary.innerHTML !== nextSummary.innerHTML) summary.innerHTML = nextSummary.innerHTML;
+      const detail = card.querySelector('.detail'), nextDetail = next.querySelector('.detail');
+      if (!nextDetail) detail?.remove();
+      else if (!detail) card.append(nextDetail);
+      else {
+        const content = detail.querySelector('.detail-content'), nextContent = nextDetail.querySelector('.detail-content');
+        if (content.innerHTML !== nextContent.innerHTML) content.innerHTML = nextContent.innerHTML;
+        const video = detail.querySelector('video'), nextVideo = nextDetail.querySelector('video');
+        if (!nextVideo) video?.remove();
+        else if (!video) detail.prepend(nextVideo);
+        else if (video.getAttribute('src') !== nextVideo.getAttribute('src')) video.setAttribute('src', nextVideo.getAttribute('src'));
+      }
+    }
+    const position = container.children[index] ?? null;
+    if (position !== card) {
+      if (card.parentElement === container && container.moveBefore) container.moveBefore(card, position);
+      else container.insertBefore(card, position);
+    }
+  });
+  existing.forEach((card) => card.remove());
+  if (!jobs.length && !container.querySelector('.empty')) container.innerHTML = '<div class="empty">Click a use case to test it on the selected worktree.<br>Select several and press “Run selected” to test them in parallel.</div>';
   const running = jobs.filter((j) => j.status === 'running').length, queued = jobs.filter((j) => j.status === 'queued').length;
   $('#running-count').textContent = running || queued ? `${running} running · ${queued} queued` : '';
 }
