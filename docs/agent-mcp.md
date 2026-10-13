@@ -2,6 +2,8 @@
 
 One local stdio MCP server connects Claude Code, Codex and Cursor to the same job service used by the app. The caller and verification worker are independent. Credentials stay in the native provider; no credentials are accepted as tool arguments. The server starts the local app when needed.
 
+For verification driven by a feature diff or acceptance criteria, follow the repo-local [e2e-verify-feature skill](../.agents/skills/e2e-verify-feature/SKILL.md). The [feature walkthrough](../README.md#verify-your-next-feature) shows how to invoke it from a separate application worktree.
+
 ## Connect once
 
 From an installed checkout (`npm run setup`, Node 24+), substitute its absolute path below:

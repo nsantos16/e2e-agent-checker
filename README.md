@@ -28,7 +28,8 @@ React components, frontend builds and development: [React frontend](docs/react-f
 ## Quick start (any dev)
 
 ```sh
-git clone <this repo> && cd e2e-agent-checker
+git clone git@github.com:nsantos16/e2e-agent-checker.git
+cd e2e-agent-checker
 npm run setup        # installs deps + browsers, then runs the readiness check
 npm run app          # opens http://localhost:4100
 ```
@@ -71,7 +72,40 @@ The normal agent workflow is **discover → verify → wait → inspect only rel
 
 The server includes workflow instructions and tool annotations. Normal status polling omits logs, reports, images and response bodies. Across seven saved runs, compact responses were 92% smaller in JSON bytes; this is not an exact token measurement.
 
-Caller and worker are independent: Cursor can start a Codex verification through this MCP. Cursor as a worker remains gated because its native ACP runtime cannot be configured with verified tool isolation. Example target: `{"provider":"codex","model":"<id from list_models>","authMode":"subscription"}`. There is no API-key fallback or credential-copying service. Dollar cost remains unavailable without a reliable source; token counts are not a billing record.
+Caller and worker are independent: Cursor can start a Codex verification through this MCP. Cursor as a worker remains gated because its native ACP runtime cannot be configured with verified tool isolation. Example target: `{"provider":"codex","model":"<id from list_models>","authMode":"subscription"}`. There is no API-key fallback or credential-copying service. Runs distinguish provider-reported cost from API-equivalent estimates; neither is a subscription billing record, and missing cost is unknown rather than zero.
+
+## Verify your next feature
+
+Keep the checker in its own checkout and implement your feature in the application worktree. For this existing installation:
+
+```sh
+cd /Users/nico/.t3/projects/e2e-agent-checker
+npm run doctor
+npm run app
+```
+
+Open **http://localhost:4100**. In **Settings → Connections**, check your Codex or Claude subscription login. In **Settings → Environments**, select or configure a local/hosted target and test users using 1Password or environment-variable references. Environment variables must be available to the checker process when it starts. The current login adapter supports Sample's email/password/MFA flow; arbitrary apps and SSO-only flows need a different adapter.
+
+Register the MCP using the commands above, then reconnect your coding agent. The MCP can also start the app automatically; keeping `npm run app` in a terminal makes startup errors visible. In another checkout, replace the absolute paths in these examples with yours.
+
+The repo includes the **[e2e-verify-feature skill](.agents/skills/e2e-verify-feature/SKILL.md)**. From your feature repository, give your agent this prompt:
+
+```text
+Read /Users/nico/.t3/projects/e2e-agent-checker/.agents/skills/e2e-verify-feature/SKILL.md
+and follow it using the e2e-agent-checker MCP.
+
+Verify the feature in this worktree: <absolute feature worktree path>.
+Acceptance criteria: <observable behavior, including relevant error/permission cases>.
+Use environment <environment ID>, user <test user ID>, and my Codex subscription.
+Reuse matching cases and create missing cases. Run them, investigate failures,
+and report replay results, viewer links, elapsed time, tokens, and cost estimates.
+```
+
+When the skill is available in your client's skill list, you can invoke `$e2e-verify-feature` instead. An agent working in a different repository may not discover this checkout's skill automatically; the explicit file path works without copying the skill or its linked documentation.
+
+Agents author native cases through MCP; the UI's **+** imports Qase cases. Cases appear in the UI after refresh. Select the case, feature worktree, environment/user and model, then run it to watch the browser, inspect the network side panel, and review the replay video. Qase is optional. A hosted run tests the deployed build, so deploy your feature there first or select its local worktree.
+
+The skill covers duplicate-case discovery, case creation/revision checks, bounded waiting, failure diagnosis and evidence reporting. Saved-spec replay avoids new model calls when the spec still covers the behavior; changed expectations require fresh verification. Publishing evidence to a PR remains an explicit request.
 
 ## Use it from the shell
 
