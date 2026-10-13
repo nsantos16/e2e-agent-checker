@@ -2,12 +2,13 @@ import { execFileSync, spawn } from 'node:child_process';
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
+import { childEnvironment, getTestUser, environmentSessionPath, type Environment } from './environments.ts';
 import { loginSlot, statePath } from './login.ts';
 
 // A slot is one frontend worktree served on its own port against the shared dev API (docs/adr/0003).
 // Dev servers run detached with a pid file so they outlive the process that started them.
 
-export type Slot = { slot: string; worktree: string; port: number; role: string };
+export type Slot = { slot: string; worktree: string; port: number; role: string; environmentId?: string; devMode?: string };
 
 const root = new URL('..', import.meta.url).pathname;
 const stateDir = join(root, '.state');
@@ -45,27 +46,39 @@ export const isHealthy = async (s: Pick<Slot, 'port'>) => {
   }
 };
 
-export const startSlot = async (slot: string, worktree: string, role = 'eugene', signal?: AbortSignal) => {
+export const startSlot = async (slot: string, worktree: string, role = 'eugene', signal?: AbortSignal, environment?: Environment) => {
   signal?.throwIfAborted();
   const port = portFor(slot);
   const registry = readRegistry();
   const existing = registry[slot];
-  if (existing && isAlive(existing.pid) && existing.worktree === worktree && (await isHealthy(existing))) return existing;
+  if (
+    existing &&
+    isAlive(existing.pid) &&
+    existing.worktree === worktree &&
+    (existing.environmentId ?? 'local') === (environment?.id ?? 'local') &&
+    (existing.devMode ?? 'ci.development') === (environment?.devMode ?? 'ci.development') &&
+    (await isHealthy(existing))
+  )
+    return existing;
   if (existing?.pid && isAlive(existing.pid)) process.kill(-existing.pid, 'SIGTERM');
 
   const logPath = join(stateDir, `slot${slot}-dev.log`);
   mkdirSync(stateDir, { recursive: true });
   const out = openSync(logPath, 'w');
-  const child = spawn('npx', ['vp', 'dev', '--mode', 'ci.development', '--port', String(port), '--strictPort', '--open', 'false'], {
-    cwd: worktree,
-    detached: true,
-    stdio: ['ignore', out, out],
-    env: { ...process.env, NODE_OPTIONS: '--max-old-space-size=8192' },
-  });
+  const child = spawn(
+    'npx',
+    ['vp', 'dev', '--mode', environment?.devMode ?? 'ci.development', '--port', String(port), '--strictPort', '--open', 'false'],
+    {
+      cwd: worktree,
+      detached: true,
+      stdio: ['ignore', out, out],
+      env: { ...childEnvironment(), NODE_OPTIONS: '--max-old-space-size=8192' },
+    },
+  );
   child.unref();
   closeSync(out);
 
-  const entry = { slot, worktree, port, role, pid: child.pid };
+  const entry = { slot, worktree, port, role, environmentId: environment?.id, devMode: environment?.devMode, pid: child.pid };
   registry[slot] = entry;
   writeRegistry(registry);
 
@@ -113,31 +126,49 @@ const ensureNodeModules = (worktree: string) => {
 // Concurrent jobs for the same worktree share one in-flight allocation instead of racing for two slots.
 let allocation: Promise<unknown> = Promise.resolve();
 
-export const ensureSlotForWorktree = (worktreePath: string, role = 'eugene', log: (l: string) => void = () => {}, signal?: AbortSignal) => {
+export const ensureSlotForWorktree = (
+  worktreePath: string,
+  role = 'eugene',
+  log: (l: string) => void = () => {},
+  signal?: AbortSignal,
+  environment?: Environment,
+) => {
   const p = allocation.then(() => {
     signal?.throwIfAborted();
-    return allocateSlot(worktreePath, role, log, signal);
+    return allocateSlot(worktreePath, role, log, signal, environment);
   });
   allocation = p.catch(() => {});
   return p;
 };
 
 // Finds the slot already serving this worktree, or allocates the next free one; starts it and logs the role in when needed.
-const allocateSlot = async (worktreePath: string, role: string, log: (l: string) => void, signal?: AbortSignal): Promise<Slot> => {
+const allocateSlot = async (
+  worktreePath: string,
+  role: string,
+  log: (l: string) => void,
+  signal?: AbortSignal,
+  environment?: Environment,
+): Promise<Slot> => {
   const worktree = resolve(worktreePath);
   if (!existsSync(join(worktree, 'package.json'))) throw new Error(`${worktree} is not a frontend checkout (no package.json)`);
   const registry = readRegistry();
-  const existing = Object.values(registry).find((s) => s.worktree === worktree);
+  const existing = Object.values(registry).find(
+    (s) =>
+      s.worktree === worktree &&
+      (s.environmentId ?? 'local') === (environment?.id ?? 'local') &&
+      (s.devMode ?? 'ci.development') === (environment?.devMode ?? 'ci.development'),
+  );
   const slot = existing?.slot ?? String(Array.from({ length: MAX_SLOTS }, (_, i) => i + 1).find((n) => !registry[String(n)]) ?? '');
   if (!slot) throw new Error(`All ${MAX_SLOTS} slots are in use`);
   ensureNodeModules(worktree);
   log(`slot ${slot}: starting dev server for ${worktree}`);
-  const entry = await startSlot(slot, worktree, role, signal);
-  const state = statePath(slot, role);
+  const entry = await startSlot(slot, worktree, role, signal, environment);
+  const user = environment && getTestUser(environment, role);
+  const state = environment && user ? environmentSessionPath(environment, user, baseUrl(entry)) : statePath(slot, role);
   if (!existsSync(state) || Date.now() - statSync(state).mtimeMs > SESSION_MAX_AGE_MS) {
     log(`slot ${slot}: logging in as ${role}`);
     signal?.throwIfAborted();
-    await loginSlot({ base: baseUrl(entry), role, slot, signal });
+    await loginSlot({ base: baseUrl(entry), role, slot, signal, user, storageState: state });
   }
   return { ...entry, role };
 };

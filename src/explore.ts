@@ -32,6 +32,7 @@ export type ExploreOptions = {
   model: string;
   runDir: string;
   headed?: boolean;
+  storageState?: string;
   target?: Target;
   signal?: AbortSignal;
   onMetrics?: (metrics: RunMetrics) => void;
@@ -58,7 +59,7 @@ export const actionLog = (events: ClaudeOutcome['events']) => {
 };
 
 export const explore = async (opts: ExploreOptions) => {
-  const state = statePath(opts.slot, opts.role);
+  const state = opts.storageState ?? statePath(opts.slot, opts.role);
   if (!existsSync(state))
     throw new Error(
       `No session for slot ${opts.slot}/${opts.role}. Run: npm run login -- --slot ${opts.slot} --role ${opts.role} --base ${opts.base}`,

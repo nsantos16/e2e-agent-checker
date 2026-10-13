@@ -1,7 +1,9 @@
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, chmodSync } from 'node:fs';
+import { dirname } from 'node:path';
+import { childEnvironment, type TestUser } from './environments.ts';
 import { parseArgs } from 'node:util';
 import { chromium, type Page } from 'playwright';
-import { resolveRole } from './credentials.ts';
+import { resolveRole, resolveTestUser } from './credentials.ts';
 
 // Logs a role into one slot's origin and saves storageState (including IndexedDB) for the agent's browser.
 // Mirrors sample-frontend/tests/setup/index.setup.e2e.ts so the app sees the same state as its own e2e suite.
@@ -40,25 +42,30 @@ export const loginSlot = async ({
   slot,
   headed = false,
   signal,
+  user,
+  storageState,
 }: {
   base: string;
   role: string;
   slot: string;
   headed?: boolean;
   signal?: AbortSignal;
+  user?: TestUser;
+  storageState?: string;
 }) => {
   signal?.throwIfAborted();
+  const resolveCredentials = () => (user ? resolveTestUser(user, signal) : resolveRole(role, signal));
   const creds = await (signal
     ? new Promise<Awaited<ReturnType<typeof resolveRole>>>((resolve, reject) => {
         const abort = () => reject(signal.reason);
         signal.addEventListener('abort', abort, { once: true });
-        resolveRole(role, signal)
+        resolveCredentials()
           .then(resolve, reject)
           .finally(() => signal.removeEventListener('abort', abort));
       })
-    : resolveRole(role, signal));
+    : resolveCredentials());
   signal?.throwIfAborted();
-  const browser = await chromium.launch({ headless: !headed });
+  const browser = await chromium.launch({ headless: !headed, env: childEnvironment() as Record<string, string> });
   const abort = () => {
     void browser.close();
   };
@@ -89,15 +96,15 @@ export const loginSlot = async ({
     await page.waitForTimeout(1_000);
     await markTwoFactorModalSeen(page);
 
-    const path = statePath(slot, role);
-    mkdirSync(new URL('../.state/', import.meta.url), { recursive: true });
+    const path = storageState ?? statePath(slot, role);
+    mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
     await page.context().storageState({ path, indexedDB: true });
+    chmodSync(path, 0o600);
     return path;
   } catch (error) {
-    mkdirSync(new URL('../.state/', import.meta.url), { recursive: true });
-    await page.screenshot({ path: new URL('../.state/login-failure.png', import.meta.url).pathname }).catch(() => {});
-    console.error(`Login failed at ${page.url()}. Screenshot: .state/login-failure.png`);
-    throw error;
+    if (signal?.aborted) throw signal.reason;
+    // Do not persist login screenshots, field values or provider errors with credentials.
+    throw Object.assign(new Error('Test-user login failed. Check the configured credentials and login flow.'), { code: 'LOGIN_FAILED' });
   } finally {
     signal?.removeEventListener('abort', abort);
     await browser.close();

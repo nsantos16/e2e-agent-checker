@@ -8,7 +8,9 @@ test('job recovery, atomic preflight, idempotency, queued cancellation and repla
   const dir = mkdtempSync(join(tmpdir(), 'e2e-jobs-')),
     oldPath = process.env.PATH,
     oldJobs = process.env.E2E_JOBS_PATH,
-    oldCases = process.env.E2E_CASES_PATH;
+    oldCases = process.env.E2E_CASES_PATH,
+    oldEnvironments = process.env.E2E_ENVIRONMENTS_PATH;
+  process.env.E2E_ENVIRONMENTS_PATH = join(dir, 'environments.json');
   process.env.E2E_CASES_PATH = join(dir, 'cases.json');
   process.env.E2E_JOBS_PATH = join(dir, 'jobs.json');
   process.env.PATH = dir + ':' + oldPath;
@@ -83,9 +85,34 @@ test('job recovery, atomic preflight, idempotency, queued cancellation and repla
     for (let i = 0; i < 100 && getJob(batch[0].id)?.status === 'cancelling'; i++) await new Promise((r) => setTimeout(r, 20));
     assert.equal(getJob(batch[0].id)?.status, 'cancelled');
     assert.ok(getJob(batch[0].id)?.timing?.activeMs);
+    const { saveEnvironment, getEnvironment } = await import('../src/environments.ts');
+    const localUser = {
+      id: 'isolated',
+      name: 'Isolated test user',
+      usernameRef: 'env://CHECKER_NONEXISTENT_USERNAME',
+      passwordRef: 'env://CHECKER_NONEXISTENT_PASSWORD',
+    };
+    const environment = saveEnvironment({
+      environment: { id: 'staging', name: 'Staging', kind: 'hosted', baseUrl: 'https://staging.example.test', users: [localUser] },
+    });
+    const remote = await submitBatch({
+      ...input,
+      worktree: undefined,
+      environmentId: 'staging',
+      userId: localUser.id,
+      idempotencyKey: 'hosted',
+    });
+    assert.equal(remote[0].worktree, '', 'hosted run needs no local checkout');
+    assert.equal(remote[0].environmentSnapshot!.baseUrl, 'https://staging.example.test');
+    const { revision, ...definition } = environment;
+    saveEnvironment({ environment: { ...definition, baseUrl: 'https://changed.example.test' }, expectedRevision: revision });
+    assert.equal(remote[0].environmentSnapshot!.baseUrl, 'https://staging.example.test', 'queued run pins the target configuration');
+    for (const j of remote) cancelJob(j.id);
   } finally {
     if (oldCases === undefined) delete process.env.E2E_CASES_PATH;
     else process.env.E2E_CASES_PATH = oldCases;
+    if (oldEnvironments === undefined) delete process.env.E2E_ENVIRONMENTS_PATH;
+    else process.env.E2E_ENVIRONMENTS_PATH = oldEnvironments;
     process.env.PATH = oldPath;
     if (oldJobs === undefined) delete process.env.E2E_JOBS_PATH;
     else process.env.E2E_JOBS_PATH = oldJobs;

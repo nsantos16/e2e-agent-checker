@@ -59,13 +59,14 @@ export const replay = async (opts: {
   base: string;
   slot: string;
   role: string;
+  storageState?: string;
   slowMo?: number;
   signal?: AbortSignal;
   onPackage?: () => void;
 }) => {
   const outDir = join(opts.runDir, `replay-${opts.label}`);
   mkdirSync(outDir, { recursive: true });
-  writeReplayEnv(opts.runDir, opts.specDir, opts.specFile, opts.base, opts.slot, opts.role);
+  writeReplayEnv(opts.runDir, opts.specDir, opts.specFile, opts.base, opts.slot, opts.role, opts.storageState);
   const started = Date.now();
   const { stdout } = await command('npx', ['playwright', 'test', '-c', 'playwright.config.ts', opts.specFile], {
     cwd: join(root, 'e2e'),
@@ -75,7 +76,7 @@ export const replay = async (opts: {
       E2E_SPEC_DIR: opts.specDir,
       E2E_OUTPUT_DIR: outDir,
       E2E_BASE_URL: opts.base,
-      E2E_STORAGE_STATE: join(root, '.state', `slot${opts.slot}-${opts.role}.json`),
+      E2E_STORAGE_STATE: opts.storageState ?? join(root, '.state', `slot${opts.slot}-${opts.role}.json`),
       E2E_SLOWMO: String(opts.slowMo ?? 250),
     },
     signal: opts.signal,

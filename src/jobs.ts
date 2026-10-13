@@ -3,8 +3,11 @@ import { join, resolve } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
 import { z } from 'zod';
 import { caseCatalog, assertRunnable, type TestCase } from './cases.ts';
+import { getEnvironment, getTestUser, environmentSessionPath, testIdentityKey, type Environment } from './environments.ts';
+import { loginSlot } from './login.ts';
+import { statSync } from 'node:fs';
 import { config } from './config.ts';
-import { ensureSlotForWorktree } from './slots.ts';
+import { ensureSlotForWorktree, baseUrl } from './slots.ts';
 import { verify } from './verify.ts';
 import { newRunDir } from './explore.ts';
 import { preflight, RunError, targetSchema, type Target } from './providers/index.ts';
@@ -16,6 +19,11 @@ export type Job = {
   project: string;
   caseId: number;
   caseSnapshot?: TestCase;
+  environmentId?: string;
+  userId?: string;
+  environmentSnapshot?: Environment;
+  environment?: { id: string; name: string; kind: string; baseUrl?: string; revision: string; userId: string; userName: string };
+  identityKey?: string;
   worktree: string;
   role: string;
   slot?: string;
@@ -93,9 +101,13 @@ const finish = (job: Job) => {
 const pump = () => {
   for (const job of [...queue]) {
     if (active.size >= config.app.maxParallel) return;
-    // Roles currently share backend identities across all slots. Serialize a role until identity leases exist.
+    // Serialize shared credential references and each environment/user session; retain legacy role locking.
     if (
-      [...active].some((j) => j.role === job.role) ||
+      [...active].some((j) =>
+        j.identityKey && job.identityKey
+          ? j.identityKey === job.identityKey || (j.environmentId === job.environmentId && j.userId === job.userId)
+          : j.role === job.role,
+      ) ||
       [...active].filter((j) => j.worktree === job.worktree).length >= config.app.maxPerWorktree
     )
       continue;
@@ -136,16 +148,34 @@ async function execute(job: Job) {
     stage('prepare');
     if (!job.replayOf) await preflight(job.target!);
     signal.throwIfAborted();
-    const slot = await ensureSlotForWorktree(job.worktree, job.role, log, signal);
+    const environment = job.environmentSnapshot ?? getEnvironment(job.environmentId);
+    const user = getTestUser(environment, job.userId ?? job.role);
+    let base: string, storageState: string, slotId: string;
+    if (environment.kind === 'hosted') {
+      base = environment.baseUrl!;
+      slotId = `env-${environment.id}`;
+      storageState = environmentSessionPath(environment, user, base);
+      if (!existsSync(storageState) || Date.now() - statSync(storageState).mtimeMs > 6 * 60 * 60 * 1000) {
+        log(`Preparing ${environment.name} / ${user.name}`);
+        await loginSlot({ base, role: user.id, slot: slotId, user, storageState, signal });
+      }
+    } else {
+      const slot = await ensureSlotForWorktree(job.worktree, user.id, log, signal, environment);
+      base = baseUrl(slot);
+      slotId = slot.slot;
+      storageState = environmentSessionPath(environment, user, base);
+    }
     signal.throwIfAborted();
-    job.slot = slot.slot;
-    job.runDir = newRunDir(job.project, job.caseId, slot.slot, job.replayOf ? 'replay' : 'verify');
+    job.slot = slotId;
+    job.runDir = newRunDir(job.project, job.caseId, slotId, job.replayOf ? 'replay' : 'verify');
     persist();
     const summary = await verify({
       project: job.project,
       caseId: job.caseId,
       caseSnapshot: job.caseSnapshot,
-      slot: slot.slot,
+      slot: slotId,
+      base,
+      storageState,
       role: job.role,
       model: job.target?.model ?? config.model,
       target: job.target,
@@ -206,14 +236,15 @@ export const batchSchema = z
       .array(z.object({ project: z.string().regex(/^[A-Z0-9_]+$/), id: z.number().int().positive() }).strict())
       .min(1)
       .max(30),
-    worktree: z.string().min(1),
+    worktree: z.string().min(1).optional(),
+    environmentId: z.string().default('local'),
+    userId: z.string().optional(),
     role: z.string().optional(),
     targets: z.array(targetSchema).min(1).max(8).optional(),
     limits: limitsSchema.default({ timeoutMs: 20 * 60_000, maxAttempts: 8 }),
     idempotencyKey: z.string().min(1).max(128).optional(),
   })
   .strict();
-const roles = Object.keys(JSON.parse(readFileSync(join(root, 'config/roles.json'), 'utf8')).roles);
 let submission: Promise<unknown> = Promise.resolve();
 export function submitBatch(input: unknown) {
   const result = submission.then(() => submitBatchLocked(input));
@@ -222,10 +253,13 @@ export function submitBatch(input: unknown) {
 }
 async function submitBatchLocked(input: unknown) {
   const b = batchSchema.parse(input);
-  const role = b.role ?? roles[0];
-  const worktree = resolve(b.worktree);
-  if (!roles.includes(role)) throw new RunError('FIXTURE_UNAVAILABLE', 'Unknown test identity');
-  if (!existsSync(join(worktree, 'package.json'))) throw new RunError('FIXTURE_UNAVAILABLE', 'Worktree has no package.json');
+  const environment = getEnvironment(b.environmentId);
+  if (b.userId && b.role && b.userId !== b.role) throw new RunError('INVALID_INPUT', 'userId and legacy role must match');
+  const user = getTestUser(environment, b.userId ?? b.role);
+  const role = user.id;
+  const worktree = b.worktree ? resolve(b.worktree) : '';
+  if (environment.kind === 'worktree' && (!worktree || !existsSync(join(worktree, 'package.json'))))
+    throw new RunError('FIXTURE_UNAVAILABLE', 'Select a frontend worktree for this environment');
   const targets = b.targets ?? [{ provider: 'claude-code', model: config.model, authMode: 'subscription' }];
   const hash = createHash('sha256')
     .update(JSON.stringify({ ...b, worktree, role, targets, idempotencyKey: undefined }))
@@ -252,6 +286,19 @@ async function submitBatchLocked(input: unknown) {
           caseSnapshot: snapshots[index],
           worktree,
           role,
+          environmentId: environment.id,
+          userId: user.id,
+          environmentSnapshot: environment,
+          environment: {
+            id: environment.id,
+            name: environment.name,
+            kind: environment.kind,
+            baseUrl: environment.baseUrl,
+            revision: environment.revision,
+            userId: user.id,
+            userName: user.name,
+          },
+          identityKey: testIdentityKey(user),
           target,
           batchId,
           limits: b.limits,
@@ -291,6 +338,8 @@ export function replayJob(id: string) {
   const file = join(old.runDir, 'codify', `${old.project}-${old.caseId}.spec.ts`);
   if (!existsSync(file) || !existsSync(join(old.runDir, 'explore/report.json')))
     throw new RunError('ARTIFACT_MISSING', 'Saved spec or report missing');
+  const currentEnvironment = getEnvironment(old.environmentId);
+  getTestUser(currentEnvironment, old.userId ?? old.role);
   const job: Job = {
     id: `job-${randomUUID()}`,
     project: old.project,
@@ -298,6 +347,11 @@ export function replayJob(id: string) {
     caseSnapshot: old.caseSnapshot,
     worktree: old.worktree,
     role: old.role,
+    environmentId: old.environmentId,
+    userId: old.userId,
+    environmentSnapshot: old.environmentSnapshot,
+    environment: old.environment,
+    identityKey: old.identityKey,
     target: old.target,
     limits: old.limits,
     replayOf: id,

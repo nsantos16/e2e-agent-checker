@@ -62,7 +62,7 @@ test('MCP schemas, structured responses, operational errors, and batch forwardin
   );
   try {
     const { tools } = await client.listTools();
-    assert.equal(tools.length, 22);
+    assert.equal(tools.length, 25);
     assert.ok(tools.every((t) => t.outputSchema));
     assert.equal(tools.find((t) => t.name === 'get_job')?.annotations?.readOnlyHint, true);
     assert.equal(tools.find((t) => t.name === 'verify_case')?.annotations?.readOnlyHint, false);

@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { promisify } from 'node:util';
 import sdk from '@1password/sdk';
+import type { TestUser } from './environments.ts';
 import { config as appConfig } from './config.ts';
 
 // See docs/adr/0002: secrets are resolved here, in the harness, and never reach the agent.
@@ -47,7 +48,7 @@ const resolver = () => {
     )
     .catch((error) => {
       if (process.env.OP_SERVICE_ACCOUNT_TOKEN) throw error;
-      console.warn(`1Password SDK desktop auth unavailable (${error}); falling back to the op CLI`);
+      console.warn('1Password SDK desktop auth unavailable; falling back to the op CLI');
       return opRead;
     });
   return resolverPromise;
@@ -60,4 +61,25 @@ export const resolveRole = async (role: string, signal?: AbortSignal): Promise<C
   const [username, password] = await Promise.all([resolve(refs.username, signal), resolve(refs.password, signal)]);
   const totpRef = refs.totp;
   return { username, password, totp: totpRef ? () => resolve(totpRef, signal) : undefined };
+};
+
+export const resolveTestUser = async (user: TestUser, signal?: AbortSignal): Promise<Credentials> => {
+  const read = async (ref: string) => {
+    signal?.throwIfAborted();
+    if (ref.startsWith('env://')) {
+      const value = process.env[ref.slice(6)];
+      if (!value)
+        throw Object.assign(new Error('A configured credential environment variable is missing'), { code: 'CREDENTIAL_UNAVAILABLE' });
+      return value;
+    }
+    try {
+      return await (
+        await resolver()
+      )(ref, signal);
+    } catch {
+      throw Object.assign(new Error('Could not resolve a configured 1Password credential'), { code: 'CREDENTIAL_UNAVAILABLE' });
+    }
+  };
+  const [username, password] = await Promise.all([read(user.usernameRef), read(user.passwordRef)]);
+  return { username, password, ...(user.totpRef ? { totp: () => read(user.totpRef!) } : {}) };
 };

@@ -878,9 +878,35 @@
       .dialog-body {
         padding: 18px;
       }
-      .settings-dialog {
-        width: 530px;
-      }
+      .settings-dialog { width: 530px; }
+      #settings-dialog:has(#environments-settings:not([hidden])) { width: 740px; }
+      #settings-dialog { max-height: calc(100dvh - 40px); overflow: auto; }
+      .settings-tabs { display: flex; gap: 6px; padding: 10px 18px; border-bottom: 1px solid var(--line); }
+      .settings-tabs button { padding: 7px 12px; font-size: 12px; color: var(--muted); border-radius: 7px; }
+      .settings-tabs button[aria-selected="true"] { color: var(--text); background: var(--hover); }
+      .environment-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 10px 0; font-size: 12px; }
+      .environment-heading p { color: var(--muted); margin: 0; }
+      .environment-heading button { white-space: nowrap; font-size: 12px; padding: 7px 9px; border: 1px solid var(--border); border-radius: 7px; }
+      .environment-list { display: flex; gap: 8px; flex-wrap: wrap; margin: 16px 0 22px; }
+      .environment-list button { text-align: left; padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px; min-width: 140px; }
+      .environment-list button[aria-pressed="true"] { border-color: var(--blue); background: var(--hover); }
+      .environment-list small { display: block; color: var(--muted); margin-top: 4px; }
+      .environment-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+      .environment-fields label { display: flex; flex-direction: column; gap: 7px; font-size: 11px; color: var(--muted); min-width: 0; }
+      .environment-fields input, .environment-fields select { width: 100%; min-width: 0; font-size: 12px; padding: 8px; }
+      .environment-help { font-size: 11px; color: var(--muted); line-height: 1.7; }
+      .environment-help code { overflow-wrap: anywhere; }
+      .test-user-card { padding: 14px; border: 1px solid var(--border); border-radius: 9px; margin: 12px 0; }
+      .test-user-card .environment-heading { margin-top: 0; }
+      .test-user-card [data-user-field$="Ref"] { font-family: ui-monospace, monospace; font-size: 11px; }
+      .environment-save { display: flex; align-items: center; justify-content: space-between; margin-top: 20px; gap: 12px; }
+      .environment-save button { padding: 9px 12px; font-size: 12px; }
+      #delete-environment { color: var(--red); }
+      #environment-message { font-size: 12px; margin-top: 14px; color: var(--muted); white-space: pre-wrap; }
+      .environment-control { max-width: 155px; }
+      .composer-toolbar { flex-wrap: wrap; }
+      @media (max-width: 540px) { .environment-fields { grid-template-columns: 1fr; } }
+
       .provider-setting {
         border-bottom: 1px solid var(--line);
         padding: 15px 0;
@@ -1918,7 +1944,7 @@
               <path d="M9 3h6l1 3 3 1 2 5-2 5-3 1-1 3H9l-1-3-3-1-2-5 2-5 3-1Z" />
               <circle cx="12" cy="12" r="3" />
             </svg>
-            Connections <span id="connection-dot" class="status-dot" style="margin-left: auto"></span></button
+            Settings <span id="connection-dot" class="status-dot" style="margin-left: auto"></span></button
           ><button id="theme-toggle" class="icon-btn" aria-label="Switch color theme" title="Switch color theme">
             <svg viewBox="0 0 24 24"><path d="M20 14A8 8 0 0 1 10 4a8 8 0 1 0 10 10Z" /></svg>
           </button>
@@ -1968,6 +1994,7 @@
                 <svg viewBox="0 0 24 24"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z" /></svg
                 ><span id="model-label">Choose model</span><svg class="chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" /></svg>
               </button>
+              <div class="control environment-control"><select id="environment" aria-label="Test environment"></select></div>
               <div class="control worktree-control" title="Worktree to verify">
                 <svg viewBox="0 0 24 24">
                   <circle cx="6" cy="5" r="2" />
@@ -2011,9 +2038,14 @@
     </dialog>
     <dialog class="settings-dialog" id="settings-dialog" aria-labelledby="settings-title">
       <div class="dialog-head">
-        <h2 id="settings-title">Connections</h2>
-        <button class="icon-btn" data-close="settings-dialog" aria-label="Close connections">×</button>
+        <h2 id="settings-title">Settings</h2>
+        <button class="icon-btn" data-close="settings-dialog" aria-label="Close settings">×</button>
       </div>
+      <div class="settings-tabs" role="tablist" aria-label="Settings sections">
+        <button role="tab" id="connections-tab" data-settings-tab="connections" aria-controls="connections-settings" aria-selected="true">Connections</button>
+        <button role="tab" id="environments-tab" data-settings-tab="environments" aria-controls="environments-settings" aria-selected="false">Environments</button>
+      </div>
+      <div id="connections-settings" role="tabpanel" aria-labelledby="connections-tab">
       <div class="dialog-body">
         <p class="muted" style="font-size: 12px; margin: 0 0 20px">
           Use your existing developer subscriptions. Each runtime keeps its own sign-in.
@@ -2024,6 +2056,27 @@
       <div class="dialog-actions">
         <span>Credentials stay with their provider.</span><button id="refresh-providers">Refresh connections</button>
       </div>
+      </div>
+      <div id="environments-settings" role="tabpanel" aria-labelledby="environments-tab" hidden>
+        <div class="dialog-body">
+          <div class="environment-heading"><p>Choose where tests run and which accounts they use.</p><button type="button" id="new-environment">+ Environment</button></div>
+          <div id="environment-list" class="environment-list"></div>
+          <form id="environment-form" autocomplete="off" hidden>
+            <div class="environment-fields">
+              <label>Name<input id="environment-name" required placeholder="Staging" maxlength="100"></label>
+              <label>ID<input id="environment-id" required pattern="[a-z0-9][a-z0-9_-]{0,63}" placeholder="staging"></label>
+              <label>Target<select id="environment-kind"><option value="hosted">Hosted URL</option><option value="worktree">Local worktree</option></select></label>
+              <label id="environment-url-field">Base URL<input id="environment-url" type="url" placeholder="https://staging.example.com"></label>
+              <label id="environment-mode-field">Development mode<input id="environment-mode" placeholder="ci.development" pattern="[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}"></label>
+            </div>
+            <div class="environment-heading"><strong>Test users</strong><button type="button" id="add-test-user">+ User</button></div>
+            <p class="environment-help">Use 1Password references such as <code>op://vault/item/password</code>, or <code>env://STAGING_PASSWORD</code> for variables available to the checker. Secret values are never shown here.</p>
+            <div id="test-user-list"></div>
+            <div class="environment-save"><button type="button" id="delete-environment">Delete environment</button><button class="primary" type="submit">Save environment</button></div>
+          </form>
+          <div id="environment-message" role="status"></div>
+        </div>
+      </div>
     </dialog>
     <dialog class="settings-dialog" id="options-dialog" aria-labelledby="options-title">
       <div class="dialog-head">
@@ -2032,7 +2085,7 @@
       </div>
       <div class="dialog-body">
         <div class="field">
-          <label for="role">Test identity<small>Runs sharing an identity run in sequence.</small></label
+          <label for="role">Test user<small>Users belong to the selected environment. Shared accounts run in sequence.</small></label
           ><select id="role"></select>
         </div>
         <div class="field">
@@ -2162,6 +2215,19 @@
         );
         $('#history-count').textContent = jobs.length || '';
       }
+      let environments = [], environmentSettings = [], editingEnvironment = null;
+      const selectedEnvironment = () => environments.find((e) => e.id === $('#environment').value);
+      function renderEnvironmentChoices(preferred = $('#environment').value || localStorage.getItem('environment')) {
+        markup($('#environment'), environments.map((e) => `<option value="${esc(e.id)}">${esc(e.name)}</option>`).join(''));
+        $('#environment').value = environments.some((e) => e.id === preferred) ? preferred : environments[0]?.id ?? '';
+        const environment = selectedEnvironment();
+        const previousUser = localStorage.getItem('test-user:' + environment?.id) || $('#role').value;
+        markup($('#role'), (environment?.users ?? []).map((u) => `<option value="${esc(u.id)}">${esc(u.name)}</option>`).join(''));
+        $('#role').value = environment?.users.some((u) => u.id === previousUser) ? previousUser : environment?.users[0]?.id ?? '';
+        $('.worktree-control').hidden = environment?.kind === 'hosted';
+        $('#environment').title = environment?.baseUrl ?? 'Run a local worktree';
+        renderComposer();
+      }
       function renderComposer() {
         const all = [...targets.values()],
           ready = readyTargets(),
@@ -2172,7 +2238,7 @@
           ? `${selected.size} case${selected.size === 1 ? '' : 's'} selected${selected.size === 1 ? ' · ' + [...selected][0] : ''}`
           : 'Choose cases from the sidebar';
         $('#clear-selection').hidden = !selected.size;
-        $('#run-selected').disabled = !count || ready.length !== all.length || !$('#worktree').value || submitting;
+        $('#run-selected').disabled = !count || ready.length !== all.length || !selectedEnvironment() || !$('#role').value || (selectedEnvironment()?.kind !== 'hosted' && !$('#worktree').value) || submitting;
         $('#run-selected span').textContent = submitting ? 'Queuing…' : count > 1 ? `Run ${count}` : 'Run';
         $('#composer-hint').textContent =
           selected.size && ready.length
@@ -2223,7 +2289,7 @@
           cost = j.usage?.providerReportedCostUsd ?? j.costUsd;
         return `<div class="job" data-job="${j.id}"><div class="job-summary">
     <div class="job-head" data-toggle="${j.id}"><span class="id">${j.project}-${j.caseId}</span><span class="title">${esc(j.title ?? `${j.project}-${j.caseId}`)}</span>${status}</div>
-    <div class="job-sub"><span>${j.project}-${j.caseId}</span><span>${esc(wt?.branch ?? j.worktree.split('/').pop())}${j.slot ? ` · slot ${j.slot}` : ''}</span><span>${esc(j.target ? `${j.target.provider} / ${modelName(j.target)}` : 'Historical run')}</span></div>
+    <div class="job-sub"><span>${j.environment ? esc(j.environment.name + ' · ' + j.environment.userName) : `${j.project}-${j.caseId}`}</span><span>${esc(wt?.branch ?? j.worktree.split('/').pop())}${j.slot ? ` · slot ${j.slot}` : ''}</span><span>${esc(j.target ? `${j.target.provider} / ${modelName(j.target)}` : 'Historical run')}</span></div>
     <div class="run-metrics"><div class="metric"><span>${j.timing ? 'Active time' : 'Elapsed time'}</span><strong>${duration(active ?? elapsed)}</strong><small>${j.timing ? `${duration(j.timing.queueMs)} queued` : 'Includes queue time'}</small></div><div class="metric"><span>Tokens</span><strong>${number(j.usage?.totalTokens)}</strong><small>${j.replayOf ? 'Replay only · no model calls' : j.usage ? `${esc(j.usage.status)} usage` : 'Not recorded'}</small></div><div class="metric"><span>Reported cost</span><strong>${dollars(cost)}</strong><small>${j.target?.authMode === 'subscription' ? 'Subscription · billed amount unknown' : 'Provider estimate, when recorded'}</small></div></div>
     <div class="metrics">${j.usage ? `Input ${number(j.usage.inputTokens)} · output ${number(j.usage.outputTokens)} · cached ${number(j.usage.cacheReadTokens)}` : 'Detailed usage was not recorded for this run.'}</div>
     ${terminal(j) ? '' : `<div class="pipeline">${STAGES.map((s, i) => `<div class="${i < idx ? 'done' : i === idx ? 'active' : ''}">${s}</div>`).join('')}</div><div class="log">${esc(j.log?.at(-1) ?? 'Waiting for an available test identity…')}</div>`}
@@ -2859,8 +2925,9 @@
           });
           const ids = await api('/api/jobs', {
             cases: list,
-            worktree: $('#worktree').value,
-            role: $('#role').value,
+            worktree: selectedEnvironment()?.kind === 'hosted' ? undefined : $('#worktree').value,
+            environmentId: $('#environment').value,
+            userId: $('#role').value,
             targets: [...targets.values()],
             limits,
             idempotencyKey: crypto.randomUUID(),
@@ -2982,12 +3049,108 @@
         }
       }
       async function checkSetup() {
-        const checks = await api('/api/doctor'),
+        const checks = await api('/api/doctor?' + new URLSearchParams({environmentId: $('#environment').value || 'local', ...($('#role').value ? {userId: $('#role').value} : {})})),
           missing = checks.filter((c) => !c.ok && c.required);
         $('#doctor').innerHTML = missing.length
           ? `<h3>Workspace setup</h3><ul>${missing.map((c) => `<li>${esc(c.name)}: ${esc(c.detail)}<br><code>${esc(c.fix)}</code></li>`).join('')}</ul>`
           : '';
       }
+      async function refreshEnvironments() {
+        const current = await api('/api/environments');
+        if (JSON.stringify(current) === JSON.stringify(environments)) return;
+        environments = current;
+        renderEnvironmentChoices();
+      }
+      function environmentFormTarget() {
+        const hosted = $('#environment-kind').value === 'hosted';
+        $('#environment-url-field').hidden = !hosted;
+        $('#environment-url').required = hosted;
+        $('#environment-mode-field').hidden = hosted;
+        $('#environment-mode').required = !hosted;
+      }
+      function addTestUser(user = {}) {
+        const row = document.createElement('section');
+        row.className = 'test-user-card';
+        row.innerHTML = `<div class="environment-heading"><strong>Test user</strong><button type="button" data-remove-user aria-label="Remove test user">Remove</button></div><div class="environment-fields">${[
+          ['name','Name','QA administrator'], ['id','User ID','admin'], ['usernameRef','Username reference','env://STAGING_USERNAME'],
+          ['passwordRef','Password reference','op://vault/item/password'], ['totpRef','One-time code reference (optional)','op://vault/item/one-time password?attribute=otp'],
+        ].map(([key,label,placeholder]) => `<label>${label}<input data-user-field="${key}" value="${esc(user[key] ?? '')}" placeholder="${placeholder}" ${key === 'totpRef' ? '' : 'required'} autocomplete="off" spellcheck="false"></label>`).join('')}</div>`;
+        $('#test-user-list').append(row);
+      }
+      function renderEnvironmentEditor(environment) {
+        editingEnvironment = environment ? structuredClone(environment) : null;
+        $('#environment-form').hidden = false;
+        $('#environment-id').readOnly = !!environment;
+        $('#environment-id').value = environment?.id ?? '';
+        $('#environment-name').value = environment?.name ?? '';
+        $('#environment-kind').value = environment?.kind ?? 'hosted';
+        $('#environment-url').value = environment?.baseUrl ?? '';
+        $('#environment-mode').value = environment?.devMode ?? 'ci.development';
+        $('#delete-environment').hidden = !environment || environment.id === 'local';
+        $('#environment-message').textContent = '';
+        $('#test-user-list').replaceChildren();
+        for (const user of environment?.users ?? [{}]) addTestUser(user);
+        for (const button of document.querySelectorAll('[data-edit-environment]')) button.setAttribute('aria-pressed', String(button.dataset.editEnvironment === environment?.id));
+        environmentFormTarget();
+      }
+      async function loadEnvironmentSettings(preferred = editingEnvironment?.id) {
+        environmentSettings = await api('/api/environments?detail=1');
+        environments = environmentSettings;
+        renderEnvironmentChoices();
+        markup($('#environment-list'), environmentSettings.map((e) => `<button type="button" data-edit-environment="${esc(e.id)}" aria-pressed="false"><strong>${esc(e.name)}</strong><small>${e.kind === 'hosted' ? 'Hosted URL' : 'Local worktree'} · ${e.users.length} ${e.users.length === 1 ? 'user' : 'users'}</small></button>`).join(''));
+        renderEnvironmentEditor(environmentSettings.find((e) => e.id === preferred) ?? environmentSettings[0]);
+      }
+      $('#environment').addEventListener('change', () => {
+        localStorage.setItem('environment', $('#environment').value);
+        renderEnvironmentChoices();
+      });
+      $('#role').addEventListener('change', () => {
+        localStorage.setItem('test-user:' + $('#environment').value, $('#role').value);
+        renderComposer();
+      });
+      $('#environment-kind').addEventListener('change', environmentFormTarget);
+      $('#new-environment').addEventListener('click', () => { renderEnvironmentEditor(null); $('#environment-name').focus(); });
+      $('#add-test-user').addEventListener('click', () => addTestUser());
+      $('#test-user-list').addEventListener('click', (e) => { if (e.target.closest('[data-remove-user]')) e.target.closest('.test-user-card').remove(); });
+      $('#environment-list').addEventListener('click', (e) => {
+        const button = e.target.closest('[data-edit-environment]');
+        if (button) renderEnvironmentEditor(environmentSettings.find((item) => item.id === button.dataset.editEnvironment));
+      });
+      $('#environment-form').addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const button = event.submitter;
+        if (button) button.disabled = true;
+        $('#environment-message').textContent = 'Saving…';
+        try {
+          const environment = {
+            id: $('#environment-id').value.trim(), name: $('#environment-name').value.trim(), kind: $('#environment-kind').value,
+            ...($('#environment-kind').value === 'hosted' ? {baseUrl: $('#environment-url').value.trim()} : {devMode: $('#environment-mode').value.trim()}),
+            users: [...$('#test-user-list').querySelectorAll('.test-user-card')].map((row) => Object.fromEntries([...row.querySelectorAll('[data-user-field]')].filter((input) => input.dataset.userField !== 'totpRef' || input.value.trim()).map((input) => [input.dataset.userField, input.value.trim()]))),
+          };
+          await api('/api/environments', { environment, ...(editingEnvironment ? {expectedRevision: editingEnvironment.revision} : {}) });
+          await loadEnvironmentSettings(environment.id);
+          $('#environment-message').textContent = 'Environment saved. Choose it in the run controls.';
+        } catch (error) { $('#environment-message').textContent = error.message; }
+        finally { if (button) button.disabled = false; }
+      });
+      $('#delete-environment').addEventListener('click', async () => {
+        if (!editingEnvironment) return;
+        $('#delete-environment').disabled = true;
+        try {
+          await api(`/api/environments/${encodeURIComponent(editingEnvironment.id)}/delete`, {expectedRevision: editingEnvironment.revision});
+          editingEnvironment = null;
+          await loadEnvironmentSettings();
+          $('#environment-message').textContent = 'Environment deleted. Past run evidence is retained.';
+        } catch (error) { $('#environment-message').textContent = error.message; }
+        finally { $('#delete-environment').disabled = false; }
+      });
+      for (const button of document.querySelectorAll('[data-settings-tab]')) button.addEventListener('click', () => {
+        const section = button.dataset.settingsTab;
+        for (const tab of document.querySelectorAll('[data-settings-tab]')) tab.setAttribute('aria-selected', String(tab === button));
+        $('#connections-settings').hidden = section !== 'connections';
+        $('#environments-settings').hidden = section !== 'environments';
+        if (section === 'environments') loadEnvironmentSettings().catch((error) => { $('#environment-message').textContent = error.message; });
+      });
       function openSettings() {
         $('#settings-dialog').showModal();
         checkSetup().catch(reportError);
@@ -3030,6 +3193,10 @@
                 targets.clear();
                 targets.set(`${j.target.provider}:${j.target.model}`, j.target);
               }
+              if (j.environmentId && !environments.some((e) => e.id === j.environmentId)) throw new Error('This run’s environment was deleted. Choose another environment for a new run.');
+              if (j.environmentId) renderEnvironmentChoices(j.environmentId);
+              if (j.userId && !selectedEnvironment()?.users.some((u) => u.id === j.userId)) throw new Error('This test user was removed. Choose a user for a new run.');
+              if (j.userId && selectedEnvironment()?.users.some((u) => u.id === j.userId)) $('#role').value = j.userId;
               $('#worktree').value = j.worktree;
               beginDraft();
               renderWorktrees();
@@ -3196,7 +3363,8 @@
       });
       (async () => {
         const config = await api('/api/config');
-        $('#role').innerHTML = config.roles.map((r) => `<option>${esc(r)}</option>`).join('');
+        environments = config.environments ?? [{id:'local',name:'Local development',kind:'worktree',users:config.roles.map((id)=>({id,name:id}))}];
+        renderEnvironmentChoices();
         [cases, worktrees] = await Promise.all([api('/api/cases'), api('/api/worktrees')]);
         renderWorktrees();
         await Promise.all([refreshProviders(), refreshJobs()]);
@@ -3213,6 +3381,7 @@
         }
         setInterval(() => refreshJobs().catch(reportError), 2000);
         setInterval(() => { if (!document.hidden) void refreshCases().catch(reportError); }, 5000);
+        setInterval(() => { if (!document.hidden) void refreshEnvironments().catch(reportError); }, 10000);
         setInterval(() => {
           if (activeJob && !document.hidden) void refreshObservation();
         }, 1000);

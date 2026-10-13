@@ -14,6 +14,8 @@ export type VerifyOptions = {
   caseSnapshot?: TestCase;
   slot: string;
   role?: string;
+  base?: string;
+  storageState?: string;
   replaySlots?: string[];
   model: string;
   target?: Target;
@@ -29,7 +31,9 @@ export type VerifyOptions = {
 const root = new URL('..', import.meta.url).pathname;
 export const verify = async (opts: VerifyOptions) => {
   const slot = getSlot(opts.slot);
-  if (!slot) throw new Error(`Slot ${opts.slot} is not running`);
+  if (!slot && !opts.base) throw new Error(`Slot ${opts.slot} is not running`);
+  const base = opts.base ?? baseUrl(slot!);
+  const role = opts.role ?? slot!.role;
   const runDir = opts.runDir ?? newRunDir(opts.project, opts.caseId, opts.slot, opts.replayOnly ? 'replay' : 'verify');
   const log = (s: string) => opts.log?.(s);
   const stage = (s: string) => {
@@ -65,8 +69,9 @@ export const verify = async (opts: VerifyOptions) => {
       project: opts.project,
       caseId: opts.caseId,
       caseSnapshot: opts.caseSnapshot,
-      base: baseUrl(slot),
-      role: opts.role ?? slot.role,
+      base,
+      storageState: opts.storageState,
+      role,
       slot: opts.slot,
       model: opts.model,
       runDir,
@@ -87,8 +92,9 @@ export const verify = async (opts: VerifyOptions) => {
     const codified = await codify({
       project: opts.project,
       caseId: opts.caseId,
-      base: baseUrl(slot),
-      role: opts.role ?? slot.role,
+      base,
+      storageState: opts.storageState,
+      role,
       slot: opts.slot,
       model: opts.model,
       runDir,
@@ -110,20 +116,21 @@ export const verify = async (opts: VerifyOptions) => {
   summary.replays = [];
   for (const replaySlot of [opts.slot, ...(opts.replaySlots ?? [])]) {
     const s = getSlot(replaySlot);
-    if (!s) throw new Error(`Replay slot ${replaySlot} is not running`);
+    if (!s && !(replaySlot === opts.slot && opts.base)) throw new Error(`Replay slot ${replaySlot} is not running`);
     stage('replay');
     const r = await replay({
       runDir,
       label: `slot${replaySlot}`,
       specDir: spec.specDir,
       specFile: spec.specFile,
-      base: baseUrl(s),
+      base: replaySlot === opts.slot ? base : baseUrl(s!),
+      storageState: replaySlot === opts.slot ? opts.storageState : undefined,
       slot: replaySlot,
-      role: opts.role ?? s.role,
+      role: opts.role ?? s!.role,
       signal: opts.signal,
       onPackage: () => stage('package'),
     });
-    summary.replays.push({ slot: replaySlot, worktree: s.worktree, ...r, log: undefined });
+    summary.replays.push({ slot: replaySlot, worktree: s?.worktree, ...r, log: undefined });
     save();
   }
   summary.spec = spec.specPath;

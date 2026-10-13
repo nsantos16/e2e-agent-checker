@@ -8,7 +8,7 @@ It exercises the real rendering and refresh functions to check that polling, pro
 
 ## Workspace regression
 
-Evaluate `app-workspace.browser.js` the same way. Success returns 51 checks covering case selection, catalog refresh and draft activation, multi-model batch submission, model search, keyboard focus, unavailable-provider guidance, separate Connections settings, focused run history, polling, new drafts, theme persistence mobile layout, side-panel docking and browser preservation, network search/type/stage filters, sorting, response/raw detail, copy actions, keyboard navigation, pause/resume, bounded loading, retention disclosure, responsive inspection, escaped response text, live frame identity, closed-session labeling and direct selection of older runs. Requests, preferences and polling are mocked inside an isolated frame; this test does not consume subscription allowance or start real jobs.
+Evaluate `app-workspace.browser.js` the same way. Success returns 59 checks covering case selection, catalog refresh and draft activation, multi-model batch submission, model search, keyboard focus, unavailable-provider guidance, separate Connections settings, focused run history, polling, new drafts, theme persistence mobile layout, side-panel docking and browser preservation, network search/type/stage filters, sorting, response/raw detail, copy actions, keyboard navigation, pause/resume, bounded loading, retention disclosure, responsive inspection, escaped response text, live frame identity, closed-session labeling and direct selection of older runs. Requests, preferences and polling are mocked inside an isolated frame; this test does not consume subscription allowance or start real jobs.
 
 ## Browser/network runtime smoke
 
@@ -16,4 +16,8 @@ Run `node tests/observability-smoke.ts` after browser setup. This uses the real 
 
 ## Agent MCP contract and API integration
 
-`npm test` includes real stdio MCP client tests against a controlled HTTP fixture and a separate local app with disposable job/artifact state. They cover all 22 tool schemas, tool annotations, batch waiting and revisions, failure summaries, case search/read, bounded network and artifact pages, canonical artifact boundaries, and on-demand image delivery with unchanged-frame suppression. They do not launch model calls or publish evidence.
+`npm test` includes real stdio MCP client tests against a controlled HTTP fixture and a separate local app with disposable job/artifact state. They cover all 25 tool schemas, tool annotations, batch waiting and revisions, failure summaries, case search/read, bounded network and artifact pages, canonical artifact boundaries, and on-demand image delivery with unchanged-frame suppression. They do not launch model calls or publish evidence.
+
+## Environment login smoke
+
+Run `node tests/environment-login-smoke.ts` to test the actual credential-reference and login harness against two disposable localhost targets. It uses dummy credentials, checks separate sessions and owner-only file permissions, and cleans up its session files. It makes no model or 1Password calls. Workspace browser checks cover environment settings, users, hosted/local selection and mobile layout.

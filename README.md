@@ -29,7 +29,7 @@ npm run setup        # installs deps + browsers, then runs the readiness check
 npm run app          # opens http://localhost:4100
 ```
 
-In the app: pick the **worktree** you want to test (every worktree of your `sample-frontend` checkout is listed, e.g. the one an agent just implemented a ticket in), select one or more **provider models**, then click **Run ▶** or select several cases. Every case × model gets its own run. Open a running job to watch its live browser preview and inspect captured network requests. The agent receives failure summaries and can query detailed diagnostics. Runs show queue/stage timing, input/output/cache tokens, reported cost when available, per-step verdicts, and replay video. Cancel active runs or replay a saved spec without new model calls. Runs sharing a test identity are serialized. Use **+** beside the Cases/Runs tabs to import a Qase case. Subscription login and readiness live in **Connections** in the sidebar; model selection lives in the bottom composer.
+In the app: pick the **worktree** you want to test (every worktree of your `sample-frontend` checkout is listed, e.g. the one an agent just implemented a ticket in), select one or more **provider models**, then click **Run ▶** or select several cases. Every case × model gets its own run. Open a running job to watch its live browser preview and inspect captured network requests. The agent receives failure summaries and can query detailed diagnostics. Runs show queue/stage timing, input/output/cache tokens, reported cost when available, per-step verdicts, and replay video. Cancel active runs or replay a saved spec without new model calls. Runs sharing a test identity are serialized. Use **+** beside the Cases/Runs tabs to import a Qase case. Subscription login and readiness live in **Settings → Connections**; model selection lives in the bottom composer.
 
 `npm run doctor` tells you exactly what's missing. You need:
 
@@ -52,11 +52,12 @@ codex mcp add e2e-agent-checker -- node /Users/nico/.t3/projects/e2e-agent-check
 claude mcp add e2e-agent-checker --scope user -- node /Users/nico/.t3/projects/e2e-agent-checker/src/mcp-server.ts
 ```
 
-Use your checkout's absolute path. The [agent MCP guide](docs/agent-mcp.md) includes Cursor configuration, all 22 tools, exact inputs, compact defaults and compatibility changes.
+Use your checkout's absolute path. The [agent MCP guide](docs/agent-mcp.md) includes Cursor configuration, all 25 tools, exact inputs, compact defaults and compatibility changes.
 
 The normal agent workflow is **discover → verify → wait → inspect only relevant evidence**:
 
 - `get_setup`, searchable `list_cases` / `list_worktrees`, and `list_models` provide readiness and valid inputs. `import_case` / `get_case` make case setup available without the UI.
+- Configure local or hosted targets and their test users in **Settings → Environments**. Select an environment in the composer and a user in Run options. See [environments and credential references](docs/environments.md).
 - Native case CRUD, conflict-aware Qase refresh and run snapshots are available through MCP. See [case management and QA roadmap](docs/case-management.md).
 - `verify_case` / `verify_cases` return IDs and direct viewer links; stable idempotency keys prevent duplicate submissions.
 - `wait_jobs` waits for a batch in one call and returns only changed summaries when revisions are provided. `get_job` / `list_jobs` return compact status, outcomes, timing and usage.

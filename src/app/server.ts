@@ -6,6 +6,7 @@ import { config, frontendRepo, requireFrontendRepo } from '../config.ts';
 import { runDoctor } from '../doctor.ts';
 import { cancelJob, getJob, listJobs, replayJob, submitBatch } from '../jobs.ts';
 import { fetchCases, loadCaseWithRelated } from '../qase.ts';
+import { listEnvironments, environmentSummary, saveEnvironment, deleteEnvironment, environmentId } from '../environments.ts';
 import { caseCatalog, caseSummary, syncCaseSchema } from '../cases.ts';
 import { baseUrl, isHealthy, listSlots } from '../slots.ts';
 
@@ -23,6 +24,7 @@ const ROLES = Object.keys(JSON.parse(readFileSync(join(root, 'config/roles.json'
 const listCases = (includeArchived = false) => caseCatalog.list(includeArchived).map(caseSummary);
 
 const listWorktrees = () => {
+  if (!frontendRepo()) return [];
   const out = execFileSync('git', ['worktree', 'list', '--porcelain'], {
     cwd: requireFrontendRepo(),
     encoding: 'utf8',
@@ -136,6 +138,7 @@ const server = createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/config')
       return json(res, 200, {
         roles: ROLES,
+        environments: listEnvironments().map(environmentSummary),
         frontendRepo: frontendRepo(),
         defaultTarget: {
           provider: 'claude-code',
@@ -143,9 +146,29 @@ const server = createServer(async (req, res) => {
           authMode: 'subscription',
         },
       });
+    if (req.method === 'GET' && url.pathname === '/api/environments')
+      return json(res, 200, url.searchParams.get('detail') === '1' ? listEnvironments() : listEnvironments().map(environmentSummary));
+    if (req.method === 'POST' && url.pathname === '/api/environments')
+      return json(res, 200, environmentSummary(saveEnvironment(await readBody(req))));
+    const environmentMatch = url.pathname.match(/^\/api\/environments\/([a-z0-9_-]+)\/delete$/);
+    if (req.method === 'POST' && environmentMatch) {
+      const id = environmentId.parse(environmentMatch[1]);
+      const { expectedRevision } = z
+        .object({ expectedRevision: z.string().min(1) })
+        .strict()
+        .parse(await readBody(req));
+      if (listJobs().some((j) => (j.environmentId ?? 'local') === id && ['queued', 'running', 'cancelling'].includes(j.status)))
+        return json(res, 409, {
+          code: 'ENVIRONMENT_IN_USE',
+          error: 'Wait for this environment’s active runs to finish before deleting it',
+        });
+      deleteEnvironment(id, expectedRevision);
+      return json(res, 200, { id, deleted: true });
+    }
     if (req.method === 'GET' && url.pathname === '/api/providers')
       return json(res, 200, await listProviders(url.searchParams.get('fresh') === '1'));
-    if (req.method === 'GET' && url.pathname === '/api/doctor') return json(res, 200, await runDoctor());
+    if (req.method === 'GET' && url.pathname === '/api/doctor')
+      return json(res, 200, await runDoctor(url.searchParams.get('environmentId') ?? 'local', url.searchParams.get('userId') ?? undefined));
     if (req.method === 'GET' && url.pathname === '/api/cases')
       return json(res, 200, listCases(url.searchParams.get('includeArchived') === '1'));
     if (req.method === 'POST' && url.pathname === '/api/cases') {
@@ -234,6 +257,8 @@ const server = createServer(async (req, res) => {
               : {
                   ...j,
                   caseSnapshot: undefined,
+                  environmentSnapshot: undefined,
+                  identityKey: undefined,
                   caseRevision: j.caseSnapshot?.revision,
                   title: j.caseSnapshot?.title ?? t.get(`${j.project}-${j.caseId}`),
                   log: j.log.slice(-6),
@@ -337,6 +362,8 @@ const server = createServer(async (req, res) => {
       return json(res, 200, {
         ...job,
         caseSnapshot: undefined,
+        environmentSnapshot: undefined,
+        identityKey: undefined,
         caseRevision: job.caseSnapshot?.revision,
         network: job.runDir ? readNetwork(job.runDir, { errorsOnly: true, limit: 10 }) : undefined,
         comment,

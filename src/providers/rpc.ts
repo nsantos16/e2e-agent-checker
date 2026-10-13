@@ -1,3 +1,4 @@
+import { childEnvironment } from '../environments.ts';
 import { spawn } from 'node:child_process';
 import { killTree } from '../process.ts';
 
@@ -12,7 +13,7 @@ export class Rpc {
   closed: Promise<void>;
   failure?: Error;
   constructor(command: string, args: string[], cwd?: string) {
-    this.child = spawn(command, args, { cwd, detached: true, stdio: ['pipe', 'pipe', 'pipe'] });
+    this.child = spawn(command, args, { cwd, env: childEnvironment(), detached: true, stdio: ['pipe', 'pipe', 'pipe'] });
     let buf = '';
     this.child.stderr!.resume();
     this.child.stdin!.on('error', () => {});

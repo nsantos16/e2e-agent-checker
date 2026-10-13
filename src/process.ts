@@ -1,3 +1,4 @@
+import { childEnvironment } from './environments.ts';
 import { spawn } from 'node:child_process';
 export const killTree = (pid?: number, signal: NodeJS.Signals = 'SIGTERM') => {
   if (!pid) return;
@@ -20,7 +21,7 @@ export async function command(
   } = {},
 ) {
   opts.signal?.throwIfAborted();
-  const child = spawn(command, args, { cwd: opts.cwd, env: opts.env, detached: true, stdio: ['pipe', 'pipe', 'pipe'] });
+  const child = spawn(command, args, { cwd: opts.cwd, env: childEnvironment(opts.env), detached: true, stdio: ['pipe', 'pipe', 'pipe'] });
   let stdout = '',
     stderr = '',
     buffer = '';

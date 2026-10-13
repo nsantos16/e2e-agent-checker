@@ -29,14 +29,22 @@ export const specLocation = (runDir: string, project: string, caseId: number) =>
 };
 
 // Points scripts/try-spec.sh (and replay) at a slot. Values only, no secrets: the session file path, not its contents.
-export const writeReplayEnv = (runDir: string, specDir: string, specFile: string, base: string, slot: string, role: string) =>
+export const writeReplayEnv = (
+  runDir: string,
+  specDir: string,
+  specFile: string,
+  base: string,
+  slot: string,
+  role: string,
+  storageState?: string,
+) =>
   writeFileSync(
     join(runDir, 'replay.env'),
     [
       `E2E_SPEC_DIR=${quote(specDir)}`,
       `E2E_SPEC_FILE=${quote(specFile)}`,
       `E2E_BASE_URL=${quote(base)}`,
-      `E2E_STORAGE_STATE=${quote(statePath(slot, role))}`,
+      `E2E_STORAGE_STATE=${quote(storageState ?? statePath(slot, role))}`,
     ].join('\n') + '\n',
   );
 
@@ -47,6 +55,7 @@ export const codify = async (opts: {
   base: string;
   slot: string;
   role: string;
+  storageState?: string;
   model: string;
   target?: Target;
   signal?: AbortSignal;
@@ -58,7 +67,7 @@ export const codify = async (opts: {
   mkdirSync(dir, { recursive: true });
   const { specDir, specFile, specPath } = specLocation(opts.runDir, opts.project, opts.caseId);
   mkdirSync(specDir, { recursive: true });
-  writeReplayEnv(opts.runDir, specDir, specFile, opts.base, opts.slot, opts.role);
+  writeReplayEnv(opts.runDir, specDir, specFile, opts.base, opts.slot, opts.role, opts.storageState);
 
   const capturedCase = join(opts.runDir, 'explore/case.json');
   const casePath = existsSync(capturedCase) ? capturedCase : join(root, 'fixtures/qase', `${opts.project}-${opts.caseId}.json`);

@@ -103,6 +103,7 @@ test('real local API and stdio MCP expose compact jobs, selected diagnostics, pa
     E2E_APP_OPEN: '0',
     E2E_JOBS_PATH: jobs,
     E2E_CASES_PATH: join(dir, 'cases.json'),
+    E2E_ENVIRONMENTS_PATH: join(dir, 'environments.json'),
   } as Record<string, string>;
   const app = spawn(process.execPath, ['src/app/server.ts'], { env, stdio: 'ignore' });
   const closed = new Promise<void>((r) => app.once('exit', () => r()));
@@ -125,6 +126,33 @@ test('real local API and stdio MCP expose compact jobs, selected diagnostics, pa
       assert.ok(!response.isError, JSON.stringify(response.content));
       return (response.structuredContent as any).data;
     };
+    const definition = {
+      id: 'staging',
+      name: 'Staging',
+      kind: 'hosted',
+      baseUrl: 'https://staging.example.test',
+      users: [{ id: 'qa', name: 'QA', usernameRef: 'env://QA_USERNAME', passwordRef: 'env://QA_PASSWORD' }],
+    };
+    const environment = await call('save_environment', { environment: definition });
+    const catalog = await call('list_environments', {});
+    assert.equal(catalog.environments.find((e: any) => e.id === 'staging').users[0].passwordRef, undefined);
+    const editable = await call('list_environments', { detail: true });
+    assert.equal(editable.environments.find((e: any) => e.id === 'staging').users[0].passwordRef, 'env://QA_PASSWORD');
+    const staleEnvironment = await client.callTool({
+      name: 'save_environment',
+      arguments: { environment: definition, expectedRevision: 'stale' },
+    });
+    assert.equal(staleEnvironment.isError, true);
+    const rawSecret = await client.callTool({
+      name: 'save_environment',
+      arguments: {
+        environment: { ...definition, users: [{ ...definition.users[0], passwordRef: 'not-a-reference' }] },
+        expectedRevision: environment.revision,
+      },
+    });
+    assert.equal(rawSecret.isError, true);
+    const deletedEnvironment = await call('delete_environment', { environmentId: 'staging', expectedRevision: environment.revision });
+    assert.equal(deletedEnvironment.deleted, true);
     const created = await call('create_case', { title: 'Native case', idempotencyKey: 'native-1' });
     assert.equal(created.project, 'LOCAL');
     assert.equal(created.status, 'draft');

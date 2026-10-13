@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { promisify } from 'node:util';
 import { chromium } from 'playwright';
+import { getEnvironment, getTestUser } from './environments.ts';
 import { config, frontendRepo, qaseToken } from './config.ts';
 
 // Checks everything a dev needs on their machine, with the command that fixes each gap. Never prompts or reads secrets.
@@ -28,7 +29,11 @@ const versionAtLeast = (v: string | undefined, min: number[]) => {
   return true;
 };
 
-export const runDoctor = async (): Promise<Check[]> => {
+export const runDoctor = async (environmentId = 'local', userId?: string): Promise<Check[]> => {
+  const environment = getEnvironment(environmentId),
+    user = getTestUser(environment, userId);
+  const refs = [user.usernameRef, user.passwordRef, user.totpRef].filter(Boolean) as string[];
+  const needsOp = refs.some((ref) => ref.startsWith('op://')) && !process.env.OP_SERVICE_ACCOUNT_TOKEN;
   const [claude, op, opAccounts, ffmpeg, gh] = await Promise.all([
     run('claude', ['--version']),
     run('op', ['--version']),
@@ -45,6 +50,15 @@ export const runDoctor = async (): Promise<Check[]> => {
     }
   })();
   return [
+    ...refs
+      .filter((ref) => ref.startsWith('env://'))
+      .map((ref) => ({
+        name: `Credential variable ${ref.slice(6)}`,
+        required: true,
+        ok: !!process.env[ref.slice(6)],
+        detail: process.env[ref.slice(6)] ? 'configured' : 'missing',
+        fix: 'Set this variable in the checker process environment and restart the app.',
+      })),
     {
       name: 'Node.js ≥ 24',
       required: true,
@@ -54,7 +68,7 @@ export const runDoctor = async (): Promise<Check[]> => {
     },
     {
       name: 'sample-frontend checkout',
-      required: true,
+      required: environment.kind === 'worktree',
       ok: !!repo,
       detail: repo ?? 'not found',
       fix: 'Set "frontendRepo" in e2e-agent.local.json',
@@ -68,14 +82,14 @@ export const runDoctor = async (): Promise<Check[]> => {
     },
     {
       name: '1Password CLI',
-      required: true,
+      required: needsOp,
       ok: !!op,
       detail: op ?? 'not installed',
       fix: 'brew install 1password-cli, then enable 1Password → Settings → Developer → Integrate with 1Password CLI',
     },
     {
       name: `1Password account ${config.onePasswordAccount}`,
-      required: true,
+      required: needsOp,
       ok: opHasAccount,
       detail: opHasAccount ? 'configured' : 'not signed in',
       fix: `op account add --address ${config.onePasswordAccount}`,

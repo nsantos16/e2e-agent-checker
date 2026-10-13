@@ -15,6 +15,7 @@ export function jobSummary(job: Job, base: string) {
     project: job.project,
     caseId: job.caseId,
     caseRevision: job.caseSnapshot?.revision,
+    environment: job.environment,
     status: job.status,
     stage: job.stage,
     outcome: job.outcome,

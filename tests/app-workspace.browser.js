@@ -104,7 +104,28 @@
       { project: 'DEMO', id: 6003, title: 'Multiline note', steps: 3, suite: 'Notes' },
       { project: 'DEMO', id: 6004, title: 'Note persistence', steps: 2, suite: 'Notes' },
     ];
+    window.fixtureEnvironments = [
+      {
+        id: 'local',
+        name: 'Local development',
+        kind: 'worktree',
+        devMode: 'ci.development',
+        revision: 'local-1',
+        users: [{ id: 'test-user', name: 'Local tester', usernameRef: 'env://LOCAL_USERNAME', passwordRef: 'env://LOCAL_PASSWORD' }],
+      },
+    ];
     window.fetch = async (path, options) => {
+      if (path === '/api/environments' && options?.method === 'POST') {
+        const body = JSON.parse(options.body);
+        const saved = { ...body.environment, revision: 'updated' };
+        window.fixtureEnvironments = [...window.fixtureEnvironments.filter((e) => e.id !== saved.id), saved];
+        return Response.json(saved);
+      }
+      if (path === '/api/environments/staging/delete' && options?.method === 'POST') {
+        window.fixtureEnvironments = window.fixtureEnvironments.filter((e) => e.id !== 'staging');
+        return Response.json({ id: 'staging', deleted: true });
+      }
+      if (path.startsWith('/api/environments')) return Response.json(window.fixtureEnvironments);
       if (options?.method === 'POST') {
         window.requests.push({ path, body: JSON.parse(options.body) });
         return Response.json([job.id]);
@@ -120,7 +141,7 @@
       }
       const data =
         path === '/api/config'
-          ? { roles: ['test-user'] }
+          ? { roles: ['test-user'], environments: window.fixtureEnvironments }
           : path === '/api/cases'
             ? window.fixtureCases
             : path === '/api/worktrees'
@@ -193,6 +214,70 @@
     );
     $('#picker-setup').click();
     assert($('#settings-dialog').open && !$('#model-dialog').open, 'Connection management opens separately');
+    $('[data-settings-tab="environments"]').click();
+    await waitFor(() => !!$('[data-edit-environment="local"]'));
+    assert(
+      $('#environment-id').readOnly && $('[data-user-field="passwordRef"]').value === 'env://LOCAL_PASSWORD',
+      'Settings shows editable credential references without resolving secret values',
+    );
+    $('#new-environment').click();
+    $('#environment-id').value = 'staging';
+    $('#environment-name').value = 'Staging';
+    $('#environment-url').value = 'https://staging.example.test';
+    const setUser = (row, id) => {
+      for (const [field, value] of Object.entries({
+        id,
+        name: id,
+        usernameRef: 'env://STAGING_USERNAME',
+        passwordRef: 'env://STAGING_PASSWORD',
+      }))
+        row.querySelector(`[data-user-field="${field}"]`).value = value;
+    };
+    setUser($('.test-user-card'), 'admin');
+    $('#add-test-user').click();
+    setUser(d.querySelectorAll('.test-user-card')[1], 'viewer');
+    $('#environment-form').requestSubmit();
+    await waitFor(() => $('#environment-message').textContent.includes('saved'));
+    assert(
+      w.fixtureEnvironments.find((e) => e.id === 'staging').users.length === 2,
+      'Settings saves a hosted environment with multiple test users',
+    );
+    $('#environment').value = 'staging';
+    $('#environment').dispatchEvent(new w.Event('change'));
+    assert(
+      $('.worktree-control').hidden && $('#role').options.length === 2 && $('#role').value === 'admin',
+      'Hosted selection uses only that environment’s users and hides worktree selection',
+    );
+    const savedWorktree = $('#worktree').value;
+    $('#worktree').value = '';
+    w.eval('renderComposer()');
+    assert(!$('#run-selected').disabled, 'Hosted verification does not require a local worktree');
+    $('#role').value = 'viewer';
+    $('#role').dispatchEvent(new w.Event('change'));
+    $('#environment').value = 'local';
+    $('#environment').dispatchEvent(new w.Event('change'));
+    assert(
+      $('#role').value === 'test-user' && !$('.worktree-control').hidden,
+      'Changing environments resets the test user to a valid member',
+    );
+    $('#environment').value = 'staging';
+    $('#environment').dispatchEvent(new w.Event('change'));
+    assert($('#role').value === 'viewer', 'Each environment remembers its own test-user selection');
+    frame.style.width = '390px';
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    const settingsRect = $('#settings-dialog').getBoundingClientRect();
+    assert(
+      settingsRect.left >= 0 &&
+        settingsRect.right <= w.innerWidth &&
+        $('#settings-dialog').scrollWidth <= $('#settings-dialog').clientWidth,
+      'Environment settings fit the mobile viewport',
+    );
+    frame.style.width = '1280px';
+    $('#delete-environment').click();
+    await waitFor(() => !w.fixtureEnvironments.some((e) => e.id === 'staging') && $('#environment').value === 'local');
+    assert($('#role').value === 'test-user', 'Deleting a selected environment falls back to the local profile');
+    $('#worktree').value = savedWorktree;
+    w.eval('renderComposer()');
     $('[data-close="settings-dialog"]').click();
     $('#run-selected').click();
     await waitFor(() => w.requests.length === 1 && $('#welcome').hidden);
@@ -201,7 +286,9 @@
       request.path === '/api/jobs' &&
         request.body.cases.length === 1 &&
         request.body.targets.length === 2 &&
-        request.body.targets.every((t) => t.authMode === 'subscription'),
+        request.body.targets.every((t) => t.authMode === 'subscription') &&
+        request.body.environmentId === 'local' &&
+        request.body.userId === 'test-user',
       'Run submission preserves case and subscription targets',
     );
     assert($('#history-panel').hidden === false && !$('#jobs .job').hidden, 'New run opens its focused history view');
