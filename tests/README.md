@@ -23,3 +23,7 @@ Run `node tests/observability-smoke.ts` after browser setup. This uses the real 
 Run `node tests/environment-login-smoke.ts` to test the actual credential-reference and login harness against two disposable localhost targets. It uses dummy credentials, checks separate sessions and owner-only file permissions, and cleans up its session files. It makes no model or 1Password calls. Workspace browser checks cover environment settings, users, hosted/local selection and mobile layout.
 
 Pricing tests use fixed catalogs to verify cache/read/write arithmetic, reasoning subsets, mixed-model attribution, missing rates, pinned snapshots, and cancellation. API/MCP tests check on-demand pricing/usage evidence. No paid model calls are made.
+
+## Effect runtime regression
+
+`npm test` includes `effect-runtime.test.ts`: process-group cleanup on cancellation, scoped release before timeout errors, sibling cancellation during credential resolution, failed Codex initialization, cancelled browser MCP initialization, and a verification using injected provider/process/pricing services. Job tests also cover shutdown of active and queued work and a submission racing shutdown. Run `npm run check` for service dependency and effect type checking. The localhost smoke tests above exercise real browser resources through the same scoped runtime.

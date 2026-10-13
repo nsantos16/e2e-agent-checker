@@ -1,29 +1,14 @@
+import { Context, Effect, Layer } from 'effect';
 import { execFile } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { promisify } from 'node:util';
-import sdk from '@1password/sdk';
+import sdkClient from '@1password/sdk';
 import type { TestUser } from './environments.ts';
 import { config as appConfig } from './config.ts';
+import { attempt, OperationError, runEffect, sdk } from './runtime/effect.ts';
 
-// See docs/adr/0002: secrets are resolved here, in the harness, and never reach the agent.
-// Service account when OP_SERVICE_ACCOUNT_TOKEN is set, otherwise desktop-app auth (one approval per process).
-// SDK desktop auth needs "Integrate with other apps" enabled in the 1Password app; without it we fall back to `op read`,
-// which uses the CLI's desktop integration.
-
-type RoleRefs = { description: string; username: string; password: string; totp?: string };
-type RolesConfig = { roles: Record<string, RoleRefs> };
-
-export type Credentials = {
-  username: string;
-  password: string;
-  // TOTP codes rotate every 30s, so they are resolved at the moment they are typed.
-  totp?: () => Promise<string>;
-};
-
-const config: RolesConfig = JSON.parse(readFileSync(new URL('../config/roles.json', import.meta.url), 'utf8'));
-
+export type Credentials = { username: string; password: string; totp?: (signal?: AbortSignal) => Promise<string> };
 type Resolver = (ref: string, signal?: AbortSignal) => Promise<string>;
-
 const opRead: Resolver = async (ref, signal) => {
   const { stdout } = await promisify(execFile)('op', ['read', '--no-newline', '--account', appConfig.onePasswordAccount, ref], {
     timeout: 60_000,
@@ -31,55 +16,68 @@ const opRead: Resolver = async (ref, signal) => {
   });
   return stdout;
 };
+// One desktop authorization per process, initialized lazily by the first op:// reference.
+const resolver = Effect.runSync(
+  Effect.cached(
+    sdk(() =>
+      sdkClient.createClient({
+        auth: process.env.OP_SERVICE_ACCOUNT_TOKEN ?? new sdkClient.DesktopAuth(appConfig.onePasswordAccount),
+        integrationName: 'e2e-agent-checker',
+        integrationVersion: '0.0.1',
+      }),
+    ).pipe(
+      Effect.map((client) => ((ref: string) => client.secrets.resolve(ref)) as Resolver),
+      Effect.catch((error) => (process.env.OP_SERVICE_ACCOUNT_TOKEN ? Effect.fail(error) : Effect.succeed(opRead))),
+    ),
+  ),
+);
 
-let resolverPromise: Promise<Resolver> | undefined;
-
-const resolver = () => {
-  resolverPromise ??= sdk
-    .createClient({
-      auth: process.env.OP_SERVICE_ACCOUNT_TOKEN ?? new sdk.DesktopAuth(appConfig.onePasswordAccount),
-      integrationName: 'e2e-agent-checker',
-      integrationVersion: '0.0.1',
-    })
-    .then(
-      (c): Resolver =>
-        (ref) =>
-          c.secrets.resolve(ref),
-    )
-    .catch((error) => {
-      if (process.env.OP_SERVICE_ACCOUNT_TOKEN) throw error;
-      console.warn('1Password SDK desktop auth unavailable; falling back to the op CLI');
-      return opRead;
-    });
-  return resolverPromise;
-};
-
-export const resolveRole = async (role: string, signal?: AbortSignal): Promise<Credentials> => {
-  const refs = config.roles[role];
-  if (!refs) throw new Error(`Unknown role "${role}". Known: ${Object.keys(config.roles).join(', ')}`);
-  const resolve = await resolver();
-  const [username, password] = await Promise.all([resolve(refs.username, signal), resolve(refs.password, signal)]);
-  const totpRef = refs.totp;
-  return { username, password, totp: totpRef ? () => resolve(totpRef, signal) : undefined };
-};
-
-export const resolveTestUser = async (user: TestUser, signal?: AbortSignal): Promise<Credentials> => {
-  const read = async (ref: string) => {
-    signal?.throwIfAborted();
+const read = (ref: string) =>
+  Effect.gen(function* () {
     if (ref.startsWith('env://')) {
       const value = process.env[ref.slice(6)];
       if (!value)
-        throw Object.assign(new Error('A configured credential environment variable is missing'), { code: 'CREDENTIAL_UNAVAILABLE' });
+        return yield* Effect.fail(
+          new OperationError({ code: 'CREDENTIAL_UNAVAILABLE', message: 'A configured credential environment variable is missing' }),
+        );
       return value;
     }
-    try {
-      return await (
-        await resolver()
-      )(ref, signal);
-    } catch {
-      throw Object.assign(new Error('Could not resolve a configured 1Password credential'), { code: 'CREDENTIAL_UNAVAILABLE' });
-    }
-  };
-  const [username, password] = await Promise.all([read(user.usernameRef), read(user.passwordRef)]);
-  return { username, password, ...(user.totpRef ? { totp: () => read(user.totpRef!) } : {}) };
-};
+    return yield* Effect.gen(function* () {
+      const resolve = yield* resolver;
+      return yield* sdk((signal) => resolve(ref, signal));
+    }).pipe(
+      Effect.mapError(
+        () => new OperationError({ code: 'CREDENTIAL_UNAVAILABLE', message: 'Could not resolve a configured 1Password credential' }),
+      ),
+    );
+  });
+export class CredentialStore extends Context.Service<CredentialStore, { read: typeof read }>()('checker/CredentialStore') {}
+export const CredentialStoreLive = Layer.succeed(CredentialStore, { read });
+export const resolveTestUserEffect = (user: TestUser) =>
+  Effect.gen(function* () {
+    const store = yield* CredentialStore;
+    const [username, password] = yield* Effect.all([store.read(user.usernameRef), store.read(user.passwordRef)], { concurrency: 2 });
+    const totpRef = user.totpRef;
+    return {
+      username,
+      password,
+      ...(totpRef ? { totp: (signal?: AbortSignal) => runEffect(store.read(totpRef), signal) } : {}),
+    } satisfies Credentials;
+  });
+export const resolveRoleEffect = (role: string) =>
+  Effect.gen(function* () {
+    const { roles } = yield* attempt(() => JSON.parse(readFileSync(new URL('../config/roles.json', import.meta.url), 'utf8')));
+    const refs = roles[role];
+    if (!refs) return yield* Effect.fail(new OperationError({ code: 'FIXTURE_UNAVAILABLE', message: `Unknown role "${role}"` }));
+    return yield* resolveTestUserEffect({
+      id: role,
+      name: role,
+      usernameRef: refs.username,
+      passwordRef: refs.password,
+      totpRef: refs.totp,
+    });
+  });
+export const resolveRole = (role: string, signal?: AbortSignal): Promise<Credentials> =>
+  runEffect(resolveRoleEffect(role).pipe(Effect.provide(CredentialStoreLive)), signal);
+export const resolveTestUser = (user: TestUser, signal?: AbortSignal): Promise<Credentials> =>
+  runEffect(resolveTestUserEffect(user).pipe(Effect.provide(CredentialStoreLive)), signal);

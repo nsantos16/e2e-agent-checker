@@ -1,3 +1,5 @@
+import { Context, Effect, Layer } from 'effect';
+import { runEffect, sdk } from './runtime/effect.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -6,63 +8,64 @@ import { loadLiteLlmCatalog, resolveLiteLlmPricing, type LiteLlmLoadResult } fro
 import { claudeUsage, mergeUsage, type Usage } from './usage.ts';
 
 export type RunPricing = { price: (usage: Usage, model: string) => Usage };
-let cached: { expires: number; value: Promise<LiteLlmLoadResult> } | undefined;
-async function loadCatalog(): Promise<LiteLlmLoadResult> {
-  if (!cached || cached.expires < Date.now()) {
-    cached = {
-      expires: Date.now() + 60_000,
-      value: loadLiteLlmCatalog({
-        env: process.env,
-        fetchImpl: (input, init) => fetch(input, { ...init, signal: AbortSignal.timeout(3_000) }),
-      }).catch(() => ({ catalog: null, source: 'none' as const })),
-    };
-  }
-  return cached.value;
-}
+const catalogLoad = sdk((signal) =>
+  loadLiteLlmCatalog({
+    env: process.env,
+    fetchImpl: (input, init) => fetch(input, { ...init, signal: AbortSignal.any([signal, AbortSignal.timeout(3000)]) }),
+  }),
+).pipe(Effect.catch(() => Effect.succeed({ catalog: null, source: 'none' as const })));
+const cachedCatalog = Effect.runSync(Effect.cachedWithTTL(catalogLoad, '1 minute'));
+export class PricingCatalog extends Context.Service<PricingCatalog, { load: Effect.Effect<LiteLlmLoadResult> }>()(
+  'checker/PricingCatalog',
+) {}
+export const PricingCatalogLive = Layer.succeed(PricingCatalog, { load: cachedCatalog });
 // Capture once for both model stages. Only the rates actually used are stored with the run.
-export async function createRunPricing(runDir: string, loaded?: LiteLlmLoadResult): Promise<RunPricing> {
-  const { catalog, source } = loaded ?? (await loadCatalog());
-  const snapshot = {
-    id: randomUUID(),
-    capturedAt: new Date().toISOString(),
-    catalog: 'LiteLLM',
-    catalogSource: source,
-    catalogHash: catalog ? createHash('sha256').update(JSON.stringify(catalog)).digest('hex') : null,
-    basis: 'standard-api',
-    library: 'tokentally@0.1.7',
-    models: {} as Record<string, Pricing | null>,
-  };
-  const save = () => writeFileSync(join(runDir, 'pricing.json'), JSON.stringify(snapshot, null, 2), { mode: 0o600 });
-  save();
-  return {
-    price(usage, model) {
-      if (!Object.hasOwn(snapshot.models, model)) {
-        snapshot.models[model] = catalog ? resolveLiteLlmPricing(catalog, model) : null;
-        save();
-      }
-      const pricing = snapshot.models[model];
-      const out = { ...usage, estimatedApiCostUsd: null, pricingSnapshotId: snapshot.id } as Usage;
-      if (!pricing || usage.inputTokens === null || usage.outputTokens === null || usage.cacheReadTokens === null) return out;
-      const writes = usage.cacheWriteTokens ?? 0;
-      const uncached = usage.inputTokens - usage.cacheReadTokens - writes;
-      if (uncached < 0) return out;
-      // Provider adapters retain inclusive input counts; reasoning is already part of output.
-      const estimate = estimateUsdCost({
-        usage: {
-          inputTokens: usage.inputTokens,
-          outputTokens: usage.outputTokens,
-          uncachedInputTokens: uncached,
-          cachedInputTokens: usage.cacheReadTokens,
-          cacheCreationInputTokens: writes,
-        },
-        pricing,
-        requireExplicitUncachedInputTokens: true,
-      });
-      out.estimatedApiCostUsd = estimate && Number.isFinite(estimate.totalUsd) ? estimate.totalUsd : null;
-      return out;
-    },
-  };
-}
+export const createRunPricingEffect = (runDir: string, loaded?: LiteLlmLoadResult) =>
+  Effect.gen(function* () {
+    const { catalog, source } = loaded ?? (yield* (yield* PricingCatalog).load);
+    const snapshot = {
+      id: randomUUID(),
+      capturedAt: new Date().toISOString(),
+      catalog: 'LiteLLM',
+      catalogSource: source,
+      catalogHash: catalog ? createHash('sha256').update(JSON.stringify(catalog)).digest('hex') : null,
+      basis: 'standard-api',
+      library: 'tokentally@0.1.7',
+      models: {} as Record<string, Pricing | null>,
+    };
+    const save = () => writeFileSync(join(runDir, 'pricing.json'), JSON.stringify(snapshot, null, 2), { mode: 0o600 });
+    save();
+    return {
+      price(usage: Usage, model: string) {
+        if (!Object.hasOwn(snapshot.models, model)) {
+          snapshot.models[model] = catalog ? resolveLiteLlmPricing(catalog, model) : null;
+          save();
+        }
+        const pricing = snapshot.models[model];
+        const out = { ...usage, estimatedApiCostUsd: null, pricingSnapshotId: snapshot.id } as Usage;
+        if (!pricing || usage.inputTokens === null || usage.outputTokens === null || usage.cacheReadTokens === null) return out;
+        const writes = usage.cacheWriteTokens ?? 0;
+        const uncached = usage.inputTokens - usage.cacheReadTokens - writes;
+        if (uncached < 0) return out;
+        // Provider adapters retain inclusive input counts; reasoning is already part of output.
+        const estimate = estimateUsdCost({
+          usage: {
+            inputTokens: usage.inputTokens,
+            outputTokens: usage.outputTokens,
+            uncachedInputTokens: uncached,
+            cachedInputTokens: usage.cacheReadTokens,
+            cacheCreationInputTokens: writes,
+          },
+          pricing,
+          requireExplicitUncachedInputTokens: true,
+        });
+        out.estimatedApiCostUsd = estimate && Number.isFinite(estimate.totalUsd) ? estimate.totalUsd : null;
+        return out;
+      },
+    };
+  });
+export const createRunPricing = (runDir: string, loaded?: LiteLlmLoadResult): Promise<RunPricing> =>
+  runEffect(createRunPricingEffect(runDir, loaded).pipe(Effect.provide(PricingCatalogLive)));
 
 // Claude can use several models in a stage. Price the final model breakdown only when it reconciles.
 export function priceClaudeResult(

@@ -1,9 +1,12 @@
+import { Effect, Exit, Cause } from 'effect';
+import { runEffect } from './runtime/effect.ts';
+import { CheckerLive } from './runtime/services.ts';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { existsSync, readFileSync } from 'node:fs';
-import { explore, newRunDir } from './explore.ts';
-import { verify } from './verify.ts';
+import { exploreEffect, newRunDir } from './explore.ts';
+import { verifyEffect } from './verify.ts';
 import { baseUrl, getSlot } from './slots.ts';
 
 // Runs several Qase cases across a pool of slots, one agent per slot at a time.
@@ -35,69 +38,84 @@ const queue = Array.from({ length: Number(values.repeat) }, () => caseIds).flat(
 const slots = values.slots!.split(',');
 const results: Record<string, unknown>[] = [];
 
-const worker = async (slot: string) => {
-  const s = getSlot(slot);
-  if (!s) throw new Error(`Slot ${slot} is not running. Start it with: node src/slots.ts start --slot ${slot} --worktree <path>`);
-  for (let caseId = queue.shift(); caseId !== undefined; caseId = queue.shift()) {
-    console.log(`[slot ${slot}] start ${values.project}-${caseId}`);
-    if (values.pipeline === 'verify') {
-      try {
-        const summary = await verify({ project: values.project!, caseId, slot, model: values.model!, fromRun: reuse.get(caseId) });
-        const replays = (summary.replays as { status: string; failedStep?: string; mp4Bytes?: number }[] | undefined) ?? [];
-        const codifyInfo = summary.codify as { outcome?: string; attempts?: number; metrics?: { costUsd: number } } | undefined;
-        results.push({
-          caseId,
-          slot,
-          runDir: summary.runDir,
-          verdict: summary.outcome,
-          explore: (summary.explore as { verdict: string }).verdict,
-          codify: codifyInfo?.outcome,
-          attempts: codifyInfo?.attempts,
-          codifyCost: codifyInfo?.metrics?.costUsd,
-          replay: replays[0]?.status,
-          failedStep: replays[0]?.failedStep,
-          mp4MB: replays[0]?.mp4Bytes ? +(replays[0].mp4Bytes / 1e6).toFixed(2) : undefined,
-        });
-        console.log(
-          `[slot ${slot}] ${values.project}-${caseId}: ${summary.outcome} (codify ${codifyInfo?.outcome}, replay ${replays[0]?.status ?? '-'})`,
+const worker = (slot: string) =>
+  Effect.gen(function* () {
+    const s = getSlot(slot);
+    if (!s) throw new Error(`Slot ${slot} is not running. Start it with: node src/slots.ts start --slot ${slot} --worktree <path>`);
+    for (let caseId = queue.shift(); caseId !== undefined; caseId = queue.shift()) {
+      console.log(`[slot ${slot}] start ${values.project}-${caseId}`);
+      if (values.pipeline === 'verify') {
+        const exit = yield* Effect.exit(
+          Effect.gen(function* () {
+            const summary = yield* verifyEffect({
+              project: values.project!,
+              caseId,
+              slot,
+              model: values.model!,
+              fromRun: reuse.get(caseId),
+            });
+            const replays = (summary.replays as { status: string; failedStep?: string; mp4Bytes?: number }[] | undefined) ?? [];
+            const codifyInfo = summary.codify as { outcome?: string; attempts?: number; metrics?: { costUsd: number } } | undefined;
+            results.push({
+              caseId,
+              slot,
+              runDir: summary.runDir,
+              verdict: summary.outcome,
+              explore: (summary.explore as { verdict: string }).verdict,
+              codify: codifyInfo?.outcome,
+              attempts: codifyInfo?.attempts,
+              codifyCost: codifyInfo?.metrics?.costUsd,
+              replay: replays[0]?.status,
+              failedStep: replays[0]?.failedStep,
+              mp4MB: replays[0]?.mp4Bytes ? +(replays[0].mp4Bytes / 1e6).toFixed(2) : undefined,
+            });
+            console.log(
+              `[slot ${slot}] ${values.project}-${caseId}: ${summary.outcome} (codify ${codifyInfo?.outcome}, replay ${replays[0]?.status ?? '-'})`,
+            );
+          }),
         );
-      } catch (error) {
-        results.push({ caseId, slot, verdict: 'error', error: String(error) });
+        if (Exit.isFailure(exit)) {
+          const error = Cause.squash(exit.cause);
+          results.push({ caseId, slot, verdict: 'error', error: String(error) });
+          console.log(`[slot ${slot}] ${values.project}-${caseId}: error ${error}`);
+        }
+        continue;
+      }
+      const runDir = newRunDir(values.project!, caseId, slot, values.label);
+      const exit = yield* Effect.exit(
+        Effect.gen(function* () {
+          const { report, metrics } = yield* exploreEffect({
+            project: values.project!,
+            caseId,
+            base: baseUrl(s),
+            role: s.role,
+            slot,
+            model: values.model!,
+            runDir,
+          });
+          results.push({
+            caseId,
+            slot,
+            runDir,
+            verdict: report?.verdict ?? 'unparsed',
+            steps: report?.steps.map((st) => `${st.position}:${st.verdict}${st.inferred ? '*' : ''}`).join(' '),
+            ...metrics,
+            usage: undefined,
+          });
+          console.log(
+            `[slot ${slot}] ${values.project}-${caseId}: ${report?.verdict} · $${metrics.costUsd?.toFixed(3) ?? 'unavailable'} · ${metrics.turns} turns · ${(metrics.wallMs / 1000).toFixed(0)}s`,
+          );
+        }),
+      );
+      if (Exit.isFailure(exit)) {
+        const error = Cause.squash(exit.cause);
+        results.push({ caseId, slot, runDir, verdict: 'error', error: String(error) });
         console.log(`[slot ${slot}] ${values.project}-${caseId}: error ${error}`);
       }
-      continue;
     }
-    const runDir = newRunDir(values.project!, caseId, slot, values.label);
-    try {
-      const { report, metrics } = await explore({
-        project: values.project!,
-        caseId,
-        base: baseUrl(s),
-        role: s.role,
-        slot,
-        model: values.model!,
-        runDir,
-      });
-      results.push({
-        caseId,
-        slot,
-        runDir,
-        verdict: report?.verdict ?? 'unparsed',
-        steps: report?.steps.map((st) => `${st.position}:${st.verdict}${st.inferred ? '*' : ''}`).join(' '),
-        ...metrics,
-        usage: undefined,
-      });
-      console.log(
-        `[slot ${slot}] ${values.project}-${caseId}: ${report?.verdict} · $${metrics.costUsd?.toFixed(3) ?? 'unavailable'} · ${metrics.turns} turns · ${(metrics.wallMs / 1000).toFixed(0)}s`,
-      );
-    } catch (error) {
-      results.push({ caseId, slot, runDir, verdict: 'error', error: String(error) });
-      console.log(`[slot ${slot}] ${values.project}-${caseId}: error ${error}`);
-    }
-  }
-};
+  });
 
-await Promise.all(slots.map(worker));
+await runEffect(Effect.forEach(slots, worker, { concurrency: slots.length }).pipe(Effect.provide(CheckerLive)));
 const summaryPath = join(
   new URL('..', import.meta.url).pathname,
   'runs',

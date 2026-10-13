@@ -1,9 +1,11 @@
+import { Effect } from 'effect';
+import { attempt, OperationError, runEffect, sdk } from './runtime/effect.ts';
 import { mkdirSync, chmodSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { childEnvironment, type TestUser } from './environments.ts';
 import { parseArgs } from 'node:util';
 import { chromium, type Page } from 'playwright';
-import { resolveRole, resolveTestUser } from './credentials.ts';
+import { CredentialStoreLive, resolveRoleEffect, resolveTestUserEffect } from './credentials.ts';
 
 // Logs a role into one slot's origin and saves storageState (including IndexedDB) for the agent's browser.
 // Mirrors sample-frontend/tests/setup/index.setup.e2e.ts so the app sees the same state as its own e2e suite.
@@ -36,15 +38,7 @@ const markTwoFactorModalSeen = (page: Page) =>
       }),
   );
 
-export const loginSlot = async ({
-  base,
-  role,
-  slot,
-  headed = false,
-  signal,
-  user,
-  storageState,
-}: {
+export type LoginOptions = {
   base: string;
   role: string;
   slot: string;
@@ -52,64 +46,49 @@ export const loginSlot = async ({
   signal?: AbortSignal;
   user?: TestUser;
   storageState?: string;
-}) => {
-  signal?.throwIfAborted();
-  const resolveCredentials = () => (user ? resolveTestUser(user, signal) : resolveRole(role, signal));
-  const creds = await (signal
-    ? new Promise<Awaited<ReturnType<typeof resolveRole>>>((resolve, reject) => {
-        const abort = () => reject(signal.reason);
-        signal.addEventListener('abort', abort, { once: true });
-        resolveCredentials()
-          .then(resolve, reject)
-          .finally(() => signal.removeEventListener('abort', abort));
-      })
-    : resolveCredentials());
-  signal?.throwIfAborted();
-  const browser = await chromium.launch({ headless: !headed, env: childEnvironment() as Record<string, string> });
-  const abort = () => {
-    void browser.close();
-  };
-  signal?.addEventListener('abort', abort, { once: true });
-  const page = await browser.newPage();
-  try {
-    signal?.throwIfAborted();
-    await page.goto(`${base}/login`);
-    await page.getByPlaceholder('Email').fill(creds.username);
-    await page.getByPlaceholder('Password').fill(creds.password);
-    await page.getByRole('button', { name: 'Login' }).click();
-
-    const outcome = await Promise.any([
-      page.waitForURL((url) => !url.pathname.startsWith('/login'), { timeout: 30_000 }).then(() => 'in' as const),
-      page
-        .getByPlaceholder('Verification code')
-        .waitFor({ timeout: 30_000 })
-        .then(() => 'mfa' as const),
-    ]);
-    if (outcome === 'mfa') {
-      if (!creds.totp) throw new Error(`Role "${role}" requires MFA but has no totp reference`);
-      await page.getByPlaceholder('Verification code').fill(await creds.totp());
-      await page.getByRole('button', { name: 'Verify' }).click();
-      await page.waitForURL((url) => !url.pathname.startsWith('/login'), { timeout: 30_000 });
-    }
-    // Redux persists the session to IndexedDB asynchronously after the redirect.
-    await page.waitForFunction(async () => (await indexedDB.databases()).some((d) => d.name === 'localforage'));
-    await page.waitForTimeout(1_000);
-    await markTwoFactorModalSeen(page);
-
-    const path = storageState ?? statePath(slot, role);
-    mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-    await page.context().storageState({ path, indexedDB: true });
-    chmodSync(path, 0o600);
-    return path;
-  } catch (error) {
-    if (signal?.aborted) throw signal.reason;
-    // Do not persist login screenshots, field values or provider errors with credentials.
-    throw Object.assign(new Error('Test-user login failed. Check the configured credentials and login flow.'), { code: 'LOGIN_FAILED' });
-  } finally {
-    signal?.removeEventListener('abort', abort);
-    await browser.close();
-  }
 };
+export const loginSlotEffect = ({ base, role, slot, headed = false, user, storageState }: LoginOptions) =>
+  Effect.gen(function* () {
+    const creds = yield* user ? resolveTestUserEffect(user) : resolveRoleEffect(role);
+    return yield* Effect.scoped(
+      Effect.gen(function* () {
+        const browser = yield* Effect.acquireRelease(
+          sdk(() => chromium.launch({ headless: !headed, env: childEnvironment() as Record<string, string> })),
+          (browser) => sdk(() => browser.close()).pipe(Effect.orDie),
+        );
+        const page = yield* sdk(() => browser.newPage());
+        yield* sdk(() => page.goto(`${base}/login`));
+        yield* sdk(() => page.getByPlaceholder('Email').fill(creds.username));
+        yield* sdk(() => page.getByPlaceholder('Password').fill(creds.password));
+        yield* sdk(() => page.getByRole('button', { name: 'Login' }).click());
+        const outcome = yield* Effect.race(
+          sdk(() => page.waitForURL((url) => !url.pathname.startsWith('/login'), { timeout: 30_000 })).pipe(Effect.as('in' as const)),
+          sdk(() => page.getByPlaceholder('Verification code').waitFor({ timeout: 30_000 })).pipe(Effect.as('mfa' as const)),
+        );
+        if (outcome === 'mfa') {
+          if (!creds.totp) return yield* Effect.fail(new Error('Missing MFA reference'));
+          const code = yield* sdk((signal) => creds.totp!(signal));
+          yield* sdk(() => page.getByPlaceholder('Verification code').fill(code));
+          yield* sdk(() => page.getByRole('button', { name: 'Verify' }).click());
+          yield* sdk(() => page.waitForURL((url) => !url.pathname.startsWith('/login'), { timeout: 30_000 }));
+        }
+        yield* sdk(() => page.waitForFunction(async () => (await indexedDB.databases()).some((d) => d.name === 'localforage')));
+        yield* Effect.sleep(1000);
+        yield* sdk(() => markTwoFactorModalSeen(page));
+        const path = storageState ?? statePath(slot, role);
+        yield* attempt(() => mkdirSync(dirname(path), { recursive: true, mode: 0o700 }));
+        yield* sdk(() => page.context().storageState({ path, indexedDB: true }));
+        yield* attempt(() => chmodSync(path, 0o600));
+        return path;
+      }),
+    ).pipe(
+      Effect.mapError(
+        () =>
+          new OperationError({ code: 'LOGIN_FAILED', message: 'Test-user login failed. Check the configured credentials and login flow.' }),
+      ),
+    );
+  });
+export const loginSlot = (opts: LoginOptions) => runEffect(loginSlotEffect(opts).pipe(Effect.provide(CredentialStoreLive)), opts.signal);
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const { values } = parseArgs({

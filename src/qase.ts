@@ -1,3 +1,5 @@
+import { Context, Effect, Layer } from 'effect';
+import { runEffect, sdk } from './runtime/effect.ts';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -25,33 +27,38 @@ export type QaseCase = {
 const root = new URL('..', import.meta.url).pathname;
 export const fixturePath = (project: string, id: number) => join(root, 'fixtures/qase', `${project}-${id}.json`);
 
-const withQaseMcp = async <T>(fn: (call: (tool: string, args: object) => Promise<string>) => Promise<T>): Promise<T> => {
-  const token = qaseToken();
-  if (!token)
-    throw new Error(
-      `No Qase API token. Set ${config.qase.tokenEnv} or run: security add-generic-password -s ${config.qase.keychainService} -a "$USER" -w`,
-    );
-  const client = new Client({ name: 'e2e-agent-checker', version: '0.5.0' });
-  const transport = new StdioClientTransport({
-    command: 'npx',
-    args: ['-y', config.qase.mcpPackage],
-    stderr: 'ignore',
-    env: { ...process.env, QASE_API_TOKEN: token } as Record<string, string>,
-  });
-  try {
-    await client.connect(transport);
-    return await fn(async (tool, args) => {
-      const result = await client.callTool({ name: tool, arguments: args as Record<string, unknown> });
-      if (result.isError) throw new Error(`Qase ${tool} failed`);
-      return (result.content as { type: string; text?: string }[])
-        .filter((c) => c.type === 'text')
-        .map((c) => c.text ?? '')
-        .join('\n');
-    });
-  } finally {
-    await client.close();
-  }
-};
+type QaseCall = (tool: string, args: object) => Effect.Effect<string, Error>;
+const withQaseMcpEffect = <T, E, R>(fn: (call: QaseCall) => Effect.Effect<T, E, R>) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const token = qaseToken();
+      if (!token)
+        return yield* Effect.fail(new Error(`No Qase API token. Set ${config.qase.tokenEnv} or configure the Qase keychain entry.`));
+      const client = yield* Effect.acquireRelease(
+        Effect.sync(() => new Client({ name: 'e2e-agent-checker', version: '0.5.0' })),
+        (client) => sdk(() => client.close()).pipe(Effect.orDie),
+      );
+      const transport = new StdioClientTransport({
+        command: 'npx',
+        args: ['-y', config.qase.mcpPackage],
+        stderr: 'ignore',
+        env: { ...process.env, QASE_API_TOKEN: token } as Record<string, string>,
+      });
+      yield* sdk(() => client.connect(transport));
+      return yield* fn((tool, args) =>
+        Effect.gen(function* () {
+          const result = yield* sdk((signal) =>
+            client.callTool({ name: tool, arguments: args as Record<string, unknown> }, undefined, { signal }),
+          );
+          if (result.isError) return yield* Effect.fail(new Error(`Qase ${tool} failed`));
+          return (result.content as { type: string; text?: string }[])
+            .filter((c) => c.type === 'text')
+            .map((c) => c.text ?? '')
+            .join('\n');
+        }),
+      );
+    }),
+  );
 
 const FIELDS = ['id', 'title', 'priority', 'severity', 'steps', 'preconditions', 'description'];
 
@@ -94,16 +101,23 @@ const toCase = (project: string, raw: string): QaseCase => {
   };
 };
 
+const fetchRemoteCases = (project: string, ids: number[]) =>
+  withQaseMcpEffect((call) =>
+    Effect.gen(function* () {
+      const out: QaseCase[] = [];
+      for (const id of ids) {
+        const c = toCase(project, yield* call('qase_get', { entity: 'case', code: project, id, fields: FIELDS }));
+        if (c.id !== id) return yield* Effect.fail(new Error('Qase returned a different case ID'));
+        out.push(c);
+      }
+      return out;
+    }),
+  );
+export class QaseSource extends Context.Service<QaseSource, { fetchCases: typeof fetchRemoteCases }>()('checker/QaseSource') {}
+export const QaseSourceLive = Layer.succeed(QaseSource, { fetchCases: fetchRemoteCases });
+export const fetchCasesEffect = (project: string, ids: number[]) => Effect.flatMap(QaseSource, (source) => source.fetchCases(project, ids));
 export const fetchCases = (project: string, ids: number[]) =>
-  withQaseMcp(async (call) => {
-    const out: QaseCase[] = [];
-    for (const id of ids) {
-      const c = toCase(project, await call('qase_get', { entity: 'case', code: project, id, fields: FIELDS }));
-      if (c.id !== id) throw new Error('Qase returned a different case ID');
-      out.push(c);
-    }
-    return out;
-  });
+  runEffect(fetchCasesEffect(project, ids).pipe(Effect.provide(QaseSourceLive)));
 
 export const linkedCaseIds = (c: QaseCase) => {
   const text = `${c.preconditions ?? ''}\n${c.description ?? ''}\n${c.steps.map((s) => `${s.action}\n${s.expected_result}`).join('\n')}`;
@@ -111,36 +125,39 @@ export const linkedCaseIds = (c: QaseCase) => {
 };
 
 // The case plus a short summary of every Qase case its text links to (they usually describe how to reach a page).
-export const loadCaseWithRelated = async (project: string, id: number, snapshot?: TestCase) => {
-  let c = snapshot;
-  if (!c) {
-    try {
-      c = caseCatalog.get(project, id);
-    } catch (e) {
-      if ((e as any).code !== 'NOT_FOUND') throw e;
-      c = caseCatalog.syncQase((await fetchCases(project, [id]))[0]);
+export const loadCaseWithRelatedEffect = (project: string, id: number, snapshot?: TestCase) =>
+  Effect.gen(function* () {
+    let c = snapshot;
+    if (!c) {
+      try {
+        c = caseCatalog.get(project, id);
+      } catch (e) {
+        if ((e as any).code !== 'NOT_FOUND') throw e;
+        c = caseCatalog.syncQase((yield* fetchCasesEffect(project, [id]))[0]);
+      }
     }
-  }
-  if (c.status === 'archived') throw Object.assign(new Error('Case is archived'), { code: 'CASE_NOT_ACTIVE' });
-  const relatedDir = join(root, 'fixtures/qase/related');
-  mkdirSync(relatedDir, { recursive: true });
-  const related: QaseCase[] = [];
-  for (const rid of linkedCaseIds(c)) {
-    try {
-      const r = caseCatalog.get(project, rid);
-      if (r.status !== 'archived') related.push(r);
-      continue;
-    } catch (e) {
-      if ((e as any).code !== 'NOT_FOUND') throw e;
+    if (c.status === 'archived') throw Object.assign(new Error('Case is archived'), { code: 'CASE_NOT_ACTIVE' });
+    const relatedDir = join(root, 'fixtures/qase/related');
+    mkdirSync(relatedDir, { recursive: true });
+    const related: QaseCase[] = [];
+    for (const rid of linkedCaseIds(c)) {
+      try {
+        const r = caseCatalog.get(project, rid);
+        if (r.status !== 'archived') related.push(r);
+        continue;
+      } catch (e) {
+        if ((e as any).code !== 'NOT_FOUND') throw e;
+      }
+      // Locally authored cases never require a Qase account, including their prerequisites.
+      if (c.source.kind !== 'qase') continue;
+      const path = join(relatedDir, `${project}-${rid}.json`);
+      if (!existsSync(path)) writeFileSync(path, JSON.stringify((yield* fetchCasesEffect(project, [rid]))[0], null, 2));
+      related.push(JSON.parse(readFileSync(path, 'utf8')));
     }
-    // Locally authored cases never require a Qase account, including their prerequisites.
-    if (c.source.kind !== 'qase') continue;
-    const path = join(relatedDir, `${project}-${rid}.json`);
-    if (!existsSync(path)) writeFileSync(path, JSON.stringify((await fetchCases(project, [rid]))[0], null, 2));
-    related.push(JSON.parse(readFileSync(path, 'utf8')));
-  }
-  return { testCase: c, related };
-};
+    return { testCase: c, related };
+  });
+export const loadCaseWithRelated = (project: string, id: number, snapshot?: TestCase) =>
+  runEffect(loadCaseWithRelatedEffect(project, id, snapshot).pipe(Effect.provide(QaseSourceLive)));
 
 export const summarizeRelated = (related: QaseCase[]) =>
   related

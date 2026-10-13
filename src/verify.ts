@@ -1,11 +1,14 @@
-import { createRunPricing } from './pricing.ts';
+import { Effect } from 'effect';
+import { runEffect } from './runtime/effect.ts';
+import { CheckerLive } from './runtime/services.ts';
+import { createRunPricingEffect } from './pricing.ts';
 import type { TestCase } from './cases.ts';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
-import { codify, specLocation } from './codify.ts';
-import { explore, newRunDir, type ExploreReport } from './explore.ts';
-import { replay } from './replay.ts';
+import { codifyEffect, specLocation } from './codify.ts';
+import { exploreEffect, newRunDir, type ExploreReport } from './explore.ts';
+import { replayEffect } from './replay.ts';
 import { baseUrl, getSlot } from './slots.ts';
 import { targetSchema, type Target } from './providers/index.ts';
 import type { RunMetrics } from './usage.ts';
@@ -30,119 +33,121 @@ export type VerifyOptions = {
   log?: (line: string) => void;
 };
 const root = new URL('..', import.meta.url).pathname;
-export const verify = async (opts: VerifyOptions) => {
-  const slot = getSlot(opts.slot);
-  if (!slot && !opts.base) throw new Error(`Slot ${opts.slot} is not running`);
-  const base = opts.base ?? baseUrl(slot!);
-  const role = opts.role ?? slot!.role;
-  const runDir = opts.runDir ?? newRunDir(opts.project, opts.caseId, opts.slot, opts.replayOnly ? 'replay' : 'verify');
-  const log = (s: string) => opts.log?.(s);
-  const stage = (s: string) => {
-    opts.signal?.throwIfAborted();
-    opts.onStage?.(s);
-    log(`${s}: start`);
-  };
-  const summary: Record<string, any> = { project: opts.project, caseId: opts.caseId, slot: opts.slot, runDir, target: opts.target };
-  const save = () => writeFileSync(join(runDir, 'summary.json'), JSON.stringify(summary, null, 2));
-  let report: ExploreReport;
-  let spec = specLocation(runDir, opts.project, opts.caseId);
-  if (opts.replayOnly) {
-    if (!opts.fromRun) throw new Error('ARTIFACT_MISSING: replay requires an existing run');
-    const old = specLocation(opts.fromRun, opts.project, opts.caseId);
-    const saved = join(opts.fromRun, 'codify', old.specFile);
-    const reportPath = join(opts.fromRun, 'explore/report.json');
-    if (!existsSync(saved) || !existsSync(reportPath)) throw new Error('ARTIFACT_MISSING: saved spec or report is missing');
-    mkdirSync(spec.specDir, { recursive: true });
-    mkdirSync(join(runDir, 'explore'), { recursive: true });
-    mkdirSync(join(runDir, 'codify'), { recursive: true });
-    copyFileSync(saved, spec.specPath);
-    copyFileSync(saved, join(runDir, 'codify', spec.specFile));
-    copyFileSync(reportPath, join(runDir, 'explore/report.json'));
-    const oldCase = join(opts.fromRun, 'explore/case.json');
-    if (existsSync(oldCase)) copyFileSync(oldCase, join(runDir, 'explore/case.json'));
-    report = JSON.parse(readFileSync(reportPath, 'utf8'));
-    summary.reusedFrom = opts.fromRun;
-    summary.explore = { verdict: report.verdict, reused: true };
-    summary.codify = { reused: true };
-  } else {
-    const pricing = await createRunPricing(runDir);
-    stage('explore');
-    const explored = await explore({
-      project: opts.project,
-      caseId: opts.caseId,
-      caseSnapshot: opts.caseSnapshot,
-      base,
-      storageState: opts.storageState,
-      role,
-      slot: opts.slot,
-      model: opts.model,
-      runDir,
-      target: opts.target,
-      pricing,
-      signal: opts.signal,
-      onMetrics: (m) => opts.onMetrics?.('explore', m),
-      log,
-    });
-    report = explored.report;
-    summary.explore = { verdict: report.verdict, metrics: explored.metrics };
-    save();
-    if (report.verdict === 'blocked') {
-      summary.outcome = 'blocked';
+export const verifyEffect = (opts: VerifyOptions) =>
+  Effect.gen(function* () {
+    const slot = getSlot(opts.slot);
+    if (!slot && !opts.base) throw new Error(`Slot ${opts.slot} is not running`);
+    const base = opts.base ?? baseUrl(slot!);
+    const role = opts.role ?? slot!.role;
+    const runDir = opts.runDir ?? newRunDir(opts.project, opts.caseId, opts.slot, opts.replayOnly ? 'replay' : 'verify');
+    const log = (s: string) => opts.log?.(s);
+    const stage = (s: string) => {
+      opts.signal?.throwIfAborted();
+      opts.onStage?.(s);
+      log(`${s}: start`);
+    };
+    const summary: Record<string, any> = { project: opts.project, caseId: opts.caseId, slot: opts.slot, runDir, target: opts.target };
+    const save = () => writeFileSync(join(runDir, 'summary.json'), JSON.stringify(summary, null, 2));
+    let report: ExploreReport;
+    let spec = specLocation(runDir, opts.project, opts.caseId);
+    if (opts.replayOnly) {
+      if (!opts.fromRun) throw new Error('ARTIFACT_MISSING: replay requires an existing run');
+      const old = specLocation(opts.fromRun, opts.project, opts.caseId);
+      const saved = join(opts.fromRun, 'codify', old.specFile);
+      const reportPath = join(opts.fromRun, 'explore/report.json');
+      if (!existsSync(saved) || !existsSync(reportPath)) throw new Error('ARTIFACT_MISSING: saved spec or report is missing');
+      mkdirSync(spec.specDir, { recursive: true });
+      mkdirSync(join(runDir, 'explore'), { recursive: true });
+      mkdirSync(join(runDir, 'codify'), { recursive: true });
+      copyFileSync(saved, spec.specPath);
+      copyFileSync(saved, join(runDir, 'codify', spec.specFile));
+      copyFileSync(reportPath, join(runDir, 'explore/report.json'));
+      const oldCase = join(opts.fromRun, 'explore/case.json');
+      if (existsSync(oldCase)) copyFileSync(oldCase, join(runDir, 'explore/case.json'));
+      report = JSON.parse(readFileSync(reportPath, 'utf8'));
+      summary.reusedFrom = opts.fromRun;
+      summary.explore = { verdict: report.verdict, reused: true };
+      summary.codify = { reused: true };
+    } else {
+      const pricing = yield* createRunPricingEffect(runDir);
+      stage('explore');
+      const explored = yield* exploreEffect({
+        project: opts.project,
+        caseId: opts.caseId,
+        caseSnapshot: opts.caseSnapshot,
+        base,
+        storageState: opts.storageState,
+        role,
+        slot: opts.slot,
+        model: opts.model,
+        runDir,
+        target: opts.target,
+        pricing,
+        signal: opts.signal,
+        onMetrics: (m) => opts.onMetrics?.('explore', m),
+        log,
+      });
+      report = explored.report;
+      summary.explore = { verdict: report.verdict, metrics: explored.metrics };
       save();
-      return summary;
-    }
-    stage('codify');
-    const codified = await codify({
-      project: opts.project,
-      caseId: opts.caseId,
-      base,
-      storageState: opts.storageState,
-      role,
-      slot: opts.slot,
-      model: opts.model,
-      runDir,
-      target: opts.target,
-      pricing,
-      signal: opts.signal,
-      maxAttempts: opts.maxAttempts,
-      onMetrics: (m) => opts.onMetrics?.('codify', m),
-      log,
-    });
-    summary.codify = { ...codified.result, metrics: codified.metrics };
-    save();
-    if (codified.result.outcome === 'could-not-stabilize') {
-      summary.outcome = 'codify-failed';
+      if (report.verdict === 'blocked') {
+        summary.outcome = 'blocked';
+        save();
+        return summary;
+      }
+      stage('codify');
+      const codified = yield* codifyEffect({
+        project: opts.project,
+        caseId: opts.caseId,
+        base,
+        storageState: opts.storageState,
+        role,
+        slot: opts.slot,
+        model: opts.model,
+        runDir,
+        target: opts.target,
+        pricing,
+        signal: opts.signal,
+        maxAttempts: opts.maxAttempts,
+        onMetrics: (m) => opts.onMetrics?.('codify', m),
+        log,
+      });
+      summary.codify = { ...codified.result, metrics: codified.metrics };
       save();
-      return summary;
+      if (codified.result.outcome === 'could-not-stabilize') {
+        summary.outcome = 'codify-failed';
+        save();
+        return summary;
+      }
+      spec = codified;
     }
-    spec = codified;
-  }
-  summary.replays = [];
-  for (const replaySlot of [opts.slot, ...(opts.replaySlots ?? [])]) {
-    const s = getSlot(replaySlot);
-    if (!s && !(replaySlot === opts.slot && opts.base)) throw new Error(`Replay slot ${replaySlot} is not running`);
-    stage('replay');
-    const r = await replay({
-      runDir,
-      label: `slot${replaySlot}`,
-      specDir: spec.specDir,
-      specFile: spec.specFile,
-      base: replaySlot === opts.slot ? base : baseUrl(s!),
-      storageState: replaySlot === opts.slot ? opts.storageState : undefined,
-      slot: replaySlot,
-      role: opts.role ?? s!.role,
-      signal: opts.signal,
-      onPackage: () => stage('package'),
-    });
-    summary.replays.push({ slot: replaySlot, worktree: s?.worktree, ...r, log: undefined });
+    summary.replays = [];
+    for (const replaySlot of [opts.slot, ...(opts.replaySlots ?? [])]) {
+      const s = getSlot(replaySlot);
+      if (!s && !(replaySlot === opts.slot && opts.base)) throw new Error(`Replay slot ${replaySlot} is not running`);
+      stage('replay');
+      const r = yield* replayEffect({
+        runDir,
+        label: `slot${replaySlot}`,
+        specDir: spec.specDir,
+        specFile: spec.specFile,
+        base: replaySlot === opts.slot ? base : baseUrl(s!),
+        storageState: replaySlot === opts.slot ? opts.storageState : undefined,
+        slot: replaySlot,
+        role: opts.role ?? s!.role,
+        signal: opts.signal,
+        onPackage: () => stage('package'),
+      });
+      summary.replays.push({ slot: replaySlot, worktree: s?.worktree, ...r, log: undefined });
+      save();
+    }
+    summary.spec = spec.specPath;
+    summary.outcome = summary.replays[0].status === 'passed' ? 'pass' : summary.replays[0].status === 'failed' ? 'fail' : 'blocked';
     save();
-  }
-  summary.spec = spec.specPath;
-  summary.outcome = summary.replays[0].status === 'passed' ? 'pass' : summary.replays[0].status === 'failed' ? 'fail' : 'blocked';
-  save();
-  writeFileSync(join(runDir, 'pr-comment.md'), prComment(summary, report));
-  return summary;
-};
+    writeFileSync(join(runDir, 'pr-comment.md'), prComment(summary, report));
+    return summary;
+  });
+export const verify = (opts: VerifyOptions) => runEffect(verifyEffect(opts).pipe(Effect.provide(CheckerLive)), opts.signal);
 
 export const prComment = (summary: Record<string, unknown>, report: ExploreReport) => {
   const icon = (v: string) => ({ pass: '✅', fail: '❌', blocked: '⛔' })[v] ?? '❔';

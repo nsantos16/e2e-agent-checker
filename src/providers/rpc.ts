@@ -1,10 +1,12 @@
+import { Effect } from 'effect';
+import { attempt, deadline, runEffect, sdk } from '../runtime/effect.ts';
 import { childEnvironment } from '../environments.ts';
 import { spawn } from 'node:child_process';
 import { killTree } from '../process.ts';
 
 export class Rpc {
   child: ReturnType<typeof spawn>;
-  pending = new Map<number, { resolve: (x: any) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>();
+  pending = new Map<number, { resolve: (x: any) => void; reject: (e: Error) => void }>();
   next = 0;
   onEvent: (method: string, params: any) => void = () => {};
   onRequest: (method: string, params: any) => Promise<any> = async () => {
@@ -45,7 +47,6 @@ export class Rpc {
   fail(e: Error) {
     this.failure = e;
     for (const p of this.pending.values()) {
-      clearTimeout(p.timer);
       p.reject(e);
     }
     this.pending.clear();
@@ -56,17 +57,31 @@ export class Rpc {
   notify(method: string, params?: unknown) {
     this.send({ jsonrpc: '2.0', method, params });
   }
+  requestEffect(method: string, params?: unknown, timeoutMs = 30_000) {
+    return deadline(
+      Effect.callback<any, Error>((resume) => {
+        if (this.failure) {
+          resume(Effect.fail(this.failure));
+          return;
+        }
+        const id = ++this.next;
+        this.pending.set(id, { resolve: (value) => resume(Effect.succeed(value)), reject: (error) => resume(Effect.fail(error)) });
+        try {
+          this.send({ jsonrpc: '2.0', id, method, params });
+        } catch (error) {
+          this.pending.delete(id);
+          resume(Effect.fail(error instanceof Error ? error : new Error(String(error))));
+        }
+        return Effect.sync(() => {
+          this.pending.delete(id);
+        });
+      }),
+      timeoutMs,
+      `TIMEOUT: ${method}`,
+    );
+  }
   request(method: string, params?: unknown, timeoutMs = 30_000): Promise<any> {
-    if (this.failure) return Promise.reject(this.failure);
-    const id = ++this.next;
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(`TIMEOUT: ${method}`));
-      }, timeoutMs);
-      this.pending.set(id, { resolve, reject, timer });
-      this.send({ jsonrpc: '2.0', id, method, params });
-    });
+    return runEffect(this.requestEffect(method, params, timeoutMs));
   }
   receive(m: any) {
     if (m.method && m.id !== undefined) {
@@ -79,18 +94,34 @@ export class Rpc {
       const p = this.pending.get(m.id);
       if (!p) return;
       this.pending.delete(m.id);
-      clearTimeout(p.timer);
       m.error ? p.reject(new Error(m.error.message)) : p.resolve(m.result);
     }
   }
-  async close() {
-    killTree(this.child.pid);
-    const t = setTimeout(() => killTree(this.child.pid, 'SIGKILL'), 1500);
-    await Promise.race([this.closed, new Promise((r) => setTimeout(r, 1700))]);
-    clearTimeout(t);
-    killTree(this.child.pid, 'SIGKILL');
+  closeEffect() {
+    return Effect.gen({ self: this }, function* () {
+      killTree(this.child.pid);
+      yield* sdk(() => this.closed).pipe(Effect.ignore, Effect.timeoutOption(1500));
+      killTree(this.child.pid, 'SIGKILL');
+    });
+  }
+  close() {
+    return runEffect(this.closeEffect());
   }
 }
+export const codexConnectionEffect = (cwd?: string) =>
+  Effect.gen(function* () {
+    const rpc = yield* Effect.acquireRelease(
+      attempt(() => new Rpc('codex', ['app-server'], cwd)),
+      (rpc) => rpc.closeEffect(),
+    );
+    yield* rpc.requestEffect('initialize', {
+      clientInfo: { name: 'e2e-agent-checker', version: '0.3.0' },
+      capabilities: { experimentalApi: true },
+    });
+    rpc.notify('initialized');
+    return rpc;
+  });
+
 export async function codexConnection(cwd?: string) {
   const rpc = new Rpc('codex', ['app-server'], cwd);
   try {

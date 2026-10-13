@@ -1,4 +1,7 @@
-import { command } from './process.ts';
+import { Effect } from 'effect';
+import { runEffect } from './runtime/effect.ts';
+import { CheckerLive } from './runtime/services.ts';
+import { commandEffect } from './process.ts';
 import { readTestResult } from './test-results.ts';
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -20,38 +23,41 @@ const findVideo = (dir: string): string | undefined => {
   return undefined;
 };
 
-export const toPrMp4 = async (webm: string, mp4: string, signal?: AbortSignal) => {
-  // H.264 + faststart so it plays inline on GitHub; capped at 1280 wide and CRF 30 to stay well under 10 MB.
-  const converted = await command(
-    config.ffmpeg,
-    [
-      '-y',
-      '-loglevel',
-      'error',
-      '-i',
-      webm,
-      '-vf',
-      'scale=1280:-2',
-      '-c:v',
-      'libx264',
-      '-preset',
-      'veryfast',
-      '-crf',
-      '30',
-      '-pix_fmt',
-      'yuv420p',
-      '-movflags',
-      '+faststart',
-      '-an',
-      mp4,
-    ],
-    { signal },
-  );
-  if (converted.code !== 0) throw new Error('Video conversion failed');
-  return statSync(mp4).size;
-};
+export const toPrMp4Effect = (webm: string, mp4: string) =>
+  Effect.gen(function* () {
+    // H.264 + faststart so it plays inline on GitHub; capped at 1280 wide and CRF 30 to stay well under 10 MB.
+    const converted = yield* commandEffect(
+      config.ffmpeg,
+      [
+        '-y',
+        '-loglevel',
+        'error',
+        '-i',
+        webm,
+        '-vf',
+        'scale=1280:-2',
+        '-c:v',
+        'libx264',
+        '-preset',
+        'veryfast',
+        '-crf',
+        '30',
+        '-pix_fmt',
+        'yuv420p',
+        '-movflags',
+        '+faststart',
+        '-an',
+        mp4,
+      ],
+      {},
+    );
+    if (converted.code !== 0) throw new Error('Video conversion failed');
+    return statSync(mp4).size;
+  });
+export const toPrMp4 = (webm: string, mp4: string, signal?: AbortSignal) =>
+  runEffect(toPrMp4Effect(webm, mp4).pipe(Effect.provide(CheckerLive)), signal);
 
-export const replay = async (opts: {
+export type ReplayOptions = {
   runDir: string;
   label: string;
   specDir: string;
@@ -63,42 +69,45 @@ export const replay = async (opts: {
   slowMo?: number;
   signal?: AbortSignal;
   onPackage?: () => void;
-}) => {
-  const outDir = join(opts.runDir, `replay-${opts.label}`);
-  mkdirSync(outDir, { recursive: true });
-  writeReplayEnv(opts.runDir, opts.specDir, opts.specFile, opts.base, opts.slot, opts.role, opts.storageState);
-  const started = Date.now();
-  const { stdout } = await command('npx', ['playwright', 'test', '-c', 'playwright.config.ts', opts.specFile], {
-    cwd: join(root, 'e2e'),
-    env: {
-      ...process.env,
-      E2E_OBSERVATION_RUN_DIR: opts.runDir,
-      E2E_SPEC_DIR: opts.specDir,
-      E2E_OUTPUT_DIR: outDir,
-      E2E_BASE_URL: opts.base,
-      E2E_STORAGE_STATE: opts.storageState ?? join(root, '.state', `slot${opts.slot}-${opts.role}.json`),
-      E2E_SLOWMO: String(opts.slowMo ?? 250),
-    },
-    signal: opts.signal,
-  });
-
-  const testResult = readTestResult(outDir);
-  const failedStep = testResult?.failedStep;
-  const webm = findVideo(outDir);
-  const mp4 = join(outDir, 'verification.mp4');
-  opts.onPackage?.();
-  const mp4Bytes = webm ? await toPrMp4(webm, mp4, opts.signal) : undefined;
-  return {
-    status: testResult?.status ?? 'unknown',
-    failedStep,
-    error: testResult?.error?.message?.split('\n').slice(0, 6).join('\n'),
-    wallMs: Date.now() - started,
-    video: webm ? mp4 : undefined,
-    mp4Bytes,
-    trace: findTrace(outDir),
-    log: stdout.slice(-3000),
-  };
 };
+export const replayEffect = (opts: ReplayOptions) =>
+  Effect.gen(function* () {
+    const outDir = join(opts.runDir, `replay-${opts.label}`);
+    mkdirSync(outDir, { recursive: true });
+    writeReplayEnv(opts.runDir, opts.specDir, opts.specFile, opts.base, opts.slot, opts.role, opts.storageState);
+    const started = Date.now();
+    const { stdout } = yield* commandEffect('npx', ['playwright', 'test', '-c', 'playwright.config.ts', opts.specFile], {
+      cwd: join(root, 'e2e'),
+      env: {
+        ...process.env,
+        E2E_OBSERVATION_RUN_DIR: opts.runDir,
+        E2E_SPEC_DIR: opts.specDir,
+        E2E_OUTPUT_DIR: outDir,
+        E2E_BASE_URL: opts.base,
+        E2E_STORAGE_STATE: opts.storageState ?? join(root, '.state', `slot${opts.slot}-${opts.role}.json`),
+        E2E_SLOWMO: String(opts.slowMo ?? 250),
+      },
+      signal: opts.signal,
+    });
+
+    const testResult = readTestResult(outDir);
+    const failedStep = testResult?.failedStep;
+    const webm = findVideo(outDir);
+    const mp4 = join(outDir, 'verification.mp4');
+    opts.onPackage?.();
+    const mp4Bytes = webm ? yield* toPrMp4Effect(webm, mp4) : undefined;
+    return {
+      status: testResult?.status ?? 'unknown',
+      failedStep,
+      error: testResult?.error?.message?.split('\n').slice(0, 6).join('\n'),
+      wallMs: Date.now() - started,
+      video: webm ? mp4 : undefined,
+      mp4Bytes,
+      trace: findTrace(outDir),
+      log: stdout.slice(-3000),
+    };
+  });
+export const replay = (opts: ReplayOptions) => runEffect(replayEffect(opts).pipe(Effect.provide(CheckerLive)), opts.signal);
 
 const findTrace = (dir: string): string | undefined => {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {

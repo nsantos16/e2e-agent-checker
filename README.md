@@ -21,6 +21,8 @@ Live browser and request diagnostics: [docs/browser-observability.md](docs/brows
 
 Implementation status and verified limitations: [docs/runtime-milestone.md](docs/runtime-milestone.md).
 
+Backend services, cancellation and resource ownership: [Effect runtime](docs/effect-runtime.md).
+
 ## Quick start (any dev)
 
 ```sh

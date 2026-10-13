@@ -1,7 +1,9 @@
+import { Effect, Semaphore } from 'effect';
+import { deadline, runEffect, sdk } from './runtime/effect.ts';
+import { runMain } from './runtime/main.ts';
 import { execFile, spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { setTimeout as delay } from 'node:timers/promises';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
@@ -13,40 +15,45 @@ import { createCaseSchema, updateCaseSchema, deleteCaseSchema, syncCaseSchema, p
 const exec = promisify(execFile),
   root = new URL('..', import.meta.url).pathname,
   APP = `http://127.0.0.1:${config.app.port}`;
-const appUp = () =>
-  fetch(`${APP}/api/config`, { signal: AbortSignal.timeout(1500) }).then(
-    (r) => r.ok,
-    () => false,
-  );
-async function ensureApp() {
-  if (await appUp()) return;
-  spawn(process.execPath, [join(root, 'src/app/server.ts')], {
-    detached: true,
-    stdio: 'ignore',
-    env: { ...process.env, E2E_APP_OPEN: '0' },
-  }).unref();
-  for (let i = 0; i < 40; i++) {
-    if (await appUp()) return;
-    await delay(250);
-  }
-  throw Object.assign(new Error('Local app did not start. Run npm run doctor.'), { code: 'APP_UNAVAILABLE' });
-}
-async function api(path: string, body?: unknown, signal?: AbortSignal): Promise<any> {
-  await ensureApp();
-  const r = await fetch(APP + path, {
-    ...(body === undefined
-      ? {}
-      : {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(body),
-        }),
-    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(60_000)]) : AbortSignal.timeout(60_000),
+const appUpEffect = sdk((signal) => fetch(`${APP}/api/config`, { signal })).pipe(
+  Effect.map((r) => r.ok),
+  Effect.timeoutOption(1500),
+  Effect.map((result) => result._tag === 'Some' && result.value),
+  Effect.catch(() => Effect.succeed(false)),
+);
+const startup = Semaphore.makeUnsafe(1);
+const ensureAppEffect = startup.withPermits(1)(
+  Effect.gen(function* () {
+    if (yield* appUpEffect) return;
+    spawn(process.execPath, [join(root, 'src/app/server.ts')], {
+      detached: true,
+      stdio: 'ignore',
+      env: { ...process.env, E2E_APP_OPEN: '0' },
+    }).unref();
+    for (let i = 0; i < 40; i++) {
+      if (yield* appUpEffect) return;
+      yield* Effect.sleep(250);
+    }
+    return yield* Effect.fail(Object.assign(new Error('Local app did not start. Run npm run doctor.'), { code: 'APP_UNAVAILABLE' }));
+  }),
+);
+const apiEffect = (path: string, body?: unknown) =>
+  Effect.gen(function* () {
+    yield* ensureAppEffect;
+    return yield* deadline(
+      sdk(async (signal) => {
+        const r = await fetch(APP + path, {
+          ...(body === undefined ? {} : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
+          signal,
+        });
+        const data = await r.json();
+        if (!r.ok) throw Object.assign(new Error(data.error), { code: data.code });
+        return data;
+      }),
+      60_000,
+    );
   });
-  const data = await r.json();
-  if (!r.ok) throw Object.assign(new Error(data.error), { code: data.code });
-  return data;
-}
+const api = (path: string, body?: unknown, signal?: AbortSignal): Promise<any> => runEffect(apiEffect(path, body), signal);
 const instructions = `Manage and verify local test cases against worktrees using existing subscriptions.
 Use create_case for local drafts, get_case then update_case(expectedRevision) to edit or activate; delete_case archives, and update_case restores. sync_case refreshes Qase explicitly and rejects local-edit conflicts. list_cases returns compact summaries. Use caseId for local or imported cases; qaseCaseId is a legacy alias.
 Use list_environments to select environmentId and userId; hosted environments do not need a worktreePath. Credential references are configured in Settings; never request secret values.
@@ -287,7 +294,12 @@ function register(name: string, description: string, inputSchema: any, fn: (args
     },
     async (args: any, extra: { signal: AbortSignal }) => {
       try {
-        const data = outputs[name].parse(await fn(args, extra.signal));
+        const data = outputs[name].parse(
+          await runEffect(
+            sdk((signal) => fn(args, signal)),
+            extra.signal,
+          ),
+        );
         // Text fallback is needed by clients that do not expose structuredContent to the model.
         return {
           structuredContent: { data },
@@ -530,7 +542,7 @@ register(
           pendingJobIds,
           timedOut: timedOut && !!pendingJobIds.length && !(revisions && changed.length),
         };
-      await delay(Math.min(1000, end - Date.now()), undefined, { signal });
+      await runEffect(Effect.sleep(Math.max(0, Math.min(1000, end - Date.now()))), signal);
     }
   },
 );
@@ -707,4 +719,16 @@ server.registerResource(
     contents: [{ uri: uri.href, mimeType: 'text/plain', text: instructions }],
   }),
 );
-await server.connect(new StdioServerTransport());
+await runMain(
+  Effect.scoped(
+    Effect.gen(function* () {
+      yield* Effect.acquireRelease(
+        Effect.sync(() => server),
+        (server) => sdk(() => server.close()).pipe(Effect.orDie),
+      );
+      yield* sdk(() => server.connect(new StdioServerTransport()));
+      yield* Effect.never;
+    }),
+  ),
+  { stdin: true },
+);

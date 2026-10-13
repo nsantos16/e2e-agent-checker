@@ -1,16 +1,21 @@
+import { CaseRepository, EnvironmentRepository } from '../runtime/repositories.ts';
+import { Cause, Effect } from 'effect';
+import { runEffect, sdk } from '../runtime/effect.ts';
+import { CheckerLive } from '../runtime/services.ts';
+import { runMain } from '../runtime/main.ts';
 import { execFile, execFileSync } from 'node:child_process';
 import { createReadStream, existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { extname, join, resolve } from 'node:path';
 import { config, frontendRepo, requireFrontendRepo } from '../config.ts';
-import { runDoctor } from '../doctor.ts';
-import { cancelJob, getJob, listJobs, replayJob, submitBatch } from '../jobs.ts';
-import { fetchCases, loadCaseWithRelated } from '../qase.ts';
-import { listEnvironments, environmentSummary, saveEnvironment, deleteEnvironment, environmentId } from '../environments.ts';
+import { runDoctorEffect } from '../doctor.ts';
+import { cancelJob, getJob, listJobs, replayJob, submitBatchEffect, shutdownJobsEffect } from '../jobs.ts';
+import { fetchCasesEffect, loadCaseWithRelatedEffect } from '../qase.ts';
+import { environmentSummary, environmentId } from '../environments.ts';
 import { caseCatalog, caseSummary, syncCaseSchema } from '../cases.ts';
-import { baseUrl, isHealthy, listSlots } from '../slots.ts';
+import { baseUrl, isHealthyEffect, listSlots } from '../slots.ts';
 
-import { listProviders } from '../providers/index.ts';
+import { listProvidersEffect } from '../providers/index.ts';
 import { z, ZodError } from 'zod';
 import { artifactPath, jobSummary, readEvidence, type ArtifactId } from '../agent-view.ts';
 import { liveFrame, readNetwork, readObservation } from '../observations.ts';
@@ -21,7 +26,8 @@ const root = new URL('../..', import.meta.url).pathname;
 const PORT = config.app.port;
 const ROLES = Object.keys(JSON.parse(readFileSync(join(root, 'config/roles.json'), 'utf8')).roles);
 
-const listCases = (includeArchived = false) => caseCatalog.list(includeArchived).map(caseSummary);
+const listCasesEffect = (includeArchived = false) =>
+  Effect.flatMap(CaseRepository, (cases) => cases.list(includeArchived)).pipe(Effect.map((cases) => cases.map(caseSummary)));
 
 const listWorktrees = () => {
   if (!frontendRepo()) return [];
@@ -118,12 +124,14 @@ const serveFile = (req: IncomingMessage, res: ServerResponse, requested: string)
   }
 };
 
-const titles = () => new Map(listCases().map((c) => [`${c.project}-${c.id}`, c.title]));
+const titlesEffect = listCasesEffect().pipe(Effect.map((cases) => new Map(cases.map((c) => [`${c.project}-${c.id}`, c.title]))));
 
-const server = createServer(async (req, res) => {
-  if (![`localhost:${PORT}`, `127.0.0.1:${PORT}`].includes(req.headers.host ?? '')) return json(res, 403, { error: 'Host not allowed' });
-  const url = new URL(req.url ?? '/', `http://localhost:${PORT}`);
-  try {
+const handleRequest = (req: IncomingMessage, res: ServerResponse) =>
+  Effect.gen(function* () {
+    const cases = yield* CaseRepository;
+    const environments = yield* EnvironmentRepository;
+    if (![`localhost:${PORT}`, `127.0.0.1:${PORT}`].includes(req.headers.host ?? '')) return json(res, 403, { error: 'Host not allowed' });
+    const url = new URL(req.url ?? '/', `http://localhost:${PORT}`);
     if (
       req.method === 'POST' &&
       req.headers.origin &&
@@ -138,7 +146,7 @@ const server = createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/config')
       return json(res, 200, {
         roles: ROLES,
-        environments: listEnvironments().map(environmentSummary),
+        environments: (yield* environments.list()).map(environmentSummary),
         frontendRepo: frontendRepo(),
         defaultTarget: {
           provider: 'claude-code',
@@ -147,30 +155,38 @@ const server = createServer(async (req, res) => {
         },
       });
     if (req.method === 'GET' && url.pathname === '/api/environments')
-      return json(res, 200, url.searchParams.get('detail') === '1' ? listEnvironments() : listEnvironments().map(environmentSummary));
+      return json(
+        res,
+        200,
+        url.searchParams.get('detail') === '1' ? yield* environments.list() : (yield* environments.list()).map(environmentSummary),
+      );
     if (req.method === 'POST' && url.pathname === '/api/environments')
-      return json(res, 200, environmentSummary(saveEnvironment(await readBody(req))));
+      return json(res, 200, environmentSummary(yield* environments.save(yield* sdk(() => readBody(req)))));
     const environmentMatch = url.pathname.match(/^\/api\/environments\/([a-z0-9_-]+)\/delete$/);
     if (req.method === 'POST' && environmentMatch) {
       const id = environmentId.parse(environmentMatch[1]);
       const { expectedRevision } = z
         .object({ expectedRevision: z.string().min(1) })
         .strict()
-        .parse(await readBody(req));
+        .parse(yield* sdk(() => readBody(req)));
       if (listJobs().some((j) => (j.environmentId ?? 'local') === id && ['queued', 'running', 'cancelling'].includes(j.status)))
         return json(res, 409, {
           code: 'ENVIRONMENT_IN_USE',
           error: 'Wait for this environment’s active runs to finish before deleting it',
         });
-      deleteEnvironment(id, expectedRevision);
+      yield* environments.delete(id, expectedRevision);
       return json(res, 200, { id, deleted: true });
     }
     if (req.method === 'GET' && url.pathname === '/api/providers')
-      return json(res, 200, await listProviders(url.searchParams.get('fresh') === '1'));
+      return json(res, 200, yield* listProvidersEffect(url.searchParams.get('fresh') === '1'));
     if (req.method === 'GET' && url.pathname === '/api/doctor')
-      return json(res, 200, await runDoctor(url.searchParams.get('environmentId') ?? 'local', url.searchParams.get('userId') ?? undefined));
+      return json(
+        res,
+        200,
+        yield* runDoctorEffect(url.searchParams.get('environmentId') ?? 'local', url.searchParams.get('userId') ?? undefined),
+      );
     if (req.method === 'GET' && url.pathname === '/api/cases')
-      return json(res, 200, listCases(url.searchParams.get('includeArchived') === '1'));
+      return json(res, 200, yield* listCasesEffect(url.searchParams.get('includeArchived') === '1'));
     if (req.method === 'POST' && url.pathname === '/api/cases') {
       const { project, id } = z
         .object({
@@ -180,14 +196,14 @@ const server = createServer(async (req, res) => {
             .default(config.qase.project),
           id: z.number().int().positive(),
         })
-        .parse(await readBody(req));
+        .parse(yield* sdk(() => readBody(req)));
       try {
         if (caseCatalog.get(project, id).source.kind !== 'qase')
           throw Object.assign(new Error('This ID belongs to a local case'), { code: 'SOURCE_CONFLICT' });
       } catch (e) {
         if ((e as any).code !== 'NOT_FOUND') throw e;
       }
-      const { testCase, related } = await loadCaseWithRelated(project, Number(id));
+      const { testCase, related } = yield* loadCaseWithRelatedEffect(project, Number(id));
       return json(res, 200, {
         id: testCase.id,
         title: testCase.title,
@@ -195,28 +211,26 @@ const server = createServer(async (req, res) => {
       });
     }
     if (req.method === 'POST' && url.pathname === '/api/cases/create')
-      return json(res, 201, caseSummary(caseCatalog.create(await readBody(req))));
+      return json(res, 201, caseSummary(yield* cases.create(yield* sdk(() => readBody(req)))));
     if (req.method === 'POST' && url.pathname === '/api/cases/sync') {
-      const input = syncCaseSchema.parse(await readBody(req));
-      const remote = (await fetchCases(input.project, [input.caseId]))[0];
-      return json(res, 200, caseSummary(caseCatalog.syncQase(remote, input.expectedRevision, input.overwriteLocal)));
+      const input = syncCaseSchema.parse(yield* sdk(() => readBody(req)));
+      const remote = (yield* fetchCasesEffect(input.project, [input.caseId]))[0];
+      return json(res, 200, caseSummary(yield* cases.syncQase(remote, input.expectedRevision, input.overwriteLocal)));
     }
     const caseMatch = url.pathname.match(/^\/api\/cases\/([A-Z0-9_]+)\/(\d+)(?:\/(update|delete))?$/);
     if (caseMatch) {
       const [, project, id, action] = caseMatch;
-      if (req.method === 'GET' && !action) return json(res, 200, caseCatalog.get(project, Number(id)));
+      if (req.method === 'GET' && !action) return json(res, 200, yield* cases.get(project, Number(id)));
       if (req.method === 'POST' && action === 'update')
-        return json(res, 200, caseSummary(caseCatalog.update(project, Number(id), await readBody(req))));
+        return json(res, 200, caseSummary(yield* cases.update(project, Number(id), yield* sdk(() => readBody(req)))));
       if (req.method === 'POST' && action === 'delete')
-        return json(res, 200, caseSummary(caseCatalog.archive(project, Number(id), await readBody(req))));
+        return json(res, 200, caseSummary(yield* cases.archive(project, Number(id), yield* sdk(() => readBody(req)))));
     }
     if (req.method === 'GET' && url.pathname === '/api/worktrees') {
-      const slots = await Promise.all(
-        listSlots().map(async (s) => ({
-          ...s,
-          url: baseUrl(s),
-          healthy: await isHealthy(s),
-        })),
+      const slots = yield* Effect.forEach(
+        listSlots(),
+        (s) => isHealthyEffect(s).pipe(Effect.map((healthy) => ({ ...s, url: baseUrl(s), healthy }))),
+        { concurrency: 8 },
       );
       return json(
         res,
@@ -231,11 +245,11 @@ const server = createServer(async (req, res) => {
       return json(
         res,
         200,
-        (await submitBatch(await readBody(req))).map((j) => j.id),
+        (yield* submitBatchEffect(yield* sdk(() => readBody(req)))).map((j) => j.id),
       );
     }
     if (req.method === 'GET' && url.pathname === '/api/jobs') {
-      const t = url.searchParams.get('view') === 'summary' ? new Map() : titles();
+      const t = url.searchParams.get('view') === 'summary' ? new Map() : yield* titlesEffect;
       const ids = url.searchParams.has('ids') ? new Set(url.searchParams.get('ids')!.split(',')) : undefined;
       const cursor = Math.max(0, Math.floor(Number(url.searchParams.get('cursor')) || 0));
       const limit = Math.min(1000, Math.max(1, Number(url.searchParams.get('limit') ?? 60) || 60));
@@ -376,17 +390,63 @@ const server = createServer(async (req, res) => {
     }
     if (req.method === 'GET' && url.pathname === '/files') return serveFile(req, res, url.searchParams.get('path') ?? '');
     json(res, 404, { error: 'not found' });
-  } catch (error) {
-    const e = error as Error & { code?: string };
-    json(res, error instanceof ZodError ? 400 : e.code === 'NOT_FOUND' ? 404 : e.code?.endsWith('CONFLICT') ? 409 : e.code ? 422 : 500, {
-      error: e.message,
-      code: e.code ?? (error instanceof ZodError ? 'INVALID_INPUT' : 'INTERNAL_ERROR'),
-    });
-  }
+  }).pipe(
+    Effect.catchCause((cause) =>
+      Effect.sync(() => {
+        if (res.destroyed || res.headersSent) return;
+        const error = Cause.squash(cause);
+        const e = error as Error & { code?: string };
+        json(
+          res,
+          error instanceof ZodError ? 400 : e.code === 'NOT_FOUND' ? 404 : e.code?.endsWith('CONFLICT') ? 409 : e.code ? 422 : 500,
+          {
+            error: e.message,
+            code: e.code ?? (error instanceof ZodError ? 'INVALID_INPUT' : 'INTERNAL_ERROR'),
+          },
+        );
+      }),
+    ),
+  );
+const server = createServer((req, res) => {
+  const controller = new AbortController();
+  const disconnected = () => {
+    if (!res.writableFinished) controller.abort(new Error('Client disconnected'));
+  };
+  res.once('close', disconnected);
+  void runEffect(handleRequest(req, res).pipe(Effect.provide(CheckerLive)), controller.signal)
+    .catch(() => {
+      if (!res.destroyed) res.destroy();
+    })
+    .finally(() => res.removeListener('close', disconnected));
 });
-
-server.listen(PORT, '127.0.0.1', () => {
-  const address = `http://localhost:${PORT}`;
-  console.log(`e2e-agent-checker app: ${address}`);
-  if (process.env.E2E_APP_OPEN !== '0') execFile('open', [address], () => {});
-});
+await runMain(
+  Effect.scoped(
+    Effect.gen(function* () {
+      yield* Effect.acquireRelease(
+        Effect.sync(() => server),
+        () =>
+          Effect.gen(function* () {
+            yield* shutdownJobsEffect;
+            server.closeAllConnections();
+            yield* sdk(() => new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())))).pipe(
+              Effect.ignore,
+            );
+          }),
+      );
+      yield* sdk(
+        () =>
+          new Promise<void>((resolve, reject) => {
+            server.once('error', reject);
+            server.listen(PORT, '127.0.0.1', () => {
+              server.removeListener('error', reject);
+              resolve();
+            });
+          }),
+      );
+      const address = `http://localhost:${PORT}`;
+      console.log(`e2e-agent-checker app: ${address}`);
+      if (process.env.E2E_APP_OPEN !== '0') execFile('open', [address], () => {});
+      yield* Effect.never;
+    }),
+  ),
+);

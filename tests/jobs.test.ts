@@ -1,3 +1,5 @@
+import { Deferred, Effect } from 'effect';
+import { runEffect } from '../src/runtime/effect.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
@@ -35,7 +37,9 @@ test('job recovery, atomic preflight, idempotency, queued cancellation and repla
     `#!/usr/bin/env node\nsetTimeout(()=>console.log(JSON.stringify({loggedIn:true,authMethod:'claude.ai'})),80);`,
     { mode: 0o755 },
   );
-  const { submitBatch, cancelJob, replayJob, listJobs, getJob } = await import('../src/jobs.ts');
+  const { ProviderRegistry } = await import('../src/providers/index.ts');
+  const { CheckerLive } = await import('../src/runtime/services.ts');
+  const { submitBatch, cancelJob, replayJob, listJobs, getJob, shutdownJobs, submitBatchEffect } = await import('../src/jobs.ts');
   try {
     assert.equal(getJob('interrupted')?.status, 'interrupted');
     assert.ok(JSON.parse(readFileSync(join(dir, 'jobs.json'), 'utf8'))[0].finishedAt);
@@ -63,14 +67,25 @@ test('job recovery, atomic preflight, idempotency, queued cancellation and repla
     const batch = await submitBatch(input);
     assert.equal(batch.length, 2);
     const { caseCatalog } = await import('../src/cases.ts');
+    assert.equal(caseCatalog.path, join(dir, 'cases.json'), 'case writes must stay inside the test directory');
     const snapshot = batch[1].caseSnapshot!;
     assert.equal(snapshot.id, 6003);
-    caseCatalog.update('DEMO', 6003, { expectedRevision: snapshot.revision, changes: { title: 'Edited after queueing' } });
+    caseCatalog.update('DEMO', 6003, {
+      expectedRevision: snapshot.revision,
+      changes: { title: 'Edited after queueing' },
+    });
     assert.notEqual(batch[1].caseSnapshot!.title, 'Edited after queueing', 'queued job keeps submitted case revision');
     const native = caseCatalog.create({ title: 'Native draft' });
-    await assert.rejects(submitBatch({ ...input, idempotencyKey: 'draft', cases: [{ project: native.project, id: native.id }] }), {
-      code: 'CASE_NOT_ACTIVE',
-    });
+    await assert.rejects(
+      submitBatch({
+        ...input,
+        idempotencyKey: 'draft',
+        cases: [{ project: native.project, id: native.id }],
+      }),
+      {
+        code: 'CASE_NOT_ACTIVE',
+      },
+    );
     assert.equal(batch[0].status, 'running');
     assert.equal(batch[1].status, 'queued');
     assert.equal(cancelJob(batch[1].id).status, 'cancelled');
@@ -79,7 +94,14 @@ test('job recovery, atomic preflight, idempotency, queued cancellation and repla
       (await submitBatch(input)).map((j) => j.id),
       batch.map((j) => j.id),
     );
-    await assert.rejects(submitBatch({ ...input, role: 'eugene', limits: { maxAttempts: 1, timeoutMs: 10000 } }), /different inputs/);
+    await assert.rejects(
+      submitBatch({
+        ...input,
+        role: 'eugene',
+        limits: { maxAttempts: 1, timeoutMs: 10000 },
+      }),
+      /different inputs/,
+    );
     assert.throws(() => replayJob('interrupted'), /no saved run/);
     cancelJob(batch[0].id);
     for (let i = 0; i < 100 && getJob(batch[0].id)?.status === 'cancelling'; i++) await new Promise((r) => setTimeout(r, 20));
@@ -93,7 +115,13 @@ test('job recovery, atomic preflight, idempotency, queued cancellation and repla
       passwordRef: 'env://CHECKER_NONEXISTENT_PASSWORD',
     };
     const environment = saveEnvironment({
-      environment: { id: 'staging', name: 'Staging', kind: 'hosted', baseUrl: 'https://staging.example.test', users: [localUser] },
+      environment: {
+        id: 'staging',
+        name: 'Staging',
+        kind: 'hosted',
+        baseUrl: 'https://staging.example.test',
+        users: [localUser],
+      },
     });
     const remote = await submitBatch({
       ...input,
@@ -105,9 +133,58 @@ test('job recovery, atomic preflight, idempotency, queued cancellation and repla
     assert.equal(remote[0].worktree, '', 'hosted run needs no local checkout');
     assert.equal(remote[0].environmentSnapshot!.baseUrl, 'https://staging.example.test');
     const { revision, ...definition } = environment;
-    saveEnvironment({ environment: { ...definition, baseUrl: 'https://changed.example.test' }, expectedRevision: revision });
+    saveEnvironment({
+      environment: { ...definition, baseUrl: 'https://changed.example.test' },
+      expectedRevision: revision,
+    });
     assert.equal(remote[0].environmentSnapshot!.baseUrl, 'https://staging.example.test', 'queued run pins the target configuration');
     for (const j of remote) cancelJob(j.id);
+    const stoppingBatch = await submitBatch({
+      ...input,
+      idempotencyKey: 'shutdown',
+    });
+    const entered = Deferred.makeUnsafe<void>();
+    const release = Deferred.makeUnsafe<void>();
+    const inFlight = runEffect(
+      submitBatchEffect({ ...input, idempotencyKey: 'during-shutdown' }).pipe(
+        Effect.provideService(ProviderRegistry, {
+          inspect: (id) =>
+            Effect.gen(function* () {
+              yield* Deferred.succeed(entered, undefined);
+              yield* Deferred.await(release);
+              return {
+                id,
+                name: 'Fixture',
+                installed: true,
+                auth: 'subscription' as const,
+                ready: true,
+                loginCommand: 'unused',
+                models: [
+                  { id: 'sonnet', name: 'Sonnet' },
+                  { id: 'haiku', name: 'Haiku' },
+                ],
+              };
+            }),
+        }),
+        Effect.provide(CheckerLive),
+      ),
+    );
+    const rejected = assert.rejects(inFlight, { code: 'APP_UNAVAILABLE' });
+    await runEffect(Deferred.await(entered));
+    await shutdownJobs();
+    await runEffect(Deferred.succeed(release, undefined));
+    await rejected;
+    assert.equal(
+      listJobs().some((j) => j.idempotencyKey === 'during-shutdown'),
+      false,
+    );
+    assert.ok(stoppingBatch.every((j) => j.status === 'interrupted'));
+    assert.ok(stoppingBatch.every((j) => getJob(j.id)?.finishedAt));
+    assert.equal(
+      listJobs().some((j) => ['running', 'queued', 'cancelling'].includes(j.status)),
+      false,
+    );
+    await assert.rejects(submitBatch({ ...input, idempotencyKey: 'after-shutdown' }), { code: 'APP_UNAVAILABLE' });
   } finally {
     if (oldCases === undefined) delete process.env.E2E_CASES_PATH;
     else process.env.E2E_CASES_PATH = oldCases;

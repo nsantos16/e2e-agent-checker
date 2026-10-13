@@ -1,9 +1,12 @@
+import { CredentialStoreLive } from './credentials.ts';
+import { Effect, Semaphore } from 'effect';
+import { runEffect, sdk } from './runtime/effect.ts';
 import { execFileSync, spawn } from 'node:child_process';
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { childEnvironment, getTestUser, environmentSessionPath, type Environment } from './environments.ts';
-import { loginSlot, statePath } from './login.ts';
+import { loginSlotEffect, statePath } from './login.ts';
 
 // A slot is one frontend worktree served on its own port against the shared dev API (docs/adr/0003).
 // Dev servers run detached with a pid file so they outlive the process that started them.
@@ -37,64 +40,65 @@ const isAlive = (pid?: number) => {
   }
 };
 
-export const isHealthy = async (s: Pick<Slot, 'port'>) => {
-  try {
-    const res = await fetch(baseUrl(s), { signal: AbortSignal.timeout(3_000) });
-    return res.ok;
-  } catch {
-    return false;
-  }
-};
-
-export const startSlot = async (slot: string, worktree: string, role = 'eugene', signal?: AbortSignal, environment?: Environment) => {
-  signal?.throwIfAborted();
-  const port = portFor(slot);
-  const registry = readRegistry();
-  const existing = registry[slot];
-  if (
-    existing &&
-    isAlive(existing.pid) &&
-    existing.worktree === worktree &&
-    (existing.environmentId ?? 'local') === (environment?.id ?? 'local') &&
-    (existing.devMode ?? 'ci.development') === (environment?.devMode ?? 'ci.development') &&
-    (await isHealthy(existing))
-  )
-    return existing;
-  if (existing?.pid && isAlive(existing.pid)) process.kill(-existing.pid, 'SIGTERM');
-
-  const logPath = join(stateDir, `slot${slot}-dev.log`);
-  mkdirSync(stateDir, { recursive: true });
-  const out = openSync(logPath, 'w');
-  const child = spawn(
-    'npx',
-    ['vp', 'dev', '--mode', environment?.devMode ?? 'ci.development', '--port', String(port), '--strictPort', '--open', 'false'],
-    {
-      cwd: worktree,
-      detached: true,
-      stdio: ['ignore', out, out],
-      env: { ...childEnvironment(), NODE_OPTIONS: '--max-old-space-size=8192' },
-    },
+export const isHealthyEffect = (s: Pick<Slot, 'port'>) =>
+  sdk((signal) => fetch(baseUrl(s), { signal: AbortSignal.any([signal, AbortSignal.timeout(3000)]) })).pipe(
+    Effect.map((r) => r.ok),
+    Effect.catch(() => Effect.succeed(false)),
   );
-  child.unref();
-  closeSync(out);
+export const isHealthy = (s: Pick<Slot, 'port'>) => runEffect(isHealthyEffect(s));
 
-  const entry = { slot, worktree, port, role, environmentId: environment?.id, devMode: environment?.devMode, pid: child.pid };
-  registry[slot] = entry;
-  writeRegistry(registry);
+export const startSlotEffect = (slot: string, worktree: string, role = 'eugene', environment?: Environment) =>
+  Effect.gen(function* () {
+    const port = portFor(slot);
+    const registry = readRegistry();
+    const existing = registry[slot];
+    if (
+      existing &&
+      isAlive(existing.pid) &&
+      existing.worktree === worktree &&
+      (existing.environmentId ?? 'local') === (environment?.id ?? 'local') &&
+      (existing.devMode ?? 'ci.development') === (environment?.devMode ?? 'ci.development') &&
+      (yield* isHealthyEffect(existing))
+    )
+      return existing;
+    if (existing?.pid && isAlive(existing.pid)) process.kill(-existing.pid, 'SIGTERM');
 
-  const deadline = Date.now() + 120_000;
-  while (Date.now() < deadline) {
-    signal?.throwIfAborted();
-    if (await isHealthy(entry)) {
-      // The first request triggers Vite's dependency optimisation; warm the main route so the agent doesn't pay for it.
-      await fetch(`${baseUrl(entry)}/client-list`).catch(() => {});
-      return entry;
+    const logPath = join(stateDir, `slot${slot}-dev.log`);
+    mkdirSync(stateDir, { recursive: true });
+    const out = openSync(logPath, 'w');
+    const child = spawn(
+      'npx',
+      ['vp', 'dev', '--mode', environment?.devMode ?? 'ci.development', '--port', String(port), '--strictPort', '--open', 'false'],
+      {
+        cwd: worktree,
+        detached: true,
+        stdio: ['ignore', out, out],
+        env: { ...childEnvironment(), NODE_OPTIONS: '--max-old-space-size=8192' },
+      },
+    );
+    child.unref();
+    closeSync(out);
+
+    const entry = { slot, worktree, port, role, environmentId: environment?.id, devMode: environment?.devMode, pid: child.pid };
+    registry[slot] = entry;
+    writeRegistry(registry);
+
+    const deadline = Date.now() + 120_000;
+    while (Date.now() < deadline) {
+      if (yield* isHealthyEffect(entry)) {
+        // The first request triggers Vite's dependency optimisation; warm the main route so the agent doesn't pay for it.
+        yield* sdk((signal) =>
+          fetch(`${baseUrl(entry)}/client-list`, { signal: AbortSignal.any([signal, AbortSignal.timeout(3000)]) }),
+        ).pipe(Effect.ignore);
+        return entry;
+      }
+      if (!isAlive(child.pid)) throw new Error(`Slot ${slot} dev server exited. See ${logPath}`);
+      yield* Effect.sleep(1000);
     }
-    if (!isAlive(child.pid)) throw new Error(`Slot ${slot} dev server exited. See ${logPath}`);
-    await new Promise((r) => setTimeout(r, 1_000));
-  }
-  throw new Error(`Slot ${slot} not healthy on port ${port} after 120s. See ${logPath}`);
-};
+    throw new Error(`Slot ${slot} not healthy on port ${port} after 120s. See ${logPath}`);
+  });
+export const startSlot = (slot: string, worktree: string, role = 'eugene', signal?: AbortSignal, environment?: Environment) =>
+  runEffect(startSlotEffect(slot, worktree, role, environment), signal);
 
 export const stopSlot = (slot: string) => {
   const registry = readRegistry();
@@ -124,54 +128,47 @@ const ensureNodeModules = (worktree: string) => {
 };
 
 // Concurrent jobs for the same worktree share one in-flight allocation instead of racing for two slots.
-let allocation: Promise<unknown> = Promise.resolve();
+const allocation = Semaphore.makeUnsafe(1);
 
+export const ensureSlotForWorktreeEffect = (
+  worktreePath: string,
+  role = 'eugene',
+  log: (l: string) => void = () => {},
+  environment?: Environment,
+) => allocation.withPermits(1)(allocateSlotEffect(worktreePath, role, log, environment));
 export const ensureSlotForWorktree = (
   worktreePath: string,
   role = 'eugene',
   log: (l: string) => void = () => {},
   signal?: AbortSignal,
   environment?: Environment,
-) => {
-  const p = allocation.then(() => {
-    signal?.throwIfAborted();
-    return allocateSlot(worktreePath, role, log, signal, environment);
-  });
-  allocation = p.catch(() => {});
-  return p;
-};
+) => runEffect(ensureSlotForWorktreeEffect(worktreePath, role, log, environment).pipe(Effect.provide(CredentialStoreLive)), signal);
 
 // Finds the slot already serving this worktree, or allocates the next free one; starts it and logs the role in when needed.
-const allocateSlot = async (
-  worktreePath: string,
-  role: string,
-  log: (l: string) => void,
-  signal?: AbortSignal,
-  environment?: Environment,
-): Promise<Slot> => {
-  const worktree = resolve(worktreePath);
-  if (!existsSync(join(worktree, 'package.json'))) throw new Error(`${worktree} is not a frontend checkout (no package.json)`);
-  const registry = readRegistry();
-  const existing = Object.values(registry).find(
-    (s) =>
-      s.worktree === worktree &&
-      (s.environmentId ?? 'local') === (environment?.id ?? 'local') &&
-      (s.devMode ?? 'ci.development') === (environment?.devMode ?? 'ci.development'),
-  );
-  const slot = existing?.slot ?? String(Array.from({ length: MAX_SLOTS }, (_, i) => i + 1).find((n) => !registry[String(n)]) ?? '');
-  if (!slot) throw new Error(`All ${MAX_SLOTS} slots are in use`);
-  ensureNodeModules(worktree);
-  log(`slot ${slot}: starting dev server for ${worktree}`);
-  const entry = await startSlot(slot, worktree, role, signal, environment);
-  const user = environment && getTestUser(environment, role);
-  const state = environment && user ? environmentSessionPath(environment, user, baseUrl(entry)) : statePath(slot, role);
-  if (!existsSync(state) || Date.now() - statSync(state).mtimeMs > SESSION_MAX_AGE_MS) {
-    log(`slot ${slot}: logging in as ${role}`);
-    signal?.throwIfAborted();
-    await loginSlot({ base: baseUrl(entry), role, slot, signal, user, storageState: state });
-  }
-  return { ...entry, role };
-};
+const allocateSlotEffect = (worktreePath: string, role: string, log: (l: string) => void, environment?: Environment) =>
+  Effect.gen(function* () {
+    const worktree = resolve(worktreePath);
+    if (!existsSync(join(worktree, 'package.json'))) throw new Error(`${worktree} is not a frontend checkout (no package.json)`);
+    const registry = readRegistry();
+    const existing = Object.values(registry).find(
+      (s) =>
+        s.worktree === worktree &&
+        (s.environmentId ?? 'local') === (environment?.id ?? 'local') &&
+        (s.devMode ?? 'ci.development') === (environment?.devMode ?? 'ci.development'),
+    );
+    const slot = existing?.slot ?? String(Array.from({ length: MAX_SLOTS }, (_, i) => i + 1).find((n) => !registry[String(n)]) ?? '');
+    if (!slot) throw new Error(`All ${MAX_SLOTS} slots are in use`);
+    ensureNodeModules(worktree);
+    log(`slot ${slot}: starting dev server for ${worktree}`);
+    const entry = yield* startSlotEffect(slot, worktree, role, environment);
+    const user = environment && getTestUser(environment, role);
+    const state = environment && user ? environmentSessionPath(environment, user, baseUrl(entry)) : statePath(slot, role);
+    if (!existsSync(state) || Date.now() - statSync(state).mtimeMs > SESSION_MAX_AGE_MS) {
+      log(`slot ${slot}: logging in as ${role}`);
+      yield* loginSlotEffect({ base: baseUrl(entry), role, slot, user, storageState: state });
+    }
+    return { ...entry, role };
+  });
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const { positionals, values } = parseArgs({
