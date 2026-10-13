@@ -2,9 +2,9 @@
 
 Start `npm run app`, then evaluate the contents of `app-playback.browser.js` in the app's browser context with `preview_evaluate`, or paste the file into the browser's developer console.
 
-The check loads the current app UI in an isolated frame, mocks the APIs, and disables polling timers. It does not start test jobs or require existing recordings. Success returns `{ passed: 12, checks: [...] }`; a regression returns `{ failed: "...", passed: ... }`.
+The check loads the current app UI in an isolated frame, mocks the APIs, and manually triggers polling timers. It does not start test jobs or require existing recordings. Success returns `{ passed: 12, checks: [...] }`; a regression returns `{ failed: "...", passed: ... }`.
 
-It exercises the real rendering and refresh functions to check that polling, progress updates, expansion of another run, metadata and evidence updates, and arrival of new runs preserve the mounted player and its settings. It also checks that collapsing and removing runs still work. Actual media playback should additionally be checked on an existing recording across several polling intervals.
+It exercises the built React components through real controls and fixture API responses to check that polling, progress updates, expansion of another run, metadata and evidence updates, and arrival of new runs preserve the mounted player and its settings. It also checks that collapsing and removing runs still work. Actual media playback should additionally be checked on an existing recording across several polling intervals.
 
 ## Workspace regression
 
@@ -27,3 +27,7 @@ Pricing tests use fixed catalogs to verify cache/read/write arithmetic, reasonin
 ## Effect runtime regression
 
 `npm test` includes `effect-runtime.test.ts`: process-group cleanup on cancellation, scoped release before timeout errors, sibling cancellation during credential resolution, failed Codex initialization, cancelled browser MCP initialization, and a verification using injected provider/process/pricing services. Job tests also cover shutdown of active and queued work and a submission racing shutdown. Run `npm run check` for service dependency and effect type checking. The localhost smoke tests above exercise real browser resources through the same scoped runtime.
+
+## React workspace and assets
+
+`npm run check` checks both backend and browser TypeScript. `npm test` includes workspace submission, catalog pruning, late selection responses, parallel startup, request deduplication and cancellation on unmount. API integration tests check the compiled HTML/JavaScript/CSS, asset cache headers and path boundaries. The browser suites above load the production bundle; they use no internal rendering globals.

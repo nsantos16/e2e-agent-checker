@@ -4,3 +4,4 @@ runs/
 e2e-agent.local.json
 e2e/generated/
 test-results/
+dist/

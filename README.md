@@ -23,6 +23,8 @@ Implementation status and verified limitations: [docs/runtime-milestone.md](docs
 
 Backend services, cancellation and resource ownership: [Effect runtime](docs/effect-runtime.md).
 
+React components, frontend builds and development: [React frontend](docs/react-frontend.md).
+
 ## Quick start (any dev)
 
 ```sh

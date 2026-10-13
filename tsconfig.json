@@ -11,5 +11,6 @@
     "lib": ["ES2023", "DOM"],
     "erasableSyntaxOnly": true
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts"]
+  "include": ["src/**/*.ts", "tests/**/*.ts"],
+  "exclude": ["src/app/client"]
 }

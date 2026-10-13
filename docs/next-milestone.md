@@ -25,7 +25,7 @@ The closest reusable library is `@agentclientprotocol/sdk`. It standardizes comm
 | Verification quality | Reports are parsed with a TypeScript cast; some assertions are inferred; some Qase cases are stale                                   | Validate required steps and verdicts against the frozen case before accepting a report                          |
 | Publish evidence     | `attach_to_pr` is implemented, but the results document says the publish path has not been exercised                                 | Test against one explicitly selected PR; keep publishing an explicit action                                     |
 
-Source audit: [jobs](../src/jobs.ts), [Claude runner](../src/claude.ts), [verification](../src/verify.ts), [MCP](../src/mcp-server.ts), [UI](../src/app/ui.html), [results](poc-results.md), [PoC plan](poc-plan.md). Also fix the stale `npm run verify` entry, which points to the absent `src/run-case.ts` instead of `src/verify.ts`.
+Source audit: [jobs](../src/jobs.ts), [Claude runner](../src/claude.ts), [verification](../src/verify.ts), [MCP](../src/mcp-server.ts), [UI](../src/app/client/App.tsx), [results](poc-results.md), [PoC plan](poc-plan.md). Also fix the stale `npm run verify` entry, which points to the absent `src/run-case.ts` instead of `src/verify.ts`.
 
 ## Subscription-first authentication
 

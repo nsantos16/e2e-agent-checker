@@ -122,6 +122,19 @@ test('real local API and stdio MCP expose compact jobs, selected diagnostics, pa
       await new Promise((r) => setTimeout(r, 50));
     }
     assert.ok(ready, 'test server started');
+    const html = await (await fetch(base + '/')).text();
+    assert.match(html, /id="root"/);
+    const assets = [...html.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g)].map((match) => match[1]);
+    assert.equal(assets.length, 2, 'React entry loads bundled JavaScript and CSS');
+    for (const asset of assets) {
+      const response = await fetch(base + asset);
+      assert.equal(response.status, 200);
+      assert.match(response.headers.get('cache-control') ?? '', /immutable/);
+      assert.match(response.headers.get('content-type') ?? '', asset.endsWith('.js') ? /javascript/ : /css/);
+      assert.ok((await response.text()).length > 100);
+    }
+    assert.equal((await fetch(base + '/assets/missing.js')).status, 404);
+    assert.equal((await fetch(base + '/assets/%2e%2e%2fpackage.json')).status, 404);
     await client.connect(new StdioClientTransport({ command: process.execPath, args: ['src/mcp-server.ts'], env, stderr: 'pipe' }));
     const call = async (name: string, args: object) => {
       const response = await client.callTool({ name, arguments: args as Record<string, unknown> });

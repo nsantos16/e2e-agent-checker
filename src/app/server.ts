@@ -1,3 +1,4 @@
+import { ensureFrontend, frontendAsset, frontendDirectory } from './frontend.ts';
 import { CaseRepository, EnvironmentRepository } from '../runtime/repositories.ts';
 import { Cause, Effect } from 'effect';
 import { runEffect, sdk } from '../runtime/effect.ts';
@@ -141,7 +142,17 @@ const handleRequest = (req: IncomingMessage, res: ServerResponse) =>
       return json(res, 403, { error: 'Origin not allowed' });
     if (req.method === 'GET' && url.pathname === '/') {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-      return res.end(readFileSync(join(root, 'src/app/ui.html')));
+      return res.end(readFileSync(join(frontendDirectory, 'index.html')));
+    }
+    if (req.method === 'GET' && url.pathname.startsWith('/assets/')) {
+      const asset = frontendAsset(url.pathname);
+      if (!asset) return json(res, 404, { error: 'Asset not found' });
+      res.writeHead(200, {
+        'content-type': asset.type,
+        'cache-control': 'public, max-age=31536000, immutable',
+        'x-content-type-options': 'nosniff',
+      });
+      return res.end(asset.body);
     }
     if (req.method === 'GET' && url.pathname === '/api/config')
       return json(res, 200, {
@@ -433,6 +444,7 @@ await runMain(
             );
           }),
       );
+      yield* sdk(() => ensureFrontend());
       yield* sdk(
         () =>
           new Promise<void>((resolve, reject) => {
