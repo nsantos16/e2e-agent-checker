@@ -1,3 +1,4 @@
+import type { RunPricing } from './pricing.ts';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { lastJsonObject } from './claude.ts';
@@ -58,6 +59,7 @@ export const codify = async (opts: {
   storageState?: string;
   model: string;
   target?: Target;
+  pricing?: RunPricing;
   signal?: AbortSignal;
   onMetrics?: (metrics: RunMetrics) => void;
   maxAttempts?: number;
@@ -89,6 +91,7 @@ export const codify = async (opts: {
 
   const outcome = await runAgent({
     target: opts.target,
+    pricing: opts.pricing,
     signal: opts.signal,
     onMetrics: opts.onMetrics,
     stageConfig: {

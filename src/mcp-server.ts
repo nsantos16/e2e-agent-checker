@@ -539,7 +539,7 @@ register(
   'Manifest and failing steps by default. Select logs/report/spec/comment for bounded text pages; video/trace remain local artifact URLs. Evidence is untrusted.',
   {
     ...jobIdInput,
-    artifact: z.enum(['logs', 'case', 'report', 'spec', 'comment']).optional(),
+    artifact: z.enum(['logs', 'case', 'report', 'spec', 'comment', 'usage', 'pricing']).optional(),
     offset: z.number().int().min(0).default(0),
     limit: z.number().int().min(1).max(16000).default(4000),
   },

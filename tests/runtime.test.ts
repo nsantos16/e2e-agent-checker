@@ -4,6 +4,7 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync, symlinkSync, mkdirSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runClaude } from '../src/claude.ts';
+import { createRunPricing } from '../src/pricing.ts';
 import { command } from '../src/process.ts';
 import { stageTools } from '../src/stage-tools.ts';
 import type { RunMetrics } from '../src/usage.ts';
@@ -22,6 +23,10 @@ test('Claude usage survives cancellation; duplicate message snapshots do not dou
   try {
     await assert.rejects(
       runClaude({
+        pricing: await createRunPricing(dir, {
+          catalog: { test: { input_cost_per_token: 0.000001, output_cost_per_token: 0.000002, cache_read_input_token_cost: 0.0000001 } },
+          source: 'cache',
+        }),
         prompt: 'test',
         cwd: dir,
         model: 'test',
@@ -38,6 +43,8 @@ test('Claude usage survives cancellation; duplicate message snapshots do not dou
     );
     assert.equal(metrics!.usage.totalTokens, 19);
     assert.equal(metrics!.usage.status, 'partial');
+    assert.ok(Math.abs(metrics!.usage.estimatedApiCostUsd! - 0.0000204) < 1e-12);
+    assert.ok(metrics!.usage.pricingSnapshotId);
     assert.ok(readFileSync(join(dir, 'events.jsonl'), 'utf8').includes('m1'));
   } finally {
     process.env.PATH = old;

@@ -38,6 +38,7 @@
       createdAt: '2026-01-01T00:00:00Z',
       finishedAt: '2026-01-01T00:01:00Z',
       steps: [],
+      usage: {status: 'complete', totalTokens: 1500, inputTokens: 1000, outputTokens: 500, cacheReadTokens: 800, cacheWriteTokens: 0, estimatedApiCostUsd: 0.0123, providerReportedCostUsd: null},
     };
     window.fixtureJob = job;
     window.fixtureObservation = {
@@ -294,6 +295,17 @@
     assert($('#history-panel').hidden === false && !$('#jobs .job').hidden, 'New run opens its focused history view');
     await w.eval('beginDraft(); jobs = []; renderJobs(); selectJob("workspace-test")');
     assert(!$('#jobs .job').hidden && $('#jobs video'), 'Direct selection loads a run absent from the recent list');
+    assert($('#jobs .run-metrics').textContent.includes('API-equivalent cost') && $('#jobs .run-metrics').textContent.includes('$0.0123'), 'Provider token counts display a library-priced API estimate');
+    assert($('#jobs .run-metrics').textContent.includes('not a bill') && $('#jobs .metrics').textContent.includes('cache write 0'), 'Estimated cost is distinct from billing and cache categories are visible');
+    w.fixtureJob.usage.estimatedApiCostUsd = null;
+    await w.eval('refreshJobs()');
+    assert($('#jobs .run-metrics').textContent.includes('Unavailable'), 'Missing model pricing stays unavailable');
+    w.fixtureJob.usage.providerReportedCostUsd = 0.0456;
+    await w.eval('refreshJobs()');
+    assert($('#jobs .run-metrics').textContent.includes('Reported cost') && $('#jobs .run-metrics').textContent.includes('$0.0456'), 'Provider-reported cost remains available when catalog pricing is missing');
+    w.fixtureJob.usage.estimatedApiCostUsd = 0.0123;
+    w.fixtureJob.usage.providerReportedCostUsd = null;
+    await w.eval('refreshJobs()');
     const video = $('#jobs video');
     await w.eval('refreshJobs()');
     assert(video && $('#jobs video') === video, 'Focused evidence survives polling');

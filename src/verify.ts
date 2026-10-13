@@ -1,3 +1,4 @@
+import { createRunPricing } from './pricing.ts';
 import type { TestCase } from './cases.ts';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -64,6 +65,7 @@ export const verify = async (opts: VerifyOptions) => {
     summary.explore = { verdict: report.verdict, reused: true };
     summary.codify = { reused: true };
   } else {
+    const pricing = await createRunPricing(runDir);
     stage('explore');
     const explored = await explore({
       project: opts.project,
@@ -76,6 +78,7 @@ export const verify = async (opts: VerifyOptions) => {
       model: opts.model,
       runDir,
       target: opts.target,
+      pricing,
       signal: opts.signal,
       onMetrics: (m) => opts.onMetrics?.('explore', m),
       log,
@@ -99,6 +102,7 @@ export const verify = async (opts: VerifyOptions) => {
       model: opts.model,
       runDir,
       target: opts.target,
+      pricing,
       signal: opts.signal,
       maxAttempts: opts.maxAttempts,
       onMetrics: (m) => opts.onMetrics?.('codify', m),

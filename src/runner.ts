@@ -1,3 +1,4 @@
+import { createRunPricing } from './pricing.ts';
 import { join, dirname } from 'node:path';
 import { appendFileSync, writeFileSync } from 'node:fs';
 import { runClaude, type ClaudeRun } from './claude.ts';
@@ -18,6 +19,8 @@ export async function runAgent(run: ClaudeRun & { target?: Target; stageConfig: 
   };
   const target = run.target ?? { provider: 'claude-code', model: run.model, authMode: 'subscription' };
   await preflight(target);
+  run.signal?.throwIfAborted();
+  run.pricing ??= await createRunPricing(run.stageConfig.runDir ?? dirname(dirname(run.transcriptPath)));
   run.signal?.throwIfAborted();
   if (target.provider === 'codex') {
     const service = await stageTools(run.stageConfig, run.signal);

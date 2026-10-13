@@ -267,7 +267,7 @@ const server = createServer(async (req, res) => {
           ),
       );
     }
-    const artifactMatch = url.pathname.match(/^\/api\/jobs\/([\w-]+)\/artifacts\/(case|report|spec|comment|video|trace)$/);
+    const artifactMatch = url.pathname.match(/^\/api\/jobs\/([\w-]+)\/artifacts\/(case|report|spec|comment|video|trace|usage|pricing)$/);
     if (req.method === 'GET' && artifactMatch) {
       const job = getJob(artifactMatch[1]);
       const path = job && artifactPath(job, artifactMatch[2] as ArtifactId);

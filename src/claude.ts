@@ -1,4 +1,5 @@
 import { appendFileSync, writeFileSync } from 'node:fs';
+import { priceClaudeResult, type RunPricing } from './pricing.ts';
 import { command } from './process.ts';
 import { claudeUsage, emptyUsage, mergeUsage, type RunMetrics } from './usage.ts';
 
@@ -6,6 +7,7 @@ export type ClaudeRun = {
   prompt: string;
   cwd: string;
   model: string;
+  pricing?: RunPricing;
   tools: string[];
   allowedTools: string[];
   addDirs?: string[];
@@ -61,7 +63,8 @@ export const runClaude = async (run: ClaudeRun): Promise<ClaudeOutcome> => {
         appendFileSync(run.transcriptPath, JSON.stringify(e) + '\n');
         if (e.type === 'assistant') {
           if (e.message?.id && e.message.usage) {
-            messages.set(e.message.id, claudeUsage(e.message.usage));
+            const usage = claudeUsage(e.message.usage);
+            messages.set(e.message.id, run.pricing && e.message.model ? run.pricing.price(usage, e.message.model) : usage);
             metrics.usage = mergeUsage([...messages.values()]);
           }
           if (e.message?.model) metrics.models = [...new Set([...metrics.models, e.message.model])];
@@ -72,10 +75,15 @@ export const runClaude = async (run: ClaudeRun): Promise<ClaudeOutcome> => {
             }
         }
         if (e.type === 'result') {
-          metrics.usage = claudeUsage(e.usage ?? {}, e.total_cost_usd, !e.is_error);
+          metrics.usage = priceClaudeResult(
+            claudeUsage(e.usage ?? {}, e.total_cost_usd, !e.is_error),
+            e.modelUsage,
+            metrics.models,
+            run.pricing,
+          );
           metrics.costUsd = metrics.usage.providerReportedCostUsd;
           metrics.turns = e.num_turns ?? 0;
-          metrics.models = Object.keys(e.modelUsage ?? {});
+          if (Object.keys(e.modelUsage ?? {}).length) metrics.models = Object.keys(e.modelUsage);
         }
         update();
       },

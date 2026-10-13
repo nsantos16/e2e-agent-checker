@@ -8,7 +8,7 @@ It exercises the real rendering and refresh functions to check that polling, pro
 
 ## Workspace regression
 
-Evaluate `app-workspace.browser.js` the same way. Success returns 59 checks covering case selection, catalog refresh and draft activation, multi-model batch submission, model search, keyboard focus, unavailable-provider guidance, separate Connections settings, focused run history, polling, new drafts, theme persistence mobile layout, side-panel docking and browser preservation, network search/type/stage filters, sorting, response/raw detail, copy actions, keyboard navigation, pause/resume, bounded loading, retention disclosure, responsive inspection, escaped response text, live frame identity, closed-session labeling and direct selection of older runs. Requests, preferences and polling are mocked inside an isolated frame; this test does not consume subscription allowance or start real jobs.
+Evaluate `app-workspace.browser.js` the same way. Success returns 63 checks covering case selection, catalog refresh and draft activation, multi-model batch submission, model search, keyboard focus, unavailable-provider guidance, separate Connections settings, focused run history, polling, new drafts, theme persistence mobile layout, side-panel docking and browser preservation, network search/type/stage filters, sorting, response/raw detail, copy actions, keyboard navigation, pause/resume, bounded loading, retention disclosure, responsive inspection, escaped response text, live frame identity, closed-session labeling and direct selection of older runs. Requests, preferences and polling are mocked inside an isolated frame; this test does not consume subscription allowance or start real jobs.
 
 ## Browser/network runtime smoke
 
@@ -21,3 +21,5 @@ Run `node tests/observability-smoke.ts` after browser setup. This uses the real 
 ## Environment login smoke
 
 Run `node tests/environment-login-smoke.ts` to test the actual credential-reference and login harness against two disposable localhost targets. It uses dummy credentials, checks separate sessions and owner-only file permissions, and cleans up its session files. It makes no model or 1Password calls. Workspace browser checks cover environment settings, users, hosted/local selection and mobile layout.
+
+Pricing tests use fixed catalogs to verify cache/read/write arithmetic, reasoning subsets, mixed-model attribution, missing rates, pinned snapshots, and cancellation. API/MCP tests check on-demand pricing/usage evidence. No paid model calls are made.

@@ -36,7 +36,8 @@ export async function runCodex(run: ClaudeRun, service: ToolService): Promise<Cl
       if (method.startsWith('account/')) return;
       appendFileSync(run.transcriptPath, JSON.stringify({ method, params: p }) + '\n');
       if (method === 'thread/tokenUsage/updated') {
-        metrics.usage = codexUsage(p.tokenUsage.total);
+        const usage = codexUsage(p.tokenUsage.total);
+        metrics.usage = run.pricing ? run.pricing.price(usage, metrics.models[0]!) : usage;
         update();
       }
       if (method === 'item/completed' && p.item?.type === 'agentMessage') messages.set(p.item.id, p.item.text);

@@ -102,3 +102,5 @@ node tests/provider-smoke.ts --provider codex --model MODEL_ID --broken
 ```
 
 The browser playback regression is documented in [tests/README.md](tests/README.md).
+
+Run cost estimates use `tokentally` with per-run LiteLLM pricing snapshots. Token counts come from the provider; estimated API-equivalent cost is separate from subscription billing. See [usage and pricing](docs/usage-pricing.md).

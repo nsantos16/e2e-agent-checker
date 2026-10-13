@@ -367,6 +367,7 @@ export function replayJob(id: string) {
       cacheWriteTokens: 0,
       reasoningTokens: 0,
       providerReportedCostUsd: 0,
+      estimatedApiCostUsd: 0,
     },
   };
   jobs.set(job.id, job);

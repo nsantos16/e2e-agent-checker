@@ -1,3 +1,4 @@
+import type { RunPricing } from './pricing.ts';
 import { assertRunnable, type TestCase } from './cases.ts';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -34,6 +35,7 @@ export type ExploreOptions = {
   headed?: boolean;
   storageState?: string;
   target?: Target;
+  pricing?: RunPricing;
   signal?: AbortSignal;
   onMetrics?: (metrics: RunMetrics) => void;
   log?: (line: string) => void;
@@ -114,6 +116,7 @@ export const explore = async (opts: ExploreOptions) => {
 
   const outcome = await runAgent({
     target: opts.target,
+    pricing: opts.pricing,
     signal: opts.signal,
     onMetrics: opts.onMetrics,
     stageConfig: { browserConfig: mcpConfigPath, actionsPath: join(dir, 'actions.js'), runDir: opts.runDir },

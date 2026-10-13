@@ -28,7 +28,7 @@ Claude Code, Codex and Cursor can all act as MCP callers. The caller is independ
 
 - Atomic batch preflight, case/model fan-out, request idempotency and persisted targets/limits.
 - Queue and active duration, per-stage timing, streamed token/cache counters and completeness status. Stage metrics are snapshotted and journaled before a run finishes.
-- Provider-reported dollar cost where supplied. API-equivalent estimates and actual billed cost remain `null` without a reliable source. Codex's native usage events expose tokens but no dollar cost; the UI shows **Unavailable**, never a fabricated zero.
+- Provider-reported dollar cost stays separate from standard API-equivalent estimates calculated with `tokentally` and a pinned LiteLLM pricing snapshot. Missing usage/model pricing stays **Unavailable**; subscription billing remains unknown. See [usage and pricing](usage-pricing.md).
 - Cancellation, deadlines, partial usage preservation and process-group cleanup. Restarted active/queued jobs become `interrupted`; they are not silently rerun.
 - Global serialization for jobs sharing a test role, while allowing different roles/worktrees within configured concurrency limits.
 - Replay of a saved spec without new model calls. Reports are validated against expected steps; a stabilized result must match the last actual test attempt and unchanged spec hash.
@@ -69,7 +69,7 @@ The real Sample run `job-1586d88c-ee0f-44b6-a60e-7213df121994` / `DEMO-6003` was
 
 1. Refresh the Sample test-user session and rerun the real known-good/known-broken pair. Validate Claude after native subscription login.
 2. Implement Cursor execution only after verified tool isolation, or an explicitly designed process sandbox, is available.
-3. Add versioned model pricing for explicitly labeled API-equivalent estimates; subscription billing remains a separate concept.
+3. Extend the standard API pricing estimates with verified service-tier/context-tier pricing where runtimes expose the required metadata.
 4. Freeze case/worktree fingerprints, add fixture leases/reset checks and provider-specific rate-limit handling.
 5. Add durable event cursors and resumable stages; current restart behavior deliberately terminates interrupted jobs.
 6. Exercise authorized PR publication and coordinate concurrent publication attempts.

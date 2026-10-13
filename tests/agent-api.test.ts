@@ -29,6 +29,8 @@ function populate(dir: string) {
   mkdirSync(join(dir, 'explore'), { recursive: true });
   mkdirSync(join(dir, 'codify'), { recursive: true });
   writeFileSync(join(dir, 'codify/DEMO-6003.spec.ts'), 'spec contents');
+  atomicJson(join(dir, 'pricing.json'), { id: 'test-snapshot', basis: 'standard-api', models: {} });
+  atomicJson(join(dir, 'usage.json'), { usage: { estimatedApiCostUsd: 0.0123, pricingSnapshotId: 'test-snapshot' } });
   atomicJson(join(dir, 'explore/case.json'), { project: 'LOCAL', id: 1, title: 'Original case snapshot' });
   atomicJson(join(dir, 'explore/report.json'), { verdict: 'fail', notes: 'report '.repeat(1000) });
   atomicJson(join(dir, 'explore/network.json'), {
@@ -126,6 +128,13 @@ test('real local API and stdio MCP expose compact jobs, selected diagnostics, pa
       assert.ok(!response.isError, JSON.stringify(response.content));
       return (response.structuredContent as any).data;
     };
+    const pricingEvidence = await call('get_evidence', { jobId: 'agent-test', artifact: 'pricing' });
+    assert.match(pricingEvidence.text, /test-snapshot/);
+    const usageEvidence = await call('get_evidence', { jobId: 'agent-test', artifact: 'usage' });
+    assert.match(usageEvidence.text, /0.0123/);
+    const pricingDownload = await fetch(base + '/api/jobs/agent-test/artifacts/pricing');
+    assert.equal(pricingDownload.status, 200);
+    assert.equal((await pricingDownload.json()).id, 'test-snapshot');
     const definition = {
       id: 'staging',
       name: 'Staging',

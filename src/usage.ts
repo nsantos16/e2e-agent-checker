@@ -76,6 +76,8 @@ export const mergeUsage = (values: Usage[]): Usage => {
     'billedCostUsd',
   ] as const)
     out[key] = values.every((v) => v[key] !== null) ? values.reduce((sum, v) => sum + v[key]!, 0) : null;
+  const ids = [...new Set(values.map((v) => v.pricingSnapshotId))];
+  out.pricingSnapshotId = ids.length === 1 ? ids[0]! : null;
   return out;
 };
 export type RunMetrics = { costUsd: number | null; turns: number; toolCalls: number; wallMs: number; models: string[]; usage: Usage };
