@@ -21,6 +21,8 @@ Live browser and request diagnostics: [docs/browser-observability.md](docs/brows
 
 Implementation status and verified limitations: [docs/runtime-milestone.md](docs/runtime-milestone.md).
 
+Open product requests to resume later: [docs/backlog.md](docs/backlog.md).
+
 Backend services, cancellation and resource ownership: [Effect runtime](docs/effect-runtime.md).
 
 React components, frontend builds and development: [React frontend](docs/react-frontend.md).
