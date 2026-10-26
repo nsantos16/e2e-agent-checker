@@ -9,9 +9,11 @@ const PREFIX = 'e2e-agent-';
 
 for (const clientId of CLIENTS) {
   test(`sweep notes on client ${clientId}`, async ({ page }) => {
-    await openPage(page, `/clients/${clientId}/info/notes`);
+    await openPage(page, `/clients/${clientId}/info/notes`, {
+      ready: [page.getByRole('button', { name: 'Add Digital Note Button' }), page.getByRole('table').last()],
+      loading: page.locator('.ant-spin-nested-loading > div > .ant-spin-spinning'),
+    });
     const rows = page.getByRole('row').filter({ hasText: PREFIX });
-    await page.getByRole('row').nth(1).waitFor({ timeout: 20_000 }).catch(() => {});
     let deleted = 0;
     for (let i = 0; i < 50 && (await rows.count()) > 0; i++) {
       const row = rows.first();

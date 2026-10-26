@@ -7,18 +7,18 @@ test('DEMO-6003: Multi-line list item (Shift+Enter) persists after save and reop
   const noteRow = page.getByRole('row').filter({ hasText: title });
   let created = false;
 
-  // a direct visit to the notes URL sometimes redirects to /client-list on the first attempt, so retry until the note list shows
+  // Navigation checks the loaded notes list; the saved row remains a separate persistence assertion.
   const openNotesList = async (row = noteRow) => {
-    await expect(async () => {
-      await openPage(page, '/clients/5670/info/notes');
-      await expect(row).toBeVisible({ timeout: 10_000 });
-    }).toPass({ timeout: 90_000 });
+    await openPage(page, '/clients/5670/info/notes', {
+      ready: [page.getByRole('button', { name: 'Add Digital Note Button' }), page.getByRole('table').last()],
+      loading: page.locator('.ant-spin-nested-loading > div > .ant-spin-spinning'),
+    });
+    await expect(row).toBeVisible({ timeout: 10_000 });
   };
 
   try {
     await qaseStep(page, 1, 'Open Client Info > Notes and start a new note', async () => {
       await openPage(page, '/clients/5670');
-      await page.getByText('Loading...').first().waitFor({ state: 'hidden' });
       await page.getByTestId('c-client-info-button').click();
       await page.getByRole('button', { name: 'Add Digital Note Button' }).click();
       created = true;

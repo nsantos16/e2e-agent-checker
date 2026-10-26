@@ -24,6 +24,14 @@ Run `node tests/environment-login-smoke.ts` to test the actual credential-refere
 
 Pricing tests use fixed catalogs to verify cache/read/write arithmetic, reasoning subsets, mixed-model attribution, missing rates, pinned snapshots, and cancellation. API/MCP tests check on-demand pricing/usage evidence. No paid model calls are made.
 
+## Browser navigation readiness
+
+Run `npm run test:readiness` after browser setup. The Playwright suite exercises the real `openPage` helper against a disposable localhost HTTP server. It covers continuous background requests, delayed UI state and loading-indicator mounting, multiple spinners, pages that never become ready, successful and failed cold-link recovery, wrong destinations, intentional redirects, origin checks, HTTP/transport errors, selector errors, and closed pages. Servers and browser contexts are disposed after the run; no application credentials, external data, or model calls are used.
+
+Run `READINESS_BENCHMARK=1 npm run test:readiness` to also measure the old and new helpers on the same four fixture scenarios. The frozen baseline is `openPage` from `ba15ae4`, with its original 30-second network-idle and 25-second spinner timeouts. Both implementations use fresh contexts in the same Chromium run with no slow motion, tracing on failure only, and identical fixture timing. The new helper uses its production 15-second budget, not the shorter budgets used by individual failure tests. Timing includes the old helper's unconditional home visit and any recovery. The comparison deliberately distinguishes returning early from being ready and records recovery counts and document requests.
+
+The JSON report is `runs/readiness/report.json`; its benchmark attachment contains `readiness-timings.json`. These are fixture measurements, not application-wide performance claims. See [readiness behavior and measured results](../docs/browser-readiness.md).
+
 ## Effect runtime regression
 
 `npm test` includes `effect-runtime.test.ts`: process-group cleanup on cancellation, scoped release before timeout errors, sibling cancellation during credential resolution, failed Codex initialization, cancelled browser MCP initialization, and a verification using injected provider/process/pricing services. Job tests also cover shutdown of active and queued work and a submission racing shutdown. Run `npm run check` for service dependency and effect type checking. The localhost smoke tests above exercise real browser resources through the same scoped runtime.
