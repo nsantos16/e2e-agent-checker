@@ -12,6 +12,8 @@ import { replayEffect } from './replay.ts';
 import { baseUrl, getSlot } from './slots.ts';
 import { targetSchema, type Target } from './providers/index.ts';
 import type { RunMetrics } from './usage.ts';
+import type { VerifiedAttempt } from './attempt-evidence.ts';
+import { statePath } from './login.ts';
 export type VerifyOptions = {
   project: string;
   caseId: number;
@@ -20,6 +22,9 @@ export type VerifyOptions = {
   role?: string;
   base?: string;
   storageState?: string;
+  environmentId?: string;
+  environmentRevision?: string;
+  userIdentity?: string;
   replaySlots?: string[];
   model: string;
   target?: Target;
@@ -27,6 +32,7 @@ export type VerifyOptions = {
   maxAttempts?: number;
   fromRun?: string;
   replayOnly?: boolean;
+  confirmationReplay?: boolean;
   runDir?: string;
   onStage?: (stage: string) => void;
   onMetrics?: (stage: string, metrics: RunMetrics) => void;
@@ -50,6 +56,7 @@ export const verifyEffect = (opts: VerifyOptions) =>
     const save = () => writeFileSync(join(runDir, 'summary.json'), JSON.stringify(summary, null, 2));
     let report: ExploreReport;
     let spec = specLocation(runDir, opts.project, opts.caseId);
+    let verifiedAttempt: VerifiedAttempt | undefined;
     if (opts.replayOnly) {
       if (!opts.fromRun) throw new Error('ARTIFACT_MISSING: replay requires an existing run');
       const old = specLocation(opts.fromRun, opts.project, opts.caseId);
@@ -101,6 +108,9 @@ export const verifyEffect = (opts: VerifyOptions) =>
         caseId: opts.caseId,
         base,
         storageState: opts.storageState,
+        environmentId: opts.environmentId,
+        environmentRevision: opts.environmentRevision,
+        userIdentity: opts.userIdentity,
         role,
         slot: opts.slot,
         model: opts.model,
@@ -120,22 +130,37 @@ export const verifyEffect = (opts: VerifyOptions) =>
         return summary;
       }
       spec = codified;
+      verifiedAttempt = codified.verifiedAttempt;
     }
     summary.replays = [];
-    for (const replaySlot of [opts.slot, ...(opts.replaySlots ?? [])]) {
+    for (const [index, replaySlot] of [opts.slot, ...(opts.replaySlots ?? [])].entries()) {
       const s = getSlot(replaySlot);
       if (!s && !(replaySlot === opts.slot && opts.base)) throw new Error(`Replay slot ${replaySlot} is not running`);
-      stage('replay');
+      stage('evidence');
       const r = yield* replayEffect({
         runDir,
-        label: `slot${replaySlot}`,
+        label: `slot${replaySlot}${index > 0 && [opts.slot, ...(opts.replaySlots ?? [])].slice(0, index).includes(replaySlot) ? `-${index + 1}` : ''}`,
         specDir: spec.specDir,
         specFile: spec.specFile,
         base: replaySlot === opts.slot ? base : baseUrl(s!),
         storageState: replaySlot === opts.slot ? opts.storageState : undefined,
         slot: replaySlot,
-        role: opts.role ?? s!.role,
+        role: opts.role ?? s?.role ?? role,
         signal: opts.signal,
+        reuseAttempt: index === 0 && !opts.replayOnly && !opts.confirmationReplay ? verifiedAttempt : undefined,
+        evidenceContext: {
+          runDir,
+          specPath: spec.specPath,
+          casePath: join(runDir, 'explore/case.json'),
+          base,
+          slot: opts.slot,
+          role,
+          storageState: opts.storageState ?? statePath(opts.slot, role),
+          environmentId: opts.environmentId,
+          environmentRevision: opts.environmentRevision,
+          userIdentity: opts.userIdentity,
+        },
+        onReplay: () => stage('replay'),
         onPackage: () => stage('package'),
       });
       summary.replays.push({ slot: replaySlot, worktree: s?.worktree, ...r, log: undefined });
@@ -151,7 +176,14 @@ export const verify = (opts: VerifyOptions) => runEffect(verifyEffect(opts).pipe
 
 export const prComment = (summary: Record<string, unknown>, report: ExploreReport) => {
   const icon = (v: string) => ({ pass: '✅', fail: '❌', blocked: '⛔' })[v] ?? '❔';
-  const replays = (summary.replays as { slot: string; status: string; failedStep?: string; video?: string }[]) ?? [];
+  const replays =
+    (summary.replays as {
+      slot: string;
+      status: string;
+      failedStep?: string;
+      video?: string;
+      provenance?: { kind: string; attemptId?: string };
+    }[]) ?? [];
   const lines = [
     `### ${icon(String(summary.outcome))} ${summary.project}-${summary.caseId} (verification)`,
     '',
@@ -162,7 +194,14 @@ export const prComment = (summary: Record<string, unknown>, report: ExploreRepor
         `| ${s.position} | ${icon(s.verdict)}${s.inferred ? ' (inferred)' : ''} | ${s.evidence.replace(/\|/g, '\\|').replace(/\n/g, ' ').slice(0, 220)} |`,
     ),
     '',
-    `Deterministic replay of the generated spec: ${replays.map((r) => `slot ${r.slot} **${r.status}**${r.failedStep ? ` (${r.failedStep})` : ''}`).join(', ')}`,
+    ...replays.map(
+      (r) =>
+        `Slot ${r.slot}: **${r.status}**${r.failedStep ? ` (${r.failedStep})` : ''} — ${
+          r.provenance?.kind === 'stabilization'
+            ? `verified stabilization attempt ${r.provenance.attemptId} reused as final evidence (no second execution)`
+            : 'independent deterministic replay of the generated spec'
+        }.`,
+    ),
     '',
     ...replays.filter((r) => r.video).map((r) => r.video!),
   ];
@@ -183,6 +222,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       'max-attempts': { type: 'string', default: '8' },
       'from-run': { type: 'string' },
       'replay-only': { type: 'boolean', default: false },
+      'confirmation-replay': { type: 'boolean', default: false },
     },
   });
   const summary = await verify({
@@ -196,6 +236,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     maxAttempts: Number(values['max-attempts']),
     fromRun: values['from-run'] ? join(root, values['from-run'].replace(/^.*runs\//, 'runs/')) : undefined,
     replayOnly: values['replay-only'],
+    confirmationReplay: values['confirmation-replay'],
     log: (l) => console.log(l),
   });
   console.log(`\nOutcome: ${summary.outcome} · ${summary.runDir}`);

@@ -15,16 +15,16 @@ export type Slot = { slot: string; worktree: string; port: number; role: string;
 
 const root = new URL('..', import.meta.url).pathname;
 const stateDir = join(root, '.state');
-const registryPath = join(stateDir, 'slots.json');
+const registryPath = () => process.env.E2E_SLOTS_PATH ?? join(stateDir, 'slots.json');
 
 export const baseUrl = (s: Pick<Slot, 'port'>) => `http://localhost:${s.port}`;
 export const portFor = (slot: string) => 4000 + Number(slot);
 
 const readRegistry = (): Record<string, Slot & { pid?: number }> =>
-  existsSync(registryPath) ? JSON.parse(readFileSync(registryPath, 'utf8')) : {};
+  existsSync(registryPath()) ? JSON.parse(readFileSync(registryPath(), 'utf8')) : {};
 const writeRegistry = (r: Record<string, Slot & { pid?: number }>) => {
   mkdirSync(stateDir, { recursive: true });
-  writeFileSync(registryPath, JSON.stringify(r, null, 2));
+  writeFileSync(registryPath(), JSON.stringify(r, null, 2));
 };
 
 export const getSlot = (slot: string) => readRegistry()[slot];

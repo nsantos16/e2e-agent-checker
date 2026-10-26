@@ -31,6 +31,8 @@ export function jobSummary(job: Job, base: string) {
           status: job.replay.status,
           failedStep: clip(job.replay.failedStep),
           error: clip(job.replay.error),
+          provenance: job.replay.provenance,
+          avoidedExecutionMs: job.replay.avoidedExecutionMs,
         }
       : undefined,
     network: network
@@ -63,7 +65,7 @@ export function jobSummary(job: Job, base: string) {
   };
 }
 
-export type ArtifactId = 'case' | 'report' | 'spec' | 'comment' | 'video' | 'trace' | 'usage' | 'pricing';
+export type ArtifactId = 'case' | 'report' | 'spec' | 'comment' | 'video' | 'trace' | 'usage' | 'pricing' | 'attempt' | 'results';
 export function artifactPath(job: Job, id: ArtifactId): string | undefined {
   if (!job.runDir || !existsSync(job.runDir)) return;
   const candidates = {
@@ -75,6 +77,8 @@ export function artifactPath(job: Job, id: ArtifactId): string | undefined {
     comment: join(job.runDir, 'pr-comment.md'),
     video: job.video,
     trace: job.replay?.trace as string | undefined,
+    attempt: job.replay?.provenance?.manifestPath as string | undefined,
+    results: job.replay?.results as string | undefined,
   };
   const path = candidates[id];
   // Accept only this job's artifacts, including after symlink resolution.
@@ -83,7 +87,7 @@ export function artifactPath(job: Job, id: ArtifactId): string | undefined {
   return canonical.startsWith(realpathSync(job.runDir) + '/') && statSync(canonical).isFile() ? canonical : undefined;
 }
 export function readEvidence(job: Job, base: string, options: { artifact?: string; offset?: number; limit?: number } = {}) {
-  const ids: ArtifactId[] = ['case', 'report', 'spec', 'comment', 'video', 'trace', 'usage', 'pricing'];
+  const ids: ArtifactId[] = ['case', 'report', 'spec', 'comment', 'video', 'trace', 'usage', 'pricing', 'attempt', 'results'];
   const artifacts = ids.flatMap((id) => {
     const path = artifactPath(job, id);
     return path
@@ -111,11 +115,13 @@ export function readEvidence(job: Job, base: string, options: { artifact?: strin
         evidence: clip(typeof s.evidence === 'string' ? s.evidence : JSON.stringify(s.evidence)),
       })),
       artifacts,
+      provenance: job.replay?.provenance,
+      avoidedExecutionMs: job.replay?.avoidedExecutionMs,
       availableText: ['logs', ...artifacts.filter((a) => !['video', 'trace'].includes(a.id)).map((a) => a.id)],
     };
   }
   const id = options.artifact;
-  if (!['logs', 'case', 'report', 'spec', 'comment', 'usage', 'pricing'].includes(id))
+  if (!['logs', 'case', 'report', 'spec', 'comment', 'usage', 'pricing', 'attempt', 'results'].includes(id))
     throw Object.assign(new Error('Use an artifact URL to read binary evidence'), { code: 'INVALID_INPUT' });
   const path = id === 'logs' ? undefined : artifactPath(job, id as ArtifactId);
   if (id !== 'logs' && !path)

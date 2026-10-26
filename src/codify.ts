@@ -12,6 +12,8 @@ import type { Target } from './providers/index.ts';
 import type { RunMetrics } from './usage.ts';
 import { z } from 'zod';
 import { createHash } from 'node:crypto';
+import type { AttemptManifest, VerifiedAttempt } from './attempt-evidence.ts';
+import { readJson } from './network.ts';
 
 // Stage 2: an agent writes a Playwright spec from the explore run and stabilises it against the same build.
 
@@ -60,6 +62,9 @@ export type CodifyOptions = {
   slot: string;
   role: string;
   storageState?: string;
+  environmentId?: string;
+  environmentRevision?: string;
+  userIdentity?: string;
   model: string;
   target?: Target;
   pricing?: RunPricing;
@@ -103,6 +108,18 @@ export const codifyEffect = (opts: CodifyOptions) =>
         specPath,
         runDir: opts.runDir,
         maxAttempts: opts.maxAttempts,
+        evidenceContext: {
+          runDir: opts.runDir,
+          specPath,
+          casePath,
+          base: opts.base,
+          slot: opts.slot,
+          role: opts.role,
+          storageState: opts.storageState ?? statePath(opts.slot, opts.role),
+          environmentId: opts.environmentId,
+          environmentRevision: opts.environmentRevision,
+          userIdentity: opts.userIdentity,
+        },
         readFiles: [
           casePath,
           join(opts.runDir, 'explore/report.json'),
@@ -134,22 +151,30 @@ export const codifyEffect = (opts: CodifyOptions) =>
       })
       .parse(lastJsonObject<CodifyResult>(outcome.resultText));
     const attemptsFile = join(dir, 'attempts.json');
-    result.attempts = existsSync(attemptsFile) ? JSON.parse(readFileSync(attemptsFile, 'utf8')).attempts : 0;
-    if (result.outcome !== 'could-not-stabilize' && (!existsSync(specPath) || result.attempts === 0))
-      throw new Error('REPORT_INVALID: successful codification requires a saved spec and a test attempt');
+    const recordedAttempts = readJson<{ attempts: number }>(attemptsFile)?.attempts;
+    result.attempts = Number.isSafeInteger(recordedAttempts) && recordedAttempts! > 0 ? recordedAttempts! : 0;
+    if (result.outcome !== 'could-not-stabilize' && !existsSync(specPath))
+      throw new Error('REPORT_INVALID: successful codification requires a saved spec');
+    let verifiedAttempt: VerifiedAttempt | undefined;
     if (result.outcome !== 'could-not-stabilize') {
-      const last = JSON.parse(readFileSync(join(dir, 'last-attempt.json'), 'utf8'));
+      const last = readJson<AttemptManifest>(join(dir, 'last-attempt.json'));
       const hash = createHash('sha256').update(readFileSync(specPath)).digest('hex');
       if (
-        last.specHash !== hash ||
-        !last.result ||
-        (result.outcome === 'passed' ? last.code !== 0 || last.result.status !== 'passed' : last.result.status !== 'failed')
+        result.attempts > 0 &&
+        last?.version === 1 &&
+        last.state === 'completed' &&
+        last.specHash === hash &&
+        last.result &&
+        (result.outcome === 'passed'
+          ? last.code === 0 && last.result.status === 'passed'
+          : last.code === 1 && last.result.status === 'failed')
       )
-        throw new Error('REPORT_INVALID: reported outcome does not match the last tested spec');
+        verifiedAttempt = { manifestPath: last.manifestPath, outcome: result.outcome, failingStep: result.failingStep };
+      // Missing/stale evidence cannot confirm the report. The final replay establishes the actual outcome.
     }
     writeFileSync(join(dir, 'result.json'), result ? JSON.stringify(result, null, 2) : outcome.resultText);
     writeFileSync(join(dir, 'metrics.json'), JSON.stringify(outcome.metrics, null, 2));
     if (existsSync(specPath)) copyFileSync(specPath, join(dir, specFile));
-    return { result, metrics: outcome.metrics, specPath, specDir, specFile };
+    return { result, metrics: outcome.metrics, specPath, specDir, specFile, verifiedAttempt };
   });
 export const codify = (opts: CodifyOptions) => runEffect(codifyEffect(opts).pipe(Effect.provide(CheckerLive)), opts.signal);

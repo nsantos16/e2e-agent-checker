@@ -1,12 +1,13 @@
-import { Effect } from 'effect';
+import { Effect, Exit } from 'effect';
 import { runEffect } from './runtime/effect.ts';
 import { CheckerLive } from './runtime/services.ts';
 import { commandEffect } from './process.ts';
 import { readTestResult } from './test-results.ts';
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { writeReplayEnv } from './codify.ts';
 import { config } from './config.ts';
+import { qualifyAttempt, type EvidenceContext, type VerifiedAttempt } from './attempt-evidence.ts';
 
 // Stage 3: run the codified spec deterministically with video, then package an MP4 small enough for a PR.
 
@@ -32,6 +33,7 @@ export const toPrMp4Effect = (webm: string, mp4: string) =>
         '-y',
         '-loglevel',
         'error',
+        '-xerror',
         '-i',
         webm,
         '-vf',
@@ -68,15 +70,71 @@ export type ReplayOptions = {
   storageState?: string;
   slowMo?: number;
   signal?: AbortSignal;
+  reuseAttempt?: VerifiedAttempt;
+  evidenceContext?: EvidenceContext;
+  onReplay?: () => void;
   onPackage?: () => void;
 };
 export const replayEffect = (opts: ReplayOptions) =>
   Effect.gen(function* () {
     const outDir = join(opts.runDir, `replay-${opts.label}`);
     mkdirSync(outDir, { recursive: true });
-    writeReplayEnv(opts.runDir, opts.specDir, opts.specFile, opts.base, opts.slot, opts.role, opts.storageState);
     const started = Date.now();
-    const { stdout } = yield* commandEffect('npx', ['playwright', 'test', '-c', 'playwright.config.ts', opts.specFile], {
+    opts.signal?.throwIfAborted();
+    const mp4 = join(outDir, 'verification.mp4');
+    let fallbackReason: string | undefined;
+    if (
+      opts.reuseAttempt &&
+      opts.evidenceContext &&
+      (opts.slowMo === undefined || opts.slowMo === 0) &&
+      opts.evidenceContext.runDir === opts.runDir &&
+      opts.evidenceContext.specPath === join(opts.specDir, opts.specFile) &&
+      opts.evidenceContext.base === opts.base &&
+      opts.evidenceContext.slot === opts.slot &&
+      opts.evidenceContext.role === opts.role &&
+      opts.evidenceContext.storageState === (opts.storageState ?? join(root, '.state', `slot${opts.slot}-${opts.role}.json`))
+    ) {
+      const qualification = qualifyAttempt(opts.evidenceContext, opts.reuseAttempt);
+      if (qualification.eligible) {
+        opts.onPackage?.();
+        const conversion = yield* Effect.exit(toPrMp4Effect(qualification.video, mp4));
+        opts.signal?.throwIfAborted();
+        // Recheck after packaging: a changing worktree or removed artifact must still fall back.
+        const final = qualifyAttempt(opts.evidenceContext, opts.reuseAttempt);
+        if (Exit.isSuccess(conversion) && final.eligible) {
+          const { manifest, result } = final;
+          return {
+            status: result.status,
+            failedStep: result.failedStep,
+            error: result.error?.message?.split('\n').slice(0, 6).join('\n'),
+            wallMs: Date.now() - started,
+            executionMs: 0,
+            avoidedExecutionMs: manifest.executionMs!,
+            video: mp4,
+            mp4Bytes: conversion.value,
+            trace: final.trace,
+            results: join(manifest.artifactDir, 'results.json'),
+            diagnostics: manifest.artifacts.map((a) => a.path),
+            provenance: {
+              kind: 'stabilization' as const,
+              independentRun: false,
+              attemptId: manifest.attemptId,
+              manifestPath: manifest.manifestPath,
+              originalVideo: final.video,
+              executionMs: manifest.executionMs!,
+              slowMo: 0,
+            },
+            log: readFileSync(manifest.artifactDir + '.log', 'utf8').slice(-3000),
+          };
+        }
+        fallbackReason = final.eligible ? 'recording-conversion-failed' : final.reason;
+      } else fallbackReason = qualification.reason;
+    }
+    opts.signal?.throwIfAborted();
+    opts.onReplay?.();
+    writeReplayEnv(opts.runDir, opts.specDir, opts.specFile, opts.base, opts.slot, opts.role, opts.storageState);
+    const executionStarted = Date.now();
+    const { stdout, stderr, code } = yield* commandEffect('npx', ['playwright', 'test', '-c', 'playwright.config.ts', opts.specFile], {
       cwd: join(root, 'e2e'),
       env: {
         ...process.env,
@@ -86,14 +144,16 @@ export const replayEffect = (opts: ReplayOptions) =>
         E2E_BASE_URL: opts.base,
         E2E_STORAGE_STATE: opts.storageState ?? join(root, '.state', `slot${opts.slot}-${opts.role}.json`),
         E2E_SLOWMO: String(opts.slowMo ?? 250),
+        E2E_CAPTIONS: '1',
       },
       signal: opts.signal,
     });
-
+    const executionMs = Date.now() - executionStarted;
+    opts.signal?.throwIfAborted();
+    writeFileSync(join(outDir, 'execution.log'), stdout + stderr);
     const testResult = readTestResult(outDir);
     const failedStep = testResult?.failedStep;
     const webm = findVideo(outDir);
-    const mp4 = join(outDir, 'verification.mp4');
     opts.onPackage?.();
     const mp4Bytes = webm ? yield* toPrMp4Effect(webm, mp4) : undefined;
     return {
@@ -101,9 +161,20 @@ export const replayEffect = (opts: ReplayOptions) =>
       failedStep,
       error: testResult?.error?.message?.split('\n').slice(0, 6).join('\n'),
       wallMs: Date.now() - started,
+      executionMs,
+      avoidedExecutionMs: 0,
       video: webm ? mp4 : undefined,
       mp4Bytes,
       trace: findTrace(outDir),
+      results: existsSync(join(outDir, 'results.json')) ? join(outDir, 'results.json') : undefined,
+      provenance: {
+        kind: 'replay' as const,
+        independentRun: true,
+        fallbackReason,
+        executionMs,
+        exitCode: code,
+        slowMo: opts.slowMo ?? 250,
+      },
       log: stdout.slice(-3000),
     };
   });

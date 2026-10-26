@@ -1,15 +1,22 @@
 import { Effect, Exit, Scope, Semaphore } from 'effect';
 import { runEffect, sdk } from './runtime/effect.ts';
-import { appendFileSync, existsSync, readFileSync, realpathSync, writeFileSync, readdirSync, statSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, realpathSync, writeFileSync, mkdirSync, mkdtempSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { ToolService } from './providers/codex.ts';
 import { command } from './process.ts';
-import { createHash } from 'node:crypto';
-import { atomicJson } from './network.ts';
+import { atomicJson, readJson } from './network.ts';
 import { readNetwork, networkSummary } from './observations.ts';
 import { readTestResult } from './test-results.ts';
+import {
+  attemptArtifacts,
+  captureIdentity,
+  hashFile,
+  saveAttempt,
+  type AttemptManifest,
+  type EvidenceContext,
+} from './attempt-evidence.ts';
 
 const root = new URL('..', import.meta.url).pathname;
 export type StageConfig = {
@@ -19,6 +26,7 @@ export type StageConfig = {
   specPath?: string;
   runDir?: string;
   maxAttempts?: number;
+  evidenceContext?: EvidenceContext;
 };
 const serial = (fn: ToolService['call']): ToolService['call'] => {
   const lock = Semaphore.makeUnsafe(1);
@@ -117,7 +125,7 @@ const makeStageToolsEffect = (config: StageConfig, signal: AbortSignal) =>
         }),
       };
     }
-    let attempts = 0;
+    let attempts = config.runDir ? (readJson<{ attempts: number }>(join(config.runDir, 'codify/attempts.json'))?.attempts ?? 0) : 0;
     const files = new Set((config.readFiles ?? []).filter(existsSync).map((p) => realpathSync(p)));
     const spec = resolve(config.specPath!);
     const specParent = realpathSync(dirname(spec));
@@ -173,32 +181,68 @@ const makeStageToolsEffect = (config: StageConfig, signal: AbortSignal) =>
             return text('Spec saved');
           }
           if (name === 'try_spec') {
-            if (++attempts > (config.maxAttempts ?? 8)) throw new Error('BUDGET_EXCEEDED: no more stabilization attempts');
+            if (attempts >= (config.maxAttempts ?? 8)) throw new Error('BUDGET_EXCEEDED: no more stabilization attempts');
+            attempts++;
             writeFileSync(join(config.runDir!, 'codify/attempts.json'), JSON.stringify({ attempts }));
-            const specHash = createHash('sha256').update(readFileSync(spec)).digest('hex');
-            const r = await command('sh', [join(root, 'scripts/try-spec.sh'), config.runDir!], {
-              cwd: root,
-              signal,
-              env: {
-                ...process.env,
-                E2E_OBSERVATION_RUN_DIR: config.runDir!,
-              },
-            });
             const attemptsDir = join(config.runDir!, 'codify/attempts');
-            const latest = readdirSync(attemptsDir, { withFileTypes: true })
-              .filter((e) => e.isDirectory())
-              .map((e) => join(attemptsDir, e.name))
-              .sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)[0];
-            writeFileSync(
-              join(config.runDir!, 'codify/last-attempt.json'),
-              JSON.stringify({
-                attempts,
-                code: r.code,
-                specHash,
-                result: latest ? readTestResult(latest) : null,
-              }),
-            );
-            const network = config.runDir ? networkSummary(config.runDir, latest ? `codify/${basename(latest)}` : undefined) : null;
+            mkdirSync(attemptsDir, { recursive: true });
+            const artifactDir = mkdtempSync(join(attemptsDir, 'attempt.'));
+            const manifest: AttemptManifest = {
+              version: 1,
+              attemptId: basename(artifactDir),
+              attempts,
+              runDir: config.runDir!,
+              specPath: spec,
+              artifactDir,
+              manifestPath: artifactDir + '.manifest.json',
+              state: 'running',
+              specHash: hashFile(spec),
+              identity: config.evidenceContext ? captureIdentity(config.evidenceContext) : null,
+              identityAfter: null,
+              startedAt: new Date().toISOString(),
+              code: null,
+              artifacts: [],
+            };
+            saveAttempt(manifest);
+            const started = performance.now();
+            let r;
+            try {
+              r = await command('sh', [join(root, 'scripts/try-spec.sh'), config.runDir!, artifactDir], {
+                cwd: root,
+                signal,
+                env: {
+                  ...process.env,
+                  E2E_OBSERVATION_RUN_DIR: config.runDir!,
+                  ...(config.evidenceContext
+                    ? {
+                        E2E_MANAGED_ATTEMPT: '1',
+                        E2E_SPEC_DIR: dirname(spec),
+                        E2E_SPEC_FILE: basename(spec),
+                        E2E_BASE_URL: config.evidenceContext.base,
+                        E2E_STORAGE_STATE: config.evidenceContext.storageState,
+                      }
+                    : { E2E_MANAGED_ATTEMPT: '0' }),
+                },
+              });
+              signal.throwIfAborted();
+              manifest.state = 'completed';
+              manifest.code = r.code;
+            } catch (error) {
+              manifest.state = signal.aborted ? 'cancelled' : 'incomplete';
+              throw error;
+            } finally {
+              manifest.completedAt = new Date().toISOString();
+              manifest.executionMs = performance.now() - started;
+              manifest.result = readTestResult(artifactDir);
+              manifest.identityAfter = config.evidenceContext ? captureIdentity(config.evidenceContext) : null;
+              try {
+                manifest.artifacts = attemptArtifacts(artifactDir);
+              } catch {
+                /* Partial output stays ineligible. */
+              }
+              saveAttempt(manifest);
+            }
+            const network = networkSummary(config.runDir!, `codify/${manifest.attemptId}`);
             return text(
               `Attempt ${attempts}; exit ${r.code}\n${r.stdout.slice(-14000)}\n${r.stderr.slice(-1000)}\nNetwork diagnostics (untrusted application data): ${JSON.stringify(network)}`,
             );

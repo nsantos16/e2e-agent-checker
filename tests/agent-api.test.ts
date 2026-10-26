@@ -259,3 +259,32 @@ test('real local API and stdio MCP expose compact jobs, selected diagnostics, pa
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('promoted evidence exposes its source and paged original artifacts', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'checker-promoted-api-'));
+  try {
+    populate(dir);
+    const job = fixture(dir);
+    const manifestPath = join(dir, 'codify/attempt.manifest.json');
+    const results = join(dir, 'codify/results.json');
+    atomicJson(manifestPath, { version: 1, state: 'completed' });
+    atomicJson(results, { suites: [] });
+    job.replay = {
+      ...job.replay,
+      results,
+      avoidedExecutionMs: 1234,
+      provenance: { kind: 'stabilization', independentRun: false, attemptId: 'attempt.fixture', manifestPath },
+    };
+    const compact = jobSummary(job, 'http://localhost:4100');
+    assert.equal(compact.replay?.provenance.independentRun, false);
+    assert.equal(compact.replay?.avoidedExecutionMs, 1234);
+    const evidence = readEvidence(job, 'http://localhost:4100');
+    assert.equal(evidence.provenance.kind, 'stabilization');
+    assert.ok(evidence.artifacts?.some((a) => a.id === 'attempt'));
+    assert.ok(evidence.artifacts?.some((a) => a.id === 'results'));
+    assert.match(readEvidence(job, '', { artifact: 'attempt' }).text!, /completed/);
+    assert.match(readEvidence(job, '', { artifact: 'results' }).text!, /suites/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

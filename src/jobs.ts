@@ -58,6 +58,7 @@ export type Job = {
   target?: Target;
   batchId?: string;
   replayOf?: string;
+  confirmationReplay?: boolean;
   limits?: { timeoutMs: number; maxAttempts: number };
   usage?: Usage;
   stageMetrics?: Record<string, RunMetrics>;
@@ -212,6 +213,9 @@ const executeEffect = (job: Job) =>
         slot: slotId,
         base,
         storageState,
+        environmentId: environment.id,
+        environmentRevision: environment.revision,
+        userIdentity: testIdentityKey(user),
         role: job.role,
         model: job.target?.model ?? config.model,
         target: job.target,
@@ -220,6 +224,7 @@ const executeEffect = (job: Job) =>
         runDir: job.runDir,
         fromRun: job.replayOf ? jobs.get(job.replayOf)?.runDir : undefined,
         replayOnly: !!job.replayOf,
+        confirmationReplay: job.confirmationReplay,
         onStage: stage,
         onMetrics: (name, m) => {
           job.stageMetrics![name] = m;
@@ -306,6 +311,7 @@ export const batchSchema = z
     environmentId: z.string().default('local'),
     userId: z.string().optional(),
     role: z.string().optional(),
+    confirmationReplay: z.boolean().optional(),
     targets: z.array(targetSchema).min(1).max(8).optional(),
     limits: limitsSchema.default({ timeoutMs: 20 * 60_000, maxAttempts: 8 }),
     idempotencyKey: z.string().min(1).max(128).optional(),
@@ -365,6 +371,7 @@ const submitBatchLockedEffect = (input: unknown) =>
             caseSnapshot: snapshots[index],
             worktree,
             role,
+            confirmationReplay: b.confirmationReplay,
             environmentId: environment.id,
             userId: user.id,
             environmentSnapshot: environment,

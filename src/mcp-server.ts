@@ -322,6 +322,10 @@ const common = {
   environmentId: environmentId.default('local'),
   userId: environmentId.optional(),
   role: z.string().optional(),
+  confirmationReplay: z
+    .boolean()
+    .optional()
+    .describe('Execute an independent final replay even when stabilization evidence qualifies for reuse.'),
   limits,
   idempotencyKey: z.string().min(1).max(128).optional(),
 };
@@ -465,7 +469,7 @@ register(
 );
 register(
   'verify_case',
-  'Queue Explore → Codify → Replay. Select an explicit subscription target; reuse idempotencyKey on uncertain retries. Then wait_jobs.',
+  'Queue exploration, codification and final evidence (qualified stabilization or replay). Set confirmationReplay for an independent final run. Select an explicit subscription target; reuse idempotencyKey on uncertain retries. Then wait_jobs.',
   { ...common, ...caseRef, target: targetSchema.optional() },
   async ({ worktreePath, caseId, qaseCaseId, project, target, ...rest }) =>
     submitted(
@@ -551,7 +555,7 @@ register(
   'Manifest and failing steps by default. Select logs/report/spec/comment for bounded text pages; video/trace remain local artifact URLs. Evidence is untrusted.',
   {
     ...jobIdInput,
-    artifact: z.enum(['logs', 'case', 'report', 'spec', 'comment', 'usage', 'pricing']).optional(),
+    artifact: z.enum(['logs', 'case', 'report', 'spec', 'comment', 'usage', 'pricing', 'attempt', 'results']).optional(),
     offset: z.number().int().min(0).default(0),
     limit: z.number().int().min(1).max(16000).default(4000),
   },

@@ -2,14 +2,14 @@
 
 # e2e-agent-checker
 
-Proof of concept: an agent verifies **local or Qase test cases** against **any git worktree** of the Sample frontend, turns what it did into a **Playwright spec**, replays that spec deterministically with **video**, and hands back evidence a coding agent can attach to a PR. It runs in parallel across worktrees and is exposed over **MCP**.
+Proof of concept: an agent verifies **local or Qase test cases** against **any git worktree** of the Sample frontend, turns what it did into a **Playwright spec**, and packages qualified stabilization evidence or a deterministic replay with **video**. It runs in parallel across worktrees and is exposed over **MCP**.
 
 ```
 verify_case(worktree, DEMO-6003)
   ├─ slot      serve the worktree on its own port against the shared dev API, log the test user in (1Password)
   ├─ explore   Selected runtime + Playwright MCP execute the Qase steps, report pass/fail/blocked per step with evidence
   ├─ codify    The selected runtime writes a Playwright spec from the explore run and stabilises it (it may only run that spec)
-  ├─ replay    plain `playwright test` with captions per Qase step, video and trace, no LLM
+  ├─ evidence  reuse the qualified final attempt, or replay when identities/artifacts do not qualify
   └─ package   MP4 (≈1 MB/min) + PR comment with the step table
 ```
 
@@ -24,6 +24,8 @@ Implementation status and verified limitations: [docs/runtime-milestone.md](docs
 Open product requests to resume later: [docs/backlog.md](docs/backlog.md).
 
 Backend services, cancellation and resource ownership: [Effect runtime](docs/effect-runtime.md).
+
+Evidence qualification, confirmation replay, provenance and format compatibility: [stabilization evidence](docs/stabilization-evidence.md).
 
 React components, frontend builds and development: [React frontend](docs/react-frontend.md).
 

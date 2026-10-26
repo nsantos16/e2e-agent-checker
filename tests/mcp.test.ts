@@ -79,11 +79,13 @@ test('MCP schemas, structured responses, operational errors, and batch forwardin
         cases: [{ project: 'TEST', id: 1 }],
         targets: [{ provider: 'codex', model: 'model' }],
         idempotencyKey: 'retry',
+        confirmationReplay: true,
       },
     });
     assert.deepEqual((batch.structuredContent as any).data.jobIds, ['one', 'two']);
     assert.equal(requests.at(-1).body.targets[0].authMode, 'subscription');
     assert.equal(requests.at(-1).body.idempotencyKey, 'retry');
+    assert.equal(requests.at(-1).body.confirmationReplay, true);
     const nativeRun = await client.callTool({
       name: 'verify_case',
       arguments: { project: 'LOCAL', caseId: 8, worktreePath: '/checkout', target: { provider: 'codex', model: 'model' } },

@@ -39,3 +39,7 @@ The JSON report is `runs/readiness/report.json`; its benchmark attachment contai
 ## React workspace and assets
 
 `npm run check` checks both backend and browser TypeScript. `npm test` includes workspace submission, catalog pruning, late selection responses, parallel startup, request deduplication and cancellation on unmount. API integration tests check the compiled HTML/JavaScript/CSS, asset cache headers and path boundaries. The browser suites above load the production bundle; they use no internal rendering globals.
+
+## Stabilization evidence reuse
+
+`npm test` checks manifest eligibility, identity changes, malformed/partial reports, missing recordings, product assertion failures, cancellation, and fallback. Run `node tests/stabilization-smoke.ts` for the real local Playwright/ffmpeg pipeline regression. It injects provider responses (no paid model calls), counts actual test-page requests, retains recordings, and prints measured execution/package times. See [qualification and compatibility](../docs/stabilization-evidence.md).

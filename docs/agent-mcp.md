@@ -54,6 +54,8 @@ A human can open `viewerUrl` to watch the browser inside the app and view the fi
 
 `replay_job` runs the saved spec without model calls, creating a new job on every call. `cancel_job` retains partial usage and evidence. `attach_to_pr` is the only publication tool and requires the user's explicit request plus `publish:true`.
 
+Final evidence can reuse a qualified stabilization attempt. Inspect `replay.provenance.kind` / `independentRun` before describing a result as a second run. Set `confirmationReplay:true` on `verify_case` or `verify_cases` to require an independent final replay. `get_evidence` also accepts `artifact:"attempt"` and `artifact:"results"` for original manifests/results. See [qualification, timing and compatibility](stabilization-evidence.md).
+
 ## Environments
 
 Use `list_environments` to discover target profiles and their users. `save_environment` and `delete_environment` configure them with revision checks; credential values are never accepted. Submit `environmentId` and `userId` with a run; hosted profiles do not require a worktree. See [environment settings](environments.md) for references, session isolation and compatibility.
