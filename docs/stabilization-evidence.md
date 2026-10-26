@@ -1,6 +1,6 @@
 # Reusing stabilization evidence
 
-Verification normally packages the final qualified `try_spec` attempt as its final result and recording. It does not execute the same spec again just to obtain evidence. Passing tests and verified product assertion failures qualify. The PR comment and API provenance explicitly identify the stabilization attempt and say that there was no second execution.
+When verification authors a new spec, it normally packages the final qualified `try_spec` attempt from that run as its final result and recording. It does not execute the same spec again just to obtain evidence. Passing tests and verified product assertion failures qualify. The PR comment and API provenance explicitly identify the stabilization attempt and say that there was no second execution. [Automatic saved-spec reuse](saved-spec-reuse.md) always executes the spec again on the requested target; historical stabilization evidence never qualifies for promotion.
 
 `confirmationReplay: true` on `verify_case` / `verify_cases` (or `--confirmation-replay` on the CLI) requests an independent final execution. Existing `replay_job` / `--replay-only` always execute the saved spec. Every additional `replaySlots` target also executes independently.
 

@@ -80,6 +80,14 @@ const content = (c: QaseCase) => ({
   severity: c.severity ?? 0,
   steps: c.steps,
 });
+// Revision is the editing boundary; the digest also catches damaged snapshots or
+// externally edited legacy fixtures that retained their revision.
+export const caseCompatibility = (c: TestCase) => ({
+  project: c.project,
+  id: c.id,
+  revision: c.revision,
+  sha256: hash({ ...content(c), status: c.status, tags: c.tags }),
+});
 export const caseSummary = (c: TestCase) => ({
   project: c.project,
   id: c.id,

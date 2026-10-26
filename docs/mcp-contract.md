@@ -1,6 +1,6 @@
 # Checker MCP contract for selectable runtimes
 
-> Current implementation: [Agent MCP v0.6](agent-mcp.md), including local case CRUD, Qase refresh, compact responses, waits, evidence and browser frames.
+> Current implementation: [Agent MCP v0.7](agent-mcp.md), including [automatic saved-spec reuse](saved-spec-reuse.md), local case CRUD, Qase refresh, compact responses, waits, evidence and browser frames. Provider preflight is now deferred until authoring is necessary.
 >
 > Historical design baseline. See [implemented scope and verification](runtime-milestone.md) for current behavior, the T3-style UI, and the Cursor capability gate. Tables below describe the pre-implementation audit or proposed contract.
 

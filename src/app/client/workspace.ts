@@ -21,6 +21,7 @@ export type WorkspaceState = {
   worktree: string;
   timeout: number;
   attempts: number;
+  forceFresh: boolean;
   dialog: DialogName;
   error: string;
   submitting: boolean;
@@ -61,6 +62,7 @@ export function createWorkspace(request: Api = api) {
     worktree: preferences.get('worktree') ?? '',
     timeout: 20,
     attempts: 8,
+    forceFresh: false,
     dialog: null,
     error: '',
     submitting: false,
@@ -198,7 +200,7 @@ export function createWorkspace(request: Api = api) {
       report(new Error('Select at least one case.'));
       return;
     }
-    if (!state.targets.length || readyTargets().length !== state.targets.length) {
+    if (!state.targets.length || (state.forceFresh && readyTargets().length !== state.targets.length)) {
       patch({ dialog: 'models', error: 'Choose an available model before running.' });
       return;
     }
@@ -235,6 +237,7 @@ export function createWorkspace(request: Api = api) {
         userId: state.userId,
         targets: state.targets,
         limits,
+        forceFresh: state.forceFresh,
         idempotencyKey: crypto.randomUUID(),
       });
       patch({ selected: new Set() });

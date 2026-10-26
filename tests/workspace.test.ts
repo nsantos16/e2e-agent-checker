@@ -58,7 +58,16 @@ test('React workspace submits hosted case/model selections and prunes archived c
   assert.equal(submitted[0].environmentId, 'staging');
   assert.equal(submitted[0].userId, 'qa');
   assert.equal(submitted[0].worktree, undefined);
+  assert.equal(submitted[0].forceFresh, false);
   assert.equal(workspace.getSnapshot().activeJob, 'result');
+  workspace.patch({ providers: [] });
+  workspace.selectCase('QA-1');
+  await workspace.run();
+  assert.equal(submitted.length, 2, 'automatic reuse is available without provider readiness');
+  workspace.patch({ forceFresh: true });
+  workspace.selectCase('QA-1');
+  await workspace.run();
+  assert.equal(submitted.length, 2, 'fresh authoring still asks for a ready provider');
   workspace.selectCase('QA-1');
   cases = [];
   await workspace.refreshCases();

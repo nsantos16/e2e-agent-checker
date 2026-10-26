@@ -1,4 +1,10 @@
-# App playback regression
+# Regression checks
+
+## Saved-spec reuse
+
+`npm test` includes saved-spec manifest decisions and pipeline/queue regressions. `node tests/saved-specs-smoke.ts` adds real Playwright verification against disposable localhost builds, including a preserved regression and fresh video/trace/network evidence. It calls no model providers and writes measured replay durations to its printed `measurements.json`. See [behavior and measurement limits](../docs/saved-spec-reuse.md).
+
+## App playback regression
 
 Start `npm run app`, then evaluate the contents of `app-playback.browser.js` in the app's browser context with `preview_evaluate`, or paste the file into the browser's developer console.
 
@@ -8,7 +14,7 @@ It exercises the built React components through real controls and fixture API re
 
 ## Workspace regression
 
-Evaluate `app-workspace.browser.js` the same way. Success returns 63 checks covering case selection, catalog refresh and draft activation, multi-model batch submission, model search, keyboard focus, unavailable-provider guidance, separate Connections settings, focused run history, polling, new drafts, theme persistence mobile layout, side-panel docking and browser preservation, network search/type/stage filters, sorting, response/raw detail, copy actions, keyboard navigation, pause/resume, bounded loading, retention disclosure, responsive inspection, escaped response text, live frame identity, closed-session labeling and direct selection of older runs. Requests, preferences and polling are mocked inside an isolated frame; this test does not consume subscription allowance or start real jobs.
+Evaluate `app-workspace.browser.js` the same way. Success returns 64 checks covering automatic reuse/fresh authoring, case selection, catalog refresh and draft activation, multi-model batch submission, model search, keyboard focus, unavailable-provider guidance, separate Connections settings, focused run history, polling, new drafts, theme persistence mobile layout, side-panel docking and browser preservation, network search/type/stage filters, sorting, response/raw detail, copy actions, keyboard navigation, pause/resume, bounded loading, retention disclosure, responsive inspection, escaped response text, live frame identity, closed-session labeling and direct selection of older runs. Requests, preferences and polling are mocked inside an isolated frame; this test does not consume subscription allowance or start real jobs.
 
 ## Browser/network runtime smoke
 

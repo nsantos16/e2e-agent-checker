@@ -333,6 +333,14 @@
     await settle();
     $('[data-close="settings-dialog"]').click();
     await settle();
+    $('#options-open').click();
+    await settle();
+    assert($('#authoring').value === 'auto', 'Run options default to compatible saved-spec reuse');
+    $('#authoring').value = 'fresh';
+    $('#authoring').dispatchEvent(new w.Event('change', { bubbles: true }));
+    await settle();
+    $('[data-close="options-dialog"]').click();
+    await settle();
     $('#run-selected').click();
     await settle();
     await waitFor(() => w.requests.length === 1 && $('#welcome').hidden);
@@ -343,7 +351,8 @@
         request.body.targets.length === 2 &&
         request.body.targets.every((t) => t.authMode === 'subscription') &&
         request.body.environmentId === 'local' &&
-        request.body.userId === 'test-user',
+        request.body.userId === 'test-user' &&
+        request.body.forceFresh === true,
       'Run submission preserves case and subscription targets',
     );
     assert($('#history-panel').hidden === false && !$('#jobs .job').hidden, 'New run opens its focused history view');

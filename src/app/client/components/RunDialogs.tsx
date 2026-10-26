@@ -12,6 +12,19 @@ export function RunOptions({ open }: { open: boolean }) {
       </DialogHeader>
       <div className="dialog-body">
         <div className="field">
+          <label htmlFor="authoring">
+            Saved specs<small>Every run tests the selected target and captures new evidence.</small>
+          </label>
+          <select
+            id="authoring"
+            value={s.forceFresh ? 'fresh' : 'auto'}
+            onChange={(e) => store.patch({ forceFresh: e.target.value === 'fresh' })}
+          >
+            <option value="auto">Reuse a compatible spec</option>
+            <option value="fresh">Force fresh authoring</option>
+          </select>
+        </div>
+        <div className="field">
           <label htmlFor="role">
             Test user<small>Users belong to the selected environment. Shared accounts run in sequence.</small>
           </label>

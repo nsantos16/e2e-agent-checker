@@ -45,6 +45,7 @@ Rules:
 4. Use web-first assertions (`await expect(locator).toHaveText(...)`) and explicit waits for app state. Never wait for global `networkidle`, swallow readiness timeouts, or use a hidden spinner as the only readiness signal. Never use `waitForTimeout` except to let an auto-save debounce elapse, with a comment.
 5. Data: name anything you create `e2e-agent-${Date.now()}`, and clean it up in a `finally` (or the case's own deletion step). Never edit or delete data you didn't create. **Cleanup must never fail the test**: wrap it in `await cleanup(page, 'what', async () => { ... })` from `../../qase-step`, which logs failures as an annotation instead of throwing. Scope cleanup locators to the dialog or row you created (e.g. `page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true })`).
 6. Keep each qaseStep title under 80 characters. The title is shown as a caption in the video.
+7. Keep the spec reusable across builds: use relative application URLs and the runtime-provided baseURL/session. Import only `@playwright/test` and `../../qase-step` (optionally with `.ts`). Do not import other files/packages, use dynamic imports/require, or embed a target origin. The saved-spec compatibility manifest covers this single-file contract and the shared helper.
 
 If `{{SPEC_PATH}}` already exists, a previous attempt wrote it: read it and its last error first, then continue from it instead of starting over.
 

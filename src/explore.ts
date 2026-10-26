@@ -14,6 +14,8 @@ import { runAgentEffect } from './runner.ts';
 import type { Target } from './providers/index.ts';
 import type { RunMetrics } from './usage.ts';
 import { z } from 'zod';
+import { randomUUID } from 'node:crypto';
+import { runsRoot } from './saved-specs.ts';
 
 // Stage 1: an agent verifies a Qase case step by step in a live browser (Playwright MCP) and reports evidence.
 
@@ -169,8 +171,8 @@ export const explore = (opts: ExploreOptions) => runEffect(exploreEffect(opts).p
 
 export const newRunDir = (project: string, caseId: number, slot: string, label = '') => {
   const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15);
-  const unique = Math.random().toString(36).slice(2, 5);
-  const dir = join(root, 'runs', `${stamp}-${project}-${caseId}-slot${slot}${label ? `-${label}` : ''}-${unique}`);
+  const unique = randomUUID();
+  const dir = join(runsRoot(), `${stamp}-${project}-${caseId}-slot${slot}${label ? `-${label}` : ''}-${unique}`);
   mkdirSync(dir, { recursive: true });
   return dir;
 };

@@ -26,6 +26,17 @@ export const emptyUsage = (source = 'none', status: Usage['status'] = 'pending')
   pricingSnapshotId: null,
   source,
 });
+export const noModelUsage = (source: 'replay' | 'saved-spec'): Usage => ({
+  ...emptyUsage(source, 'complete'),
+  inputTokens: 0,
+  outputTokens: 0,
+  totalTokens: 0,
+  cacheReadTokens: 0,
+  cacheWriteTokens: 0,
+  reasoningTokens: 0,
+  providerReportedCostUsd: 0,
+  estimatedApiCostUsd: 0,
+});
 const num = (n: unknown): number | null => (typeof n === 'number' && Number.isFinite(n) && n >= 0 ? n : null);
 export const claudeUsage = (u: Record<string, unknown>, cost?: unknown, complete = false): Usage => {
   const input = num(u.input_tokens),

@@ -94,7 +94,27 @@ test('real local API and stdio MCP expose compact jobs, selected diagnostics, pa
   const dir = mkdtempSync(join(tmpdir(), 'checker-api-'));
   populate(dir);
   const jobs = join(dir, 'jobs.json');
-  writeFileSync(jobs, JSON.stringify([fixture(dir)]));
+  const reusedDir = join(dir, 'reused');
+  populate(reusedDir);
+  const reused: Job = {
+    ...fixture(reusedDir),
+    id: 'reused',
+    steps: [{ position: 1, verdict: 'fail', evidence: 'Fresh regression' }],
+    specSelection: { mode: 'reuse', reason: 'compatible', sourceRun: dir },
+    historicalExploration: { sourceRun: dir, verdict: 'pass' },
+    replay: { status: 'failed', results: join(reusedDir, 'results.json') },
+  };
+  atomicJson(join(reusedDir, 'verification.json'), { caseId: 6003, verdict: 'fail', steps: reused.steps, source: 'replay' });
+  atomicJson(join(reusedDir, 'historical/explore-report.json'), {
+    caseId: 6003,
+    verdict: 'pass',
+    steps: [],
+    provenance: { historical: true, sourceRun: dir },
+  });
+  atomicJson(join(reusedDir, 'historical/manifest.json'), { version: 1 });
+  atomicJson(join(reusedDir, 'summary.json'), { specSelection: reused.specSelection });
+  atomicJson(join(reusedDir, 'results.json'), { suites: [] });
+  writeFileSync(jobs, JSON.stringify([fixture(dir), reused]));
   const probe = createServer();
   await new Promise<void>((r) => probe.listen(0, '127.0.0.1', r));
   const port = (probe.address() as any).port;
@@ -241,6 +261,20 @@ test('real local API and stdio MCP expose compact jobs, selected diagnostics, pa
     const artifact = await fetch(evidence.artifacts.find((a: any) => a.id === 'spec').url);
     assert.equal(await artifact.text(), 'spec contents');
     assert.equal((await fetch(base + '/api/jobs/agent-test/artifacts/secret')).status, 404);
+    const reusedSummary = await call('get_job', { jobId: 'reused' });
+    assert.equal(reusedSummary.specSelection.mode, 'reuse');
+    assert.equal(reusedSummary.outcome, 'fail');
+    assert.equal(reusedSummary.historicalExploration.verdict, 'pass');
+    const current = await call('get_evidence', { jobId: 'reused' });
+    assert.equal(current.failedSteps[0].evidence, 'Fresh regression');
+    assert.equal(current.artifacts.find((a: any) => a.id === 'historical-report').historical, true);
+    for (const id of ['report', 'historical-report', 'manifest', 'summary', 'results']) {
+      const page = await call('get_evidence', { jobId: 'reused', artifact: id });
+      const downloaded = await fetch(current.artifacts.find((a: any) => a.id === id).url);
+      assert.equal(downloaded.status, 200);
+      assert.equal(await downloaded.text(), page.text);
+      if (id === 'historical-report') assert.equal(page.historical, true);
+    }
     const frame = await client.callTool({ name: 'get_browser_frame', arguments: { jobId: 'agent-test' } });
     assert.ok((frame.content as any[]).some((c) => c.type === 'image'));
     const unchanged = await client.callTool({ name: 'get_browser_frame', arguments: { jobId: 'agent-test', knownFrameAt: 'frame-1' } });

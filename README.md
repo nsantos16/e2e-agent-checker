@@ -7,15 +7,18 @@ Proof of concept: an agent verifies **local or Qase test cases** against **any g
 ```
 verify_case(worktree, DEMO-6003)
   ├─ slot      serve the worktree on its own port against the shared dev API, log the test user in (1Password)
-  ├─ explore   Selected runtime + Playwright MCP execute the Qase steps, report pass/fail/blocked per step with evidence
-  ├─ codify    The selected runtime writes a Playwright spec from the explore run and stabilises it (it may only run that spec)
-  ├─ evidence  reuse the qualified final attempt, or replay when identities/artifacts do not qualify
+  ├─ select    reuse a compatible saved spec, or author a new one (forceFresh always authors)
+  │  ├─ explore   Selected runtime + Playwright MCP execute the case steps with evidence
+  │  └─ codify    The selected runtime writes and stabilises a Playwright spec
+  ├─ evidence  execute the saved spec; fresh authoring may use its qualified final stabilization attempt
   └─ package   MP4 (≈1 MB/min) + PR comment with the step table
 ```
 
 Design and decisions: [docs/architecture-proposals.md](docs/architecture-proposals.md), [ADRs](docs/adr/), results: [docs/poc-results.md](docs/poc-results.md).
 
 Design baseline: [run metrics and selectable runtimes](docs/next-milestone.md), [subscription authentication research](docs/research/multi-provider-auth.md), and the [MCP contract](docs/mcp-contract.md).
+
+[Automatic saved-spec reuse](docs/saved-spec-reuse.md) runs compatible specs on the requested target with fresh evidence and zero model calls or provider preflight. New application builds do not invalidate a spec. Use `forceFresh:true`, CLI `--force-fresh`, or Run options to request new authoring. Failures from reused specs are preserved without automatic regeneration.
 
 Live browser and request diagnostics: [docs/browser-observability.md](docs/browser-observability.md).
 
@@ -117,7 +120,8 @@ The skill covers duplicate-case discovery, case creation/revision checks, bounde
 node src/slots.ts start --slot 1 --worktree ~/work/sample-frontend-e2e-slot1   # serve a worktree on :4001
 node src/login.ts --slot 1 --base http://localhost:4001                                 # session for that origin
 node src/explore.ts --case 3949 --slot 1                                                # explore only
-npm run verify -- --case 6003 --slot 1 --provider codex --model MODEL_ID                               # full pipeline, replay on 2 builds
+npm run verify -- --case 6003 --slot 1 --provider codex --model MODEL_ID                 # reuse or author, then replay
+npm run verify -- --case 6003 --slot 1 --force-fresh                                  # force exploration and codification
 node src/batch.ts   --cases 2359,6004,6914 --slots 1,3 --pipeline verify               # many cases, parallel slots
 node src/slots.ts list
 ```

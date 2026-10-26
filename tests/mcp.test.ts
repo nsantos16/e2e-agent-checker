@@ -80,18 +80,27 @@ test('MCP schemas, structured responses, operational errors, and batch forwardin
         targets: [{ provider: 'codex', model: 'model' }],
         idempotencyKey: 'retry',
         confirmationReplay: true,
+        forceFresh: true,
+        buildId: 'new-build',
       },
     });
     assert.deepEqual((batch.structuredContent as any).data.jobIds, ['one', 'two']);
     assert.equal(requests.at(-1).body.targets[0].authMode, 'subscription');
     assert.equal(requests.at(-1).body.idempotencyKey, 'retry');
     assert.equal(requests.at(-1).body.confirmationReplay, true);
+    assert.equal(requests.at(-1).body.forceFresh, true);
+    assert.equal(requests.at(-1).body.buildId, 'new-build');
     const nativeRun = await client.callTool({
       name: 'verify_case',
       arguments: { project: 'LOCAL', caseId: 8, worktreePath: '/checkout', target: { provider: 'codex', model: 'model' } },
     });
     assert.equal(nativeRun.isError, undefined);
     assert.deepEqual(requests.at(-1).body.cases, [{ project: 'LOCAL', id: 8 }]);
+    assert.equal(requests.at(-1).body.forceFresh, false);
+    assert.match(client.getInstructions() ?? '', /no model calls or provider preflight/);
+    const forced = await client.callTool({ name: 'verify_case', arguments: { project: 'LOCAL', caseId: 8, forceFresh: true } });
+    assert.equal(forced.isError, undefined);
+    assert.equal(requests.at(-1).body.forceFresh, true);
     assert.equal(tools.find((t) => t.name === 'create_case')?.annotations?.readOnlyHint, false);
     assert.equal(tools.find((t) => t.name === 'delete_case')?.annotations?.destructiveHint, true);
     assert.equal(tools.find((t) => t.name === 'sync_case')?.annotations?.openWorldHint, true);

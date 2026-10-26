@@ -74,13 +74,19 @@ export function JobCard({ job: j }: { job: JobView }) {
           <div className="metric">
             <span>Tokens</span>
             <strong>{number(j.usage?.totalTokens)}</strong>
-            <small>{j.replayOf ? 'Replay only · no model calls' : j.usage ? `${j.usage.status} usage` : 'Not recorded'}</small>
+            <small>
+              {j.replayOf || j.specSelection?.mode === 'reuse'
+                ? 'Saved spec · no model calls'
+                : j.usage
+                  ? `${j.usage.status} usage`
+                  : 'Not recorded'}
+            </small>
           </div>
           <div className="metric">
             <span>{estimated ? 'API-equivalent cost' : 'Reported cost'}</span>
             <strong>{dollars(cost)}</strong>
             <small>
-              {j.replayOf
+              {j.replayOf || j.specSelection?.mode === 'reuse'
                 ? 'No model calls'
                 : estimated
                   ? 'Standard API estimate · not a bill'
@@ -106,6 +112,12 @@ export function JobCard({ job: j }: { job: JobView }) {
             </div>
             <div className="log">{j.log?.at(-1) ?? 'Waiting for an available test identity…'}</div>
           </>
+        )}
+        {j.historicalExploration && (
+          <div className="metrics">Saved spec reused. Current results are from this replay; original exploration is historical.</div>
+        )}
+        {j.replayOf && !j.specSelection && (
+          <div className="metrics">Historical exploration steps from the original run. See replay status for this run’s result.</div>
         )}
         {!!j.steps?.length && (
           <div className="steps">

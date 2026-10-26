@@ -29,10 +29,11 @@ for (const scenario of [
   const f = evidenceFixture(true);
   const additionalSlot = `smoke-${basename(f.dir)}`;
   let executions = 0;
+  let value = 'Ready';
   const server = createServer((req, res) => {
     if (req.url === '/execute') executions++;
     res.setHeader('content-type', 'text/html');
-    res.end('<h1 data-testid="value">Ready</h1>');
+    res.end(`<h1 data-testid="value">${value}</h1>`);
   });
   await new Promise<void>((r) => server.listen(0, 'localhost', r));
   const port = (server.address() as { port: number }).port;
@@ -59,6 +60,7 @@ for (const scenario of [
     base,
     storageState: f.context.storageState,
     model: 'fixture-model',
+    forceFresh: true,
     confirmationReplay: scenario === 'confirmation',
     replaySlots: scenario === 'additional-target' ? [additionalSlot] : [],
   }).pipe(
@@ -147,6 +149,8 @@ test('evidence fixture', async ({ page }) => {
     assert.equal(summary.replays[0].provenance.kind, reused ? 'stabilization' : 'replay', JSON.stringify(summary));
     assert.equal(executions, ['pass', 'product-failure'].includes(scenario) ? 1 : 2);
     assert.ok(summary.replays[0].mp4Bytes > 0);
+    assert.equal(JSON.parse(readFileSync(join(f.runDir, 'verification.json'), 'utf8')).source, summary.replays[0].provenance.kind);
+    assert.equal(summary.verification.steps[0].verdict, failed ? 'fail' : 'pass');
     if (scenario === 'additional-target') assert.equal(summary.replays[1].provenance.kind, 'replay');
     const result = {
       scenario,
@@ -159,6 +163,57 @@ test('evidence fixture', async ({ page }) => {
     };
     measurements.push(result);
     console.log(JSON.stringify(result));
+    if (scenario === 'pass') {
+      // A spec published from promoted evidence must execute again on a new build.
+      const oldRuns = process.env.E2E_RUNS_DIR;
+      process.env.E2E_RUNS_DIR = f.dir;
+      const nextRun = join(f.dir, `reuse-${basename(f.dir)}`);
+      value = 'Regressed';
+      writeFileSync(join(f.worktree, 'app.html'), '<h1>Regressed build</h1>');
+      try {
+        const next = await runEffect(
+          verifyEffect({
+            project: testCase.project,
+            caseId: testCase.id,
+            caseSnapshot: testCase,
+            runDir: nextRun,
+            slot: 'fixture',
+            role: 'qa',
+            base,
+            storageState: f.context.storageState,
+            model: 'unavailable',
+          }).pipe(
+            Effect.provideService(ProviderRegistry, { inspect: () => Effect.die('Reuse must not preflight a provider') }),
+            Effect.provideService(PricingCatalog, { load: Effect.die('Reuse must not load pricing') }),
+            Effect.provideService(ProcessRunner, {
+              execute: (name, args, opts) => {
+                assert.ok(['npx', 'ffmpeg'].includes(name), 'Reuse must not invoke a model');
+                return commandEffect(name, args, opts).pipe(Effect.provide(ProcessRunnerLive));
+              },
+            }),
+            Effect.provide(CheckerLive),
+          ),
+        );
+        assert.equal(next.specSelection.mode, 'reuse');
+        assert.equal(next.specSelection.sourceRun, f.runDir);
+        assert.equal(next.replays[0].provenance.kind, 'replay');
+        assert.equal(next.replays[0].provenance.independentRun, true);
+        assert.equal(next.replays[0].avoidedExecutionMs, 0);
+        assert.equal(executions, 2, 'Historical stabilization evidence must never replace a new execution');
+        assert.equal(next.outcome, 'fail');
+        assert.equal(next.verification.steps[0].verdict, 'fail');
+        assert.match(next.verification.steps[0].evidence, /Regressed/);
+        assert.equal(next.historicalExploration.verdict, 'pass');
+        assert.equal(next.usage.totalTokens, 0);
+        assert.notEqual(next.replays[0].video, summary.replays[0].video);
+        assert.ok(next.replays[0].mp4Bytes > 0);
+        console.log(JSON.stringify({ scenario: 'saved-spec-after-stabilization', outcome: next.outcome, executions, runDir: nextRun }));
+      } finally {
+        if (oldRuns === undefined) delete process.env.E2E_RUNS_DIR;
+        else process.env.E2E_RUNS_DIR = oldRuns;
+        rmSync(specLocation(nextRun, testCase.project, testCase.id).specDir, { recursive: true, force: true });
+      }
+    }
   } finally {
     await new Promise<void>((r, reject) => server.close((e) => (e ? reject(e) : r())));
     rmSync(spec.specDir, { recursive: true, force: true });

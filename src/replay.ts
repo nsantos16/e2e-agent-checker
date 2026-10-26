@@ -1,4 +1,4 @@
-import { Effect, Exit } from 'effect';
+import { Cause, Effect, Exit } from 'effect';
 import { runEffect } from './runtime/effect.ts';
 import { CheckerLive } from './runtime/services.ts';
 import { commandEffect } from './process.ts';
@@ -78,7 +78,9 @@ export type ReplayOptions = {
 export const replayEffect = (opts: ReplayOptions) =>
   Effect.gen(function* () {
     const outDir = join(opts.runDir, `replay-${opts.label}`);
-    mkdirSync(outDir, { recursive: true });
+    // Each invocation owns fresh evidence; never read a previous execution as a new result.
+    mkdirSync(opts.runDir, { recursive: true });
+    mkdirSync(outDir);
     const started = Date.now();
     opts.signal?.throwIfAborted();
     const mp4 = join(outDir, 'verification.mp4');
@@ -105,6 +107,10 @@ export const replayEffect = (opts: ReplayOptions) =>
           const { manifest, result } = final;
           return {
             status: result.status,
+            exitCode: manifest.code,
+            steps: result.steps,
+            base: opts.base,
+            startedAt: manifest.startedAt,
             failedStep: result.failedStep,
             error: result.error?.message?.split('\n').slice(0, 6).join('\n'),
             wallMs: Date.now() - started,
@@ -155,15 +161,29 @@ export const replayEffect = (opts: ReplayOptions) =>
     const failedStep = testResult?.failedStep;
     const webm = findVideo(outDir);
     opts.onPackage?.();
-    const mp4Bytes = webm ? yield* toPrMp4Effect(webm, mp4) : undefined;
+    let packagingError: string | undefined;
+    const mp4Bytes = webm
+      ? yield* toPrMp4Effect(webm, mp4).pipe(
+          Effect.catchCause((cause) => {
+            if (Cause.hasInterrupts(cause)) return Effect.failCause(cause);
+            packagingError = String(Cause.squash(cause));
+            return Effect.succeed(undefined);
+          }),
+        )
+      : undefined;
     return {
-      status: testResult?.status ?? 'unknown',
+      status: testResult?.status === 'passed' && code !== 0 ? 'unknown' : (testResult?.status ?? 'unknown'),
+      exitCode: code,
+      steps: testResult?.steps,
+      base: opts.base,
+      startedAt: new Date(started).toISOString(),
       failedStep,
       error: testResult?.error?.message?.split('\n').slice(0, 6).join('\n'),
       wallMs: Date.now() - started,
       executionMs,
       avoidedExecutionMs: 0,
-      video: webm ? mp4 : undefined,
+      video: mp4Bytes !== undefined ? mp4 : undefined,
+      packagingError,
       mp4Bytes,
       trace: findTrace(outDir),
       results: existsSync(join(outDir, 'results.json')) ? join(outDir, 'results.json') : undefined,

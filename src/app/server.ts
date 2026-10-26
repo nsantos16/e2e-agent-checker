@@ -292,7 +292,9 @@ const handleRequest = (req: IncomingMessage, res: ServerResponse) =>
           ),
       );
     }
-    const artifactMatch = url.pathname.match(/^\/api\/jobs\/([\w-]+)\/artifacts\/(case|report|spec|comment|video|trace|usage|pricing)$/);
+    const artifactMatch = url.pathname.match(
+      /^\/api\/jobs\/([\w-]+)\/artifacts\/(case|report|historical-report|manifest|summary|attempt|results|spec|comment|video|trace|usage|pricing)$/,
+    );
     if (req.method === 'GET' && artifactMatch) {
       const job = getJob(artifactMatch[1]);
       const path = job && artifactPath(job, artifactMatch[2] as ArtifactId);

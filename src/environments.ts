@@ -144,3 +144,17 @@ export const environmentSessionPath = (e: Environment, user: TestUser, base: str
   );
 // Credential-reference identity also serializes aliases shared by multiple profiles.
 export const testIdentityKey = (user: TestUser) => createHash('sha256').update(user.usernameRef).digest('hex');
+
+// Worktree ports/builds may change. Profile revisions and credential-reference
+// changes must still invalidate reuse; never include credential values.
+export const environmentRequirements = (e: Environment, user: TestUser, base: string) => ({
+  id: e.id,
+  revision: e.revision,
+  kind: e.kind,
+  devMode: e.devMode,
+  origin: e.kind === 'hosted' ? new URL(base).origin : undefined,
+  userId: user.id,
+  credentialReferencesSha256: createHash('sha256')
+    .update(JSON.stringify([user.usernameRef, user.passwordRef, user.totpRef ?? null]))
+    .digest('hex'),
+});

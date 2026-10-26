@@ -14,8 +14,9 @@ import { config } from './config.ts';
 import { ensureSlotForWorktreeEffect, baseUrl } from './slots.ts';
 import { verifyEffect } from './verify.ts';
 import { newRunDir } from './explore.ts';
-import { preflightEffect, RunError, targetSchema, type Target } from './providers/index.ts';
-import { claudeUsage, emptyUsage, mergeUsage, type Usage, type RunMetrics } from './usage.ts';
+import { RunError, targetSchema, type Target } from './providers/index.ts';
+import { claudeUsage, emptyUsage, mergeUsage, noModelUsage, type Usage, type RunMetrics } from './usage.ts';
+import { explorationReportPath, type BuildProvenance, type SpecSelection } from './saved-specs.ts';
 
 export type JobStatus = 'queued' | 'running' | 'cancelling' | 'done' | 'failed' | 'cancelled' | 'interrupted';
 export type Job = {
@@ -59,6 +60,11 @@ export type Job = {
   batchId?: string;
   replayOf?: string;
   confirmationReplay?: boolean;
+  forceFresh?: boolean;
+  buildId?: string;
+  testedBuild?: BuildProvenance;
+  specSelection?: SpecSelection;
+  historicalExploration?: { sourceRun: string; verdict: string };
   limits?: { timeoutMs: number; maxAttempts: number };
   usage?: Usage;
   stageMetrics?: Record<string, RunMetrics>;
@@ -176,7 +182,6 @@ const executeEffect = (job: Job) =>
     };
     const work = Effect.gen(function* () {
       stage('prepare');
-      if (!job.replayOf) yield* preflightEffect(job.target!);
       signal.throwIfAborted();
       const environment = job.environmentSnapshot ?? (yield* (yield* EnvironmentRepository).get(job.environmentId));
       const user = getTestUser(environment, job.userId ?? job.role);
@@ -210,6 +215,10 @@ const executeEffect = (job: Job) =>
         project: job.project,
         caseId: job.caseId,
         caseSnapshot: job.caseSnapshot,
+        environment,
+        worktree: job.worktree || undefined,
+        forceFresh: job.forceFresh,
+        buildId: job.buildId,
         slot: slotId,
         base,
         storageState,
@@ -225,6 +234,15 @@ const executeEffect = (job: Job) =>
         fromRun: job.replayOf ? jobs.get(job.replayOf)?.runDir : undefined,
         replayOnly: !!job.replayOf,
         confirmationReplay: job.confirmationReplay,
+        onSelection: (selection, testedBuild) => {
+          job.specSelection = selection;
+          job.testedBuild = testedBuild;
+          if (selection.mode !== 'author') {
+            job.usage = noModelUsage(selection.mode === 'reuse' ? 'saved-spec' : 'replay');
+            job.costUsd = 0;
+          }
+          persist();
+        },
         onStage: stage,
         onMetrics: (name, m) => {
           job.stageMetrics![name] = m;
@@ -237,11 +255,12 @@ const executeEffect = (job: Job) =>
         log,
       });
       signal.throwIfAborted();
-      const report = JSON.parse(readFileSync(join(job.runDir, 'explore/report.json'), 'utf8'));
+      const report = summary.verification ?? JSON.parse(readFileSync(join(job.runDir, 'explore/report.json'), 'utf8'));
       Object.assign(job, {
         status: 'done',
         outcome: summary.outcome,
-        exploreVerdict: report.verdict,
+        exploreVerdict: summary.historicalExploration ? undefined : summary.explore?.verdict,
+        historicalExploration: summary.historicalExploration,
         steps: report.steps,
         replay: summary.replays?.[0],
         video: summary.replays?.[0]?.video,
@@ -312,6 +331,8 @@ export const batchSchema = z
     userId: z.string().optional(),
     role: z.string().optional(),
     confirmationReplay: z.boolean().optional(),
+    forceFresh: z.boolean().default(false),
+    buildId: z.string().min(1).max(300).optional(),
     targets: z.array(targetSchema).min(1).max(8).optional(),
     limits: limitsSchema.default({ timeoutMs: 20 * 60_000, maxAttempts: 8 }),
     idempotencyKey: z.string().min(1).max(128).optional(),
@@ -342,6 +363,8 @@ const submitBatchLockedEffect = (input: unknown) =>
       .update(
         JSON.stringify({
           ...b,
+          // Preserve hashes of pre-reuse submissions when using the default.
+          forceFresh: b.forceFresh || undefined,
           worktree,
           role,
           targets,
@@ -358,10 +381,11 @@ const submitBatchLockedEffect = (input: unknown) =>
     const snapshots = yield* Effect.forEach(b.cases, (c) =>
       repository.get(c.project, c.id).pipe(Effect.tap((record) => Effect.sync(() => assertRunnable(record)))),
     );
-    for (const t of targets) yield* preflightEffect(t);
+    // Provider readiness belongs to authoring, after reuse selection at execution
+    // time. Queued work may reuse a spec published by an earlier serialized job.
     if (stopping) return yield* Effect.fail(new RunError('APP_UNAVAILABLE', 'Server is stopping'));
     const batchId = randomUUID();
-    const created = b.cases.flatMap((c, index) =>
+    const created: Job[] = b.cases.flatMap((c, index) =>
       targets.map(
         (target) =>
           ({
@@ -388,6 +412,8 @@ const submitBatchLockedEffect = (input: unknown) =>
             target,
             batchId,
             limits: b.limits,
+            forceFresh: b.forceFresh,
+            buildId: b.buildId,
             idempotencyKey: b.idempotencyKey,
             requestHash: hash,
             status: 'queued' as const,
@@ -424,7 +450,7 @@ export function replayJob(id: string) {
   if (!old?.runDir) throw new RunError('ARTIFACT_MISSING', 'Job has no saved run');
   if (['queued', 'running', 'cancelling'].includes(old.status)) throw new RunError('ARTIFACT_MISSING', 'Wait for the source run to finish');
   const file = join(old.runDir, 'codify', `${old.project}-${old.caseId}.spec.ts`);
-  if (!existsSync(file) || !existsSync(join(old.runDir, 'explore/report.json')))
+  if (!existsSync(file) || !existsSync(explorationReportPath(old.runDir)))
     throw new RunError('ARTIFACT_MISSING', 'Saved spec or report missing');
   const currentEnvironment = getEnvironment(old.environmentId);
   getTestUser(currentEnvironment, old.userId ?? old.role);
@@ -446,17 +472,7 @@ export function replayJob(id: string) {
     status: 'queued',
     createdAt: new Date().toISOString(),
     log: [],
-    usage: {
-      ...emptyUsage('replay', 'complete'),
-      inputTokens: 0,
-      outputTokens: 0,
-      totalTokens: 0,
-      cacheReadTokens: 0,
-      cacheWriteTokens: 0,
-      reasoningTokens: 0,
-      providerReportedCostUsd: 0,
-      estimatedApiCostUsd: 0,
-    },
+    usage: noModelUsage('replay'),
   };
   jobs.set(job.id, job);
   persist();

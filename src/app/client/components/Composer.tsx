@@ -56,7 +56,7 @@ export function Welcome() {
 }
 export function Composer() {
   const { state: s, actions: store } = useWorkspace();
-  const ready = store.readyTargets(),
+  const ready = s.forceFresh ? store.readyTargets() : s.targets,
     count = s.selected.size * ready.length,
     environment = store.environment();
   const worktree = s.worktrees.find((w) => w.path === s.worktree);
@@ -169,7 +169,7 @@ export function Composer() {
         <span id="composer-hint">
           {s.selected.size && ready.length
             ? `${s.selected.size} case${s.selected.size === 1 ? '' : 's'} × ${ready.length} model${ready.length === 1 ? '' : 's'} · ${count} run${count === 1 ? '' : 's'}`
-            : 'Explore → Codify → Replay'}
+            : 'Reuse saved spec or author a new one'}
         </span>
         <span>⌘ Enter to run</span>
       </div>

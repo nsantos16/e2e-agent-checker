@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import type { Job } from './jobs.ts';
 import { readJson } from './network.ts';
 import { readNetwork } from './observations.ts';
+import { explorationReportPath } from './saved-specs.ts';
 
 export const terminal = (job: { status: string }) => !['queued', 'running', 'cancelling'].includes(job.status);
 export const clip = (value: string | undefined, length = 500) => (value && value.length > length ? value.slice(0, length) + '…' : value);
@@ -25,6 +26,9 @@ export function jobSummary(job: Job, base: string) {
     createdAt: job.createdAt,
     timing: job.timing,
     usage: job.usage,
+    specSelection: job.specSelection,
+    testedBuild: job.testedBuild,
+    historicalExploration: job.historicalExploration,
     error: job.error ? { code: job.errorCode ?? 'RUN_FAILED', message: clip(job.error) } : undefined,
     replay: job.replay
       ? {
@@ -65,20 +69,43 @@ export function jobSummary(job: Job, base: string) {
   };
 }
 
-export type ArtifactId = 'case' | 'report' | 'spec' | 'comment' | 'video' | 'trace' | 'usage' | 'pricing' | 'attempt' | 'results';
+export type ArtifactId =
+  | 'case'
+  | 'report'
+  | 'historical-report'
+  | 'manifest'
+  | 'summary'
+  | 'attempt'
+  | 'results'
+  | 'spec'
+  | 'comment'
+  | 'video'
+  | 'trace'
+  | 'usage'
+  | 'pricing';
 export function artifactPath(job: Job, id: ArtifactId): string | undefined {
   if (!job.runDir || !existsSync(job.runDir)) return;
   const candidates = {
     usage: join(job.runDir, 'usage.json'),
     pricing: join(job.runDir, 'pricing.json'),
     case: join(job.runDir, 'explore/case.json'),
-    report: join(job.runDir, 'explore/report.json'),
+    report: existsSync(join(job.runDir, 'verification.json'))
+      ? join(job.runDir, 'verification.json')
+      : job.historicalExploration || job.specSelection?.mode === 'reuse' || job.replayOf
+        ? undefined
+        : join(job.runDir, 'explore/report.json'),
+    'historical-report':
+      job.historicalExploration || job.specSelection?.mode === 'reuse' || job.replayOf ? explorationReportPath(job.runDir) : undefined,
+    manifest: existsSync(join(job.runDir, 'historical/manifest.json'))
+      ? join(job.runDir, 'historical/manifest.json')
+      : join(job.runDir, 'codify/manifest.json'),
+    summary: join(job.runDir, 'summary.json'),
+    results: job.replay?.results as string | undefined,
     spec: join(job.runDir, 'codify', `${job.project}-${job.caseId}.spec.ts`),
     comment: join(job.runDir, 'pr-comment.md'),
     video: job.video,
     trace: job.replay?.trace as string | undefined,
     attempt: job.replay?.provenance?.manifestPath as string | undefined,
-    results: job.replay?.results as string | undefined,
   };
   const path = candidates[id];
   // Accept only this job's artifacts, including after symlink resolution.
@@ -87,13 +114,30 @@ export function artifactPath(job: Job, id: ArtifactId): string | undefined {
   return canonical.startsWith(realpathSync(job.runDir) + '/') && statSync(canonical).isFile() ? canonical : undefined;
 }
 export function readEvidence(job: Job, base: string, options: { artifact?: string; offset?: number; limit?: number } = {}) {
-  const ids: ArtifactId[] = ['case', 'report', 'spec', 'comment', 'video', 'trace', 'usage', 'pricing', 'attempt', 'results'];
+  const ids: ArtifactId[] = [
+    'case',
+    'report',
+    'historical-report',
+    'manifest',
+    'summary',
+    'attempt',
+    'results',
+    'spec',
+    'comment',
+    'video',
+    'trace',
+    'usage',
+    'pricing',
+  ];
   const artifacts = ids.flatMap((id) => {
     const path = artifactPath(job, id);
     return path
       ? [
           {
             id,
+            ...(id === 'historical-report'
+              ? { historical: true, sourceRun: job.historicalExploration?.sourceRun ?? job.specSelection?.sourceRun }
+              : {}),
             bytes: statSync(path).size,
             url: `${base}/api/jobs/${encodeURIComponent(job.id)}/artifacts/${id}`,
           },
@@ -103,10 +147,13 @@ export function readEvidence(job: Job, base: string, options: { artifact?: strin
   if (!options.artifact) {
     const reportPath = artifactPath(job, 'report');
     const report = reportPath ? readJson<{ verdict?: string; steps?: any[] }>(reportPath) : undefined;
-    const failedSteps = (job.steps ?? report?.steps ?? []).filter((s) => s.verdict !== 'pass');
+    const historical = !!job.historicalExploration || job.specSelection?.mode === 'reuse' || !!job.replayOf;
+    const failedSteps = (historical ? (report?.steps ?? []) : (job.steps ?? report?.steps ?? [])).filter((s) => s.verdict !== 'pass');
     return {
       jobId: job.id,
-      verdict: job.outcome ?? job.exploreVerdict ?? report?.verdict ?? null,
+      verdict: job.outcome ?? (historical ? null : (job.exploreVerdict ?? report?.verdict ?? null)),
+      specSelection: job.specSelection,
+      historicalExploration: job.historicalExploration,
       // Keep a completed failure distinct from an infrastructure failure; report is available in full on demand.
       failedStepCount: failedSteps.length,
       failedSteps: failedSteps.slice(0, 10).map((s) => ({
@@ -121,7 +168,9 @@ export function readEvidence(job: Job, base: string, options: { artifact?: strin
     };
   }
   const id = options.artifact;
-  if (!['logs', 'case', 'report', 'spec', 'comment', 'usage', 'pricing', 'attempt', 'results'].includes(id))
+  if (
+    !['logs', 'case', 'report', 'historical-report', 'manifest', 'summary', 'attempt', 'results', 'spec', 'comment', 'usage', 'pricing'].includes(id)
+  )
     throw Object.assign(new Error('Use an artifact URL to read binary evidence'), { code: 'INVALID_INPUT' });
   const path = id === 'logs' ? undefined : artifactPath(job, id as ArtifactId);
   if (id !== 'logs' && !path)
@@ -134,6 +183,8 @@ export function readEvidence(job: Job, base: string, options: { artifact?: strin
   return {
     jobId: job.id,
     artifact: id,
+    historical: id === 'historical-report' ? true : undefined,
+    sourceRun: id === 'historical-report' ? (job.historicalExploration?.sourceRun ?? job.specSelection?.sourceRun) : undefined,
     offset,
     totalChars: text.length,
     text: text.slice(offset, offset + limit),
