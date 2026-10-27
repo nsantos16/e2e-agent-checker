@@ -21,6 +21,7 @@ export const runAgentEffect = (input: AgentRun) =>
       const onMetrics = run.onMetrics;
       run = {
         ...run,
+        stageConfig: { ...run.stageConfig, runDir: run.stageConfig.runDir ?? dirname(dirname(run.transcriptPath)) },
         onMetrics: (m) => {
           writeFileSync(join(dirname(run.transcriptPath), 'metrics.json'), JSON.stringify(m, null, 2));
           appendFileSync(join(dirname(run.transcriptPath), 'metrics.jsonl'), JSON.stringify({ at: new Date().toISOString(), ...m }) + '\n');

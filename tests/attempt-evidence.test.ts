@@ -278,44 +278,66 @@ test('missing recording falls back to execution; corrupt video conversion also f
   }
 });
 
-test('cancellation marks the exact attempt unusable even when a process writes a result', async () => {
-  const f = evidenceFixture(),
-    oldPath = process.env.PATH;
-  const controller = new AbortController();
-  const marker = join(f.dir, 'started');
-  writeFileSync(
-    join(f.dir, 'npx'),
-    `#!/usr/bin/env node\nconst fs=require('node:fs');fs.copyFileSync(${JSON.stringify(join(f.artifactDir, 'results.json'))},process.env.E2E_OUTPUT_DIR+'/results.json');fs.writeFileSync(${JSON.stringify(marker)},'started');setInterval(()=>{},1000);`,
-    { mode: 0o755 },
-  );
-  process.env.PATH = f.dir + ':' + oldPath;
-  const service = await stageTools({ specPath: f.context.specPath, runDir: f.runDir, evidenceContext: f.context }, controller.signal);
-  try {
-    f.build();
-    const attempt = service.call('try_spec', {});
-    const rejected = assert.rejects(attempt, /cancelled/);
-    for (let i = 0; i < 300; i++) {
-      try {
-        readFileSync(marker);
-        break;
-      } catch {
-        await new Promise((r) => setTimeout(r, 10));
+for (const scope of ['stage', 'request'] as const)
+  test(`${scope} cancellation marks the exact attempt unusable even when a process writes a result`, async () => {
+    const f = evidenceFixture(),
+      oldPath = process.env.PATH;
+    const controller = new AbortController();
+    const marker = join(f.dir, 'started');
+    writeFileSync(
+      join(f.dir, 'npx'),
+      `#!/usr/bin/env node\nconst fs=require('node:fs');fs.copyFileSync(${JSON.stringify(join(f.artifactDir, 'results.json'))},process.env.E2E_OUTPUT_DIR+'/results.json');fs.writeFileSync(${JSON.stringify(marker)},'started');setInterval(()=>{},1000);`,
+      { mode: 0o755 },
+    );
+    process.env.PATH = f.dir + ':' + oldPath;
+    const service = await stageTools(
+      {
+        specPath: f.context.specPath,
+        runDir: f.runDir,
+        evidenceContext: f.context,
+      },
+      scope === 'stage' ? controller.signal : undefined,
+    );
+    try {
+      f.build();
+      const attempt = service.call('try_spec', {}, scope === 'request' ? controller.signal : undefined);
+      const settled =
+        scope === 'stage'
+          ? assert.rejects(attempt, /cancelled/)
+          : attempt.then((result) => {
+              assert.equal(result.isError, true);
+              assert.match(result.content[0].text, /cancelled/);
+            });
+      for (let i = 0; i < 300; i++) {
+        try {
+          readFileSync(marker);
+          break;
+        } catch {
+          await new Promise((r) => setTimeout(r, 10));
+        }
       }
+      assert.equal(readFileSync(marker, 'utf8'), 'started');
+      controller.abort(new Error('cancelled'));
+      await settled;
+      const last: AttemptManifest = JSON.parse(readFileSync(join(f.runDir, 'codify/last-attempt.json'), 'utf8'));
+      assert.equal(last.state, 'cancelled');
+      assert.equal(last.result?.status, 'passed');
+      assert.equal(last.code, null);
+      assert.equal(
+        qualifyAttempt(f.context, {
+          manifestPath: last.manifestPath,
+          outcome: 'passed',
+          failingStep: null,
+        }).eligible,
+        false,
+      );
+      if (scope === 'request') assert.equal((await service.call('qa_network_requests', {})).isError, false);
+    } finally {
+      await service.close();
+      process.env.PATH = oldPath;
+      f.close();
     }
-    assert.equal(readFileSync(marker, 'utf8'), 'started');
-    controller.abort(new Error('cancelled'));
-    await rejected;
-    const last: AttemptManifest = JSON.parse(readFileSync(join(f.runDir, 'codify/last-attempt.json'), 'utf8'));
-    assert.equal(last.state, 'cancelled');
-    assert.equal(last.result?.status, 'passed');
-    assert.equal(last.code, null);
-    assert.equal(qualifyAttempt(f.context, { manifestPath: last.manifestPath, outcome: 'passed', failingStep: null }).eligible, false);
-  } finally {
-    await service.close();
-    process.env.PATH = oldPath;
-    f.close();
-  }
-});
+  });
 
 test('transitive helper contents and spec environment inputs must still match', () => {
   const f = evidenceFixture();

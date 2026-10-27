@@ -5,7 +5,7 @@ import { codexConnectionEffect } from './rpc.ts';
 import { codexUsage, emptyUsage, type RunMetrics } from '../usage.ts';
 import type { ClaudeOutcome, ClaudeRun } from '../claude.ts';
 export type StageTool = { name: string; description: string; inputSchema: Record<string, unknown> };
-export type ToolService = { tools: StageTool[]; call: (name: string, args: any) => Promise<any>; close: () => Promise<void> };
+export type ToolService = { tools: StageTool[]; call: (name: string, args: any, signal?: AbortSignal) => Promise<any>; close: () => Promise<void> };
 export const runCodexEffect = (run: ClaudeRun, service: ToolService) =>
   Effect.scoped(
     Effect.gen(function* () {
@@ -55,7 +55,7 @@ export const runCodexEffect = (run: ClaudeRun, service: ToolService) =>
         metrics.toolCalls++;
         update();
         run.log?.(`→ ${p.tool}`);
-        const result = await service.call(p.tool, p.arguments);
+        const result = await service.call(p.tool, p.arguments, run.signal);
         events.push({ type: 'user', message: { content: [{ type: 'tool_result', content: result.content }] } });
         return {
           success: !result.isError,

@@ -15,7 +15,7 @@ await runMain(
         (server) => sdk(() => server.close()).pipe(Effect.orDie),
       );
       server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: service.tools }));
-      server.setRequestHandler(CallToolRequestSchema, async (r) => service.call(r.params.name, r.params.arguments ?? {}));
+      server.setRequestHandler(CallToolRequestSchema, async (r, extra) => service.call(r.params.name, r.params.arguments ?? {}, extra.signal));
       yield* sdk(() => server.connect(new StdioServerTransport()));
       yield* Effect.never;
     }),

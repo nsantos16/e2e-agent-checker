@@ -4,12 +4,17 @@ import { randomUUID } from 'node:crypto';
 import type { BrowserContext, Request, Response } from 'playwright';
 
 const secretKey = /password|passwd|secret|token|authorization|cookie|api[-_]?key|session|credential/i;
-export const scrubText = (value: string) =>
+export const redactText = (value: string, options: { preserveCodeDelimiters?: boolean } = {}) =>
   value
     .replace(/Bearer\s+[^\s"',;]+/gi, 'Bearer [redacted]')
     .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, '[redacted]')
-    .replace(/((?:password|secret|token|api[-_]?key|authorization|cookie)\s*[=:]\s*)[^\s&,;]+/gi, '$1[redacted]')
-    .slice(0, 2000);
+    .replace(
+      options.preserveCodeDelimiters
+        ? /((?:password|secret|token|api[-_]?key|authorization|cookie)\s*[=:]\s*)[^\s&,;"'<>`\\)]+/gi
+        : /((?:password|secret|token|api[-_]?key|authorization|cookie)\s*[=:]\s*)[^\s&,;]+/gi,
+      '$1[redacted]',
+    );
+export const scrubText = (value: string) => redactText(value).slice(0, 2000);
 export function safeUrl(raw: string) {
   try {
     const url = new URL(raw);
