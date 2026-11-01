@@ -1,0 +1,115 @@
+# Team web delivery roadmap
+
+Status: proposed delivery plan, 2026-11-01. Confirmed architecture: a standalone checker backend, with worktrees, verification, and demo generation on each developer's machine and shared status, history, and artifacts. The checker owns its API, authentication, database, storage, and deployment; it requires no integration into the backend of an application being tested. See [team web architecture](team-web-architecture.md) for the system design.
+
+Deliver six milestones, with a working flow across two developers by milestone 2 and shared demo playback by milestone 3. Complete reliability, access, migration, and operational checks before the team rollout. Each milestone should be reviewable and usable in staging; application authentication and authorization start in milestone 1.
+
+## Decisions to make before implementation
+
+Backend independence, local execution, and shared results are confirmed. Defaults below are recommendations, not recorded approvals.
+
+| Decision | Recommended starting choice | Consequence and deadline |
+| --- | --- | --- |
+| Team sign-in | A checker-specific Google Workspace, GitHub, or Microsoft Entra identity application; invite-only admission | Select one before milestone 1. The checker owns its users, memberships, and sessions; it does not authenticate through the product backend. Signing in alone must not grant team access. |
+| Team access model | One internal organization; owner/admin/member/viewer roles; organization-scoped domain records from the start | Decide before milestone 1. Public signup and multiple customer organizations introduce more onboarding and isolation work. |
+| Hosting and region | A dedicated checker deployment in the chosen cloud/region: standalone Node API, web frontend, managed PostgreSQL database, and private object storage | Decide before hosted staging in milestone 1. Identify the checker domain, infrastructure owner, and monthly spending ceiling. The product backend is not a hosting or runtime dependency. |
+| Supported developer machines | macOS first if that covers the pilot; add Linux/Windows when required by actual participants | Decide before milestone 2. Browser dependencies, credential storage, process lifecycle, and installation differ by platform. |
+| Who may start work | A member can submit work only to their own enrolled workers; teammates can view permitted results | Decide before milestone 2. Shared visibility does not authorize use of another person's computer or subscription allowance. |
+| Shared-service outages | Require connectivity to register/claim new work; buffer updates during brief disconnects and stop active execution when its lease expires | Decide before milestone 2. Starting new work while the shared service is unreachable needs a separate local admission and reconciliation design, especially for shared test accounts. Upload recovery is included regardless; native model calls still have their own connectivity requirements. |
+| Evidence visibility and retention | Private team access with environment/project restrictions where needed; automatic upload of permitted outputs | Set visibility before milestone 3. Proposed retention: raw traces/logs 30 days, final demos/videos 90 days, run summaries/audit history 1 year; cases/configuration persist until explicitly removed. Confirm TTLs, exceptions, and storage limits before milestone 6. |
+
+The earliest choices are the identity provider, team access model, and approved hosting location. Worker platform, ownership, and offline behavior should be settled while milestone 1 is built. Evidence policy must be settled before real team data is uploaded.
+
+## Engineering defaults
+
+These choices can be taken as implementation defaults unless an existing infrastructure constraint changes them.
+
+| Area | Proposed decision | Why |
+| --- | --- | --- |
+| Application structure | Separate checker backend, React/Vite frontend, Node/Effect worker, and shared contracts within `e2e-agent-checker`; independent runtime/build boundaries | Reuse this checker's verification/provider pipeline. Keep business-backend modules, routes, and deployment out of its dependency graph. |
+| Authentication | Better Auth in the standalone checker API with its own PostgreSQL records, subject to a small integration/revocation spike | The checker owns resource permissions, sessions, and auth maintenance. An external identity provider can handle sign-in through a checker-specific registration. |
+| Shared persistence | A dedicated checker PostgreSQL database for identities, cases, sessions, jobs, ownership, events, and artifact metadata | Transactions support durable requests and consistent ownership checks without accessing the product backend's database. |
+| Local persistence | A small transactional worker journal, with SQLite as the proposed implementation; media remains in local staging files | Persist event acknowledgements, attempts, and upload checkpoints across worker restarts. The hosted database remains authoritative for shared configuration and admitted requests. |
+| Job scheduling | PostgreSQL-backed claims, leases, and resource locks, behind a repository interface | Keep scheduling in the same durability boundary as run creation; add a separate broker only if measured load warrants it. |
+| Connectivity | Workers initiate HTTPS connections and pull/long-poll for their jobs; the browser receives authorized SSE events | Supports developer machines without inbound ports, stable LAN addresses, or tunnels. Test proxy buffering and connection limits in staging. |
+| Artifact delivery | Private S3-compatible objects; permission-checked short-lived access; persisted multipart uploads for large media | Videos stay out of the database and API request path; uploads can recover without repeating execution. Verify the selected store's multipart behavior. |
+| Worker packaging | A versioned CLI/worker package with enrollment, status, diagnostics, and update compatibility checks | Validate installation and recovery before investing in a separate desktop application. Foreground execution is sufficient for the first slice; background startup follows the pilot OS choice. |
+| MCP | Preserve local stdio MCP with scoped access to the shared API for the first release | UI and local MCP can use the same domain permissions. A hosted HTTP MCP endpoint requires additional OAuth integration and can follow separately. |
+
+Better Auth documents [database session management](https://better-auth.com/docs/concepts/session-management) and [organization membership](https://better-auth.com/docs/plugins/organization). PostgreSQL documents [`SKIP LOCKED` for queue-like consumers](https://www.postgresql.org/docs/current/sql-select.html). S3 documents [multipart upload recovery](https://docs.aws.amazon.com/AmazonS3/latest/userguide/mpuoverview.html). These capabilities support the defaults; the integration proofs remain milestone work.
+
+## Milestone 1 — Independent backend and team identity
+
+**Outcome:** two invited people can sign in to the independently deployed checker and see shared case/session metadata with correct permissions, even when a target backend is unavailable.
+
+Establish the checker's backend module, API contracts, dedicated database, configuration, and deployment. Keep its frontend and worker as explicit clients. No checker routes, database migrations, auth hooks, or runtime package installations are required in a product backend. Optional local source/schema inspection for mock generation remains an input to the worker.
+
+Implement the chosen sign-in provider, organization membership, roles, login-session listing/revocation, and a seeded owner. Keep login sessions, verification sessions, provider sessions, and target test accounts distinct. Introduce authenticated actor context and rename the existing test-account `userId` semantics before adding teammate attribution.
+
+Add checker-owned PostgreSQL migrations and repository interfaces for shared state. Establish organization-scoped foreign keys, immutable case/run inputs, optimistic revision checks, and artifact metadata. Deploy the standalone API and web UI to private staging with a canonical HTTPS URL and basic logs/health checks. Use fixtures and a representative checker-data import sample while existing local use continues.
+
+**Completion checks:** anonymous access is rejected; an uninvited identity cannot join; viewer mutations fail; a removed member loses access; spoofed requester IDs do not change attribution; fixture imports preserve session membership and unknown historical creators. Auth sessions and shared metadata survive an API restart. Checker login and metadata browsing work without a target backend; the checker build/deployment uses no product-backend modules or database credentials.
+
+## Milestone 2 — One local worker and one shared run
+
+**Outcome:** developer A runs an existing case on their own machine; developer B sees its status and a small uploaded report through the shared app.
+
+Extract local execution from the HTTP server behind a versioned worker protocol. Implement one-time enrollment, revocable device credentials, worker ownership, workspace bindings, capability reporting, and outbound job polling. Resolve native provider profiles and target credentials locally. Keep local paths and secret files out of shared payloads.
+
+Implement the minimum durable path: create request and idempotency receipt transactionally, claim it for the correct worker, record an attempt and lease, send ordered progress, finalize, and upload one private report. Include basic cancellation and expiry handling from the first worker implementation. Exercise the existing verification pipeline rather than replacing it.
+
+**Completion checks:** the job executes on A's machine; B can read permitted results but cannot claim/control A's worker; duplicate submission does not create duplicate work; an offline worker's request stays queued; a hosted API restart does not kill a healthy local process or lose queued requests; report access is private.
+
+**Gate:** prove this complete flow before broadening demo/media support or administrative UI. This resolves the highest architectural uncertainty early.
+
+## Milestone 3 — Local demos and shared artifacts
+
+**Outcome:** A records/renders a demo locally, uploads it, shuts down the laptop, and B can still watch it.
+
+Add tracked local demo jobs, narration configuration, rendering, replay, and source-run provenance using the existing demo/provider behavior. Support private video/audio/screenshot/trace/suite objects, upload manifests, checksums, byte limits, multipart checkpoints, and upload completion acknowledgements. The worker retains outputs until durable storage is confirmed.
+
+Track execution outcome separately from artifact synchronization. Show completed-with-upload-pending accurately. Authorize every artifact lookup and playback request; support video ranges. Serve active or untrusted artifact formats from an isolated origin or as attachments, not as executable content under the authenticated application origin. Exclude credential files and browser storage state; validate redaction on representative reports/traces.
+
+**Completion checks:** playback works with the producer offline; an interrupted upload resumes/retries without regenerating the demo; duplicate upload completion does not create duplicate records; corrupt or unauthorized uploads are rejected; unrelated members cannot download restricted evidence; HTML artifacts cannot execute in the app's authenticated origin.
+
+Milestones 1–3 produce the first constrained internal demonstration. Broad team use waits for the following recovery and operational gates.
+
+## Milestone 4 — Recovery, cancellation, and synchronization
+
+**Outcome:** network loss, worker restarts, API deployment, and repeated delivery produce an accurate shared history.
+
+Complete the durable local journal and event/upload outbox. Persist acknowledgements and replay only unacknowledged updates. Add heartbeat expiry, stale-lease fencing, worker reconnection, bounded local spool storage, upload cleanup, and protocol compatibility handling. A full disk must surface an actionable failure rather than silently dropping unsynced evidence.
+
+Enforce shared test-account and workspace concurrency across workers. Distinguish cancellation requested from acknowledged, and disconnected from failed. Reconcile uncertain attempts before admitting retries: database fencing cannot prevent a stale browser from making external changes, so mutating jobs must not be blindly replayed after a lost connection.
+
+**Completion checks:** restart each component mid-run and mid-upload; duplicate/reorder updates; expire a lease; revoke a device; submit two jobs using the same test account from different machines. Confirm no lost acknowledged history, no stale overwrite, no duplicate published output, and no automatic re-execution of uncertain mutations.
+
+## Milestone 5 — Team workflow and UI/MCP parity
+
+**Outcome:** teammates can use the hosted UI or local MCP for normal daily work with the same permissions and attribution.
+
+Finish member invitations/roles, active-device management, worker onboarding/status, per-member provider selection, shared verification sessions, run filters, replay-on-my-machine, demo generation, and private evidence links. Display the selected worker, target environment, actual build provenance, and last confirmed update clearly.
+
+Wire local MCP to authenticated shared operations. Scope its access to the member and record the client/device actor without trusting caller-supplied attribution. Apply environment execution/write permissions at admission and execution; provide minimal test-account access for the pilot. Audit external publication, cancellation, settings changes, and artifact access where required. Preserve existing session summaries, demos, provider accounts, and mocked-suite provenance.
+
+**Completion checks:** the same allowed/denied actions behave consistently in UI, local MCP, and direct API requests; removing access terminates new operations and live visibility; another member's replay uses the requester's authorized machine and provider; publication records the authorized requester and output.
+
+## Milestone 6 — Migration and team rollout
+
+**Outcome:** the pilot team uses the shared system with a tested recovery procedure and an owner for operations.
+
+Rehearse importing existing checker cases, sessions, jobs, and retained artifacts; product-backend data is outside this migration. Check IDs, references, counts, hashes, revisions, tombstones, and unknown attribution. Map each local repository/provider to its owning worker without moving credential homes. Take a final snapshot and freeze legacy checker shared-data writes during cutover; keep execution journals local. Define rollback before enabling new authoritative writes, including how to preserve any post-cutover jobs/events rather than discard them.
+
+Finish production configuration, least-privilege storage/database access, backup and restore, object lifecycle rules, metrics/alerts, request/upload/concurrency limits, and spend monitoring. Document enrollment, update, disconnect recovery, revocation, retention, and support procedures. Test the supported OS installation from a clean developer setup.
+
+**Completion checks:** two people on two machines complete verification and demo workflows; uploaded evidence remains available with both machines offline; a restore reconciles database references and retained objects; an old worker version fails clearly or drains safely; migration counts/hashes match; the agreed retention and usage limits work.
+
+## Implementation order and scope
+
+Use incremental changes: standalone checker backend, identity, and repositories → worker protocol and one case → local demo and media upload → recovery drills → team UI/local MCP → migration and rollout. Build enough UI for each milestone to be reviewable. Authentication, authorization, and basic fault handling belong in every applicable milestone; later milestones extend coverage and recovery rather than introduce those protections for the first time.
+
+Backlog member attribution is foundational work in milestone 1. Concurrent-environment presentation and environment write permissions enter milestones 4–5. Backend-derived mocking should store its suite/schema provenance through the same run/artifact interfaces. Persona configuration can follow the team pilot. Provider harnesses, summaries, and voice demos should be adapted to worker ownership and shared storage rather than rebuilt.
+
+Defer public signup, billing, multiple customer organizations, cross-member machine control, a desktop shell, full offline job creation, and hosted HTTP MCP unless a launch requirement makes one necessary. Central browser/demo execution is outside the confirmed architecture.
+
+Set calendar dates after the identity/OS/hosting choices and the milestone-2 worker proof. The main estimation risks are auth integration, browser/provider installation on the supported OSes, artifact upload sizes, disconnect behavior, and the quality of legacy data. No implementation sessions, infrastructure resources, or deployments are created by this plan.
