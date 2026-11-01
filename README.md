@@ -154,3 +154,7 @@ node tests/provider-smoke.ts --provider codex --model MODEL_ID --broken
 The browser playback regression is documented in [tests/README.md](tests/README.md).
 
 Run cost estimates use `tokentally` with per-run LiteLLM pricing snapshots. Token counts come from the provider; estimated API-equivalent cost is separate from subscription billing. See [usage and pricing](docs/usage-pricing.md).
+
+## Session summaries and optional voice demos
+
+Open **Session PR summary** on a run to review/copy/download one standard report across explicit run membership. Combine batches in the UI or use MCP sessions. **Settings → Voice narration** configures default-off narration using Codex `gpt-6-luna` and a separately credentialed Realtime speech integration; a per-demo override requests narrated or silent output. Generation never publishes, and reads never trigger paid work. See [session and voice demo guide](docs/session-demos.md).

@@ -36,6 +36,12 @@ import { saveInstance, deleteInstance, selectInstance, getInstance, loginCommand
 import { z, ZodError } from 'zod';
 import { artifactPath, jobSummary, readEvidence, type ArtifactId } from '../agent-view.ts';
 import { liveFrame, readNetwork, readObservation } from '../observations.ts';
+import { voiceReadiness, saveVoiceSettings } from '../voice-settings.ts';
+import { createSession, getSession, listSessions, addSessionRuns, syncSessions, primarySessionId } from '../sessions.ts';
+import { generateSessionSummary } from '../session-summary.ts';
+import { generateDemo, demoView, demoFile, cancelDemo, shutdownDemos } from '../demos.ts';
+import { publishEvidence } from '../publication.ts';
+import { publishSchema } from '../demo-contract.ts';
 
 // Local app: list Qase cases, pick a worktree, run cases in parallel with agents, watch progress and replay videos.
 
@@ -97,17 +103,20 @@ const TYPES: Record<string, string> = {
   '.md': 'text/markdown; charset=utf-8',
   '.ts': 'text/plain; charset=utf-8',
   '.json': 'application/json',
+  '.vtt': 'text/vtt; charset=utf-8',
+  '.m4a': 'audio/mp4',
 };
 
 // Serves run artifacts only (videos, screenshots, comments, specs), never anything outside runs/ or e2e/generated/.
-const serveFile = (req: IncomingMessage, res: ServerResponse, requested: string) => {
+const serveFile = (req: IncomingMessage, res: ServerResponse, requested: string, resolvedArtifact = false) => {
   if (!existsSync(requested)) return json(res, 404, { error: 'not found' });
   const path = realpathSync(requested);
   const allowed = [join(root, 'runs') + '/', join(root, 'e2e/generated') + '/'];
   if (
-    !allowed.some((dir) => path.startsWith(dir)) ||
-    !existsSync(path) ||
-    !/(?:verification\.mp4|pr-comment\.md|[^/]+\.spec\.ts)$/.test(path)
+    !resolvedArtifact &&
+    (!allowed.some((dir) => path.startsWith(dir)) ||
+      !existsSync(path) ||
+      !/(?:verification\.mp4|pr-comment\.md|[^/]+\.spec\.ts)$/.test(path))
   )
     return json(res, 404, { error: 'not found' });
   const size = statSync(path).size;
@@ -180,7 +189,70 @@ const handleRequest = (req: IncomingMessage, res: ServerResponse) =>
           model: config.model,
           authMode: 'subscription',
         },
+        voiceNarration: voiceReadiness(),
       });
+    if (url.pathname === '/api/settings/voice') {
+      if (req.method === 'GET') return json(res, 200, voiceReadiness());
+      if (req.method === 'POST') return json(res, 200, saveVoiceSettings(yield* sdk(() => readBody(req))));
+    }
+    if (url.pathname === '/api/sessions') {
+      syncSessions(listJobs());
+      if (req.method === 'GET') return json(res, 200, listSessions());
+      if (req.method === 'POST') return json(res, 201, createSession(yield* sdk(() => readBody(req)), listJobs()));
+    }
+    const sessionMatch = url.pathname.match(/^\/api\/sessions\/([\w-]+)(?:\/(summary|runs))?$/);
+    if (sessionMatch) {
+      syncSessions(listJobs());
+      const session = getSession(sessionMatch[1]);
+      if (req.method === 'POST' && sessionMatch[2] === 'runs')
+        return json(res, 200, addSessionRuns(session.id, yield* sdk(() => readBody(req)), listJobs()));
+      if (req.method === 'GET' && !sessionMatch[2]) return json(res, 200, session);
+      if (sessionMatch[2] === 'summary' && ['GET', 'POST'].includes(req.method!)) {
+        const summary = generateSessionSummary(session, session.jobIds.map(getJob), `http://localhost:${PORT}`);
+        if (url.searchParams.get('format') === 'markdown') {
+          res.writeHead(200, {
+            'content-type': TYPES['.md'],
+            'content-disposition': `attachment; filename="session-${session.id}.md"`,
+          });
+          return res.end(summary.markdown);
+        }
+        return json(res, 200, summary);
+      }
+    }
+    if (req.method === 'POST' && url.pathname === '/api/publish') {
+      const input = publishSchema.parse(yield* sdk(() => readBody(req)));
+      syncSessions(listJobs());
+      const session = input.sessionId ? getSession(input.sessionId) : undefined;
+      const members = session ? session.jobIds.map(getJob) : [getJob(input.jobId!)];
+      return json(res, 200, yield* sdk((signal) => publishEvidence(input, members, session, signal)));
+    }
+    const demoMatch = url.pathname.match(/^\/api\/jobs\/([\w-]+)\/demos(?:\/([a-f0-9]{64})\/(video|audio|captions|script|usage|cancel))?$/);
+    if (demoMatch) {
+      const job = getJob(demoMatch[1]);
+      if (!job) return json(res, 404, { code: 'NOT_FOUND', error: 'Unknown job' });
+      const [, , id, kind] = demoMatch;
+      if (!id && req.method === 'GET')
+        return json(res, 200, {
+          demos: demoView(job),
+          silentVideo: job.video ? `/api/jobs/${job.id}/artifacts/video` : null,
+        });
+      if (!id && req.method === 'POST') {
+        const input = yield* sdk(() => readBody(req));
+        return json(res, 202, yield* sdk(() => generateDemo(job, input)));
+      }
+      if (id && kind === 'cancel' && req.method === 'POST') return json(res, 200, yield* sdk(() => cancelDemo(job, id)));
+      if (id && req.method === 'GET') {
+        const file = demoFile(job, id, kind);
+        if (!file)
+          return json(res, 404, {
+            code: 'ARTIFACT_MISSING',
+            error: 'Demo artifact unavailable',
+          });
+        if (url.searchParams.get('download') === '1')
+          res.setHeader('content-disposition', `attachment; filename="${job.id}-${kind}${extname(file)}"`);
+        return serveFile(req, res, file, true);
+      }
+    }
     if (req.method === 'GET' && url.pathname === '/api/environments')
       return json(
         res,
@@ -278,7 +350,9 @@ const handleRequest = (req: IncomingMessage, res: ServerResponse) =>
         .parse(yield* sdk(() => readBody(req)));
       try {
         if (caseCatalog.get(project, id).source.kind !== 'qase')
-          throw Object.assign(new Error('This ID belongs to a local case'), { code: 'SOURCE_CONFLICT' });
+          throw Object.assign(new Error('This ID belongs to a local case'), {
+            code: 'SOURCE_CONFLICT',
+          });
       } catch (e) {
         if ((e as any).code !== 'NOT_FOUND') throw e;
       }
@@ -356,6 +430,7 @@ const handleRequest = (req: IncomingMessage, res: ServerResponse) =>
               ? jobSummary(j, `http://localhost:${PORT}`)
               : {
                   ...j,
+                  sessionId: primarySessionId(j, listJobs()),
                   caseSnapshot: undefined,
                   environmentSnapshot: undefined,
                   identityKey: undefined,
@@ -476,6 +551,7 @@ const handleRequest = (req: IncomingMessage, res: ServerResponse) =>
         ...job,
         video: job.video && existsSync(job.video) ? job.video : undefined,
         prComment: job.prComment && existsSync(job.prComment) ? job.prComment : undefined,
+        sessionId: primarySessionId(job, listJobs()),
         caseSnapshot: undefined,
         environmentSnapshot: undefined,
         identityKey: undefined,
@@ -528,6 +604,7 @@ await runMain(
         () =>
           Effect.gen(function* () {
             yield* shutdownJobsEffect;
+            yield* sdk(() => shutdownDemos()).pipe(Effect.ignore);
             server.closeAllConnections();
             yield* sdk(() => new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())))).pipe(
               Effect.ignore,

@@ -35,19 +35,21 @@ export function cleanRunCaches(
   settings: StorageSettings,
   roots: { runs: string; generated: string },
   now = Date.now(),
+  activeArtifactDirs: string[] = [],
 ): CleanupReport {
   const report: CleanupReport = { at: new Date(now).toISOString(), removed: [], skipped: [], failed: [] };
   if (settings.runCacheAfterDays === null) return report;
   const cutoff = now - settings.runCacheAfterDays * 86400000;
   const busy = jobs.filter(active);
   const protectedSources = new Set(busy.map((job) => job.replayOf));
-  const protectedPaths = new Set(
-    busy.flatMap((job) => [job.runDir, job.specSelection?.sourceRun].filter((path): path is string => !!path).map((path) => resolve(path))),
-  );
+  const protectedPaths = new Set([
+    ...activeArtifactDirs.map((path) => resolve(path)),
+    ...busy.flatMap((job) => [job.runDir, job.specSelection?.sourceRun].filter((path): path is string => !!path).map((path) => resolve(path))),
+  ]);
   for (const job of jobs) {
     if (!job.runDir || job.cacheClearedAt) continue;
     if (active(job) || protectedSources.has(job.id) || protectedPaths.has(resolve(job.runDir))) {
-      report.skipped.push({ id: job.id, reason: 'Run or dependent verification is active' });
+      report.skipped.push({ id: job.id, reason: 'Run, dependent verification or demo generation is active' });
       continue;
     }
     const finished = Date.parse(job.finishedAt ?? job.createdAt);

@@ -25,6 +25,7 @@ export type ClaudeRun = {
   signal?: AbortSignal;
   onMetrics?: (metrics: RunMetrics) => void;
   log?: (line: string) => void;
+  maxTurns?: number;
 };
 export type ClaudeOutcome = { exitCode: number; resultText: string; events: Record<string, any>[]; metrics: RunMetrics };
 export const runClaudeEffect = (run: ClaudeRun) =>
@@ -52,6 +53,7 @@ export const runClaudeEffect = (run: ClaudeRun) =>
         ...(run.addDirs ?? []).flatMap((d) => ['--add-dir', d]),
         ...(run.mcpConfigPath ? ['--mcp-config', run.mcpConfigPath] : []),
         '--strict-mcp-config',
+        ...(run.maxTurns ? ['--max-turns', String(run.maxTurns)] : []),
       ];
       const started = Date.now(),
         events: Record<string, any>[] = [],

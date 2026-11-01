@@ -3,7 +3,7 @@ import { api, errorMessage, preferences, type Api } from './api.ts';
 import { caseKey, terminal } from './format.ts';
 import type { CaseSummary, Environment, JobView, Provider, Target, Worktree, SidebarItem } from './types.ts';
 export type SidebarGrouping = 'project-status' | 'project' | 'status' | 'none';
-export type SettingsTab = 'connections' | 'environments' | 'sidebar' | 'archived' | 'storage';
+export type SettingsTab = 'connections' | 'environments' | 'voice' | 'sidebar' | 'archived' | 'storage';
 export type DialogName = 'models' | 'settings' | 'options' | 'import' | null;
 export type WorkspaceState = {
   cases: CaseSummary[];

@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { readFileSync, writeFileSync, rmSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { Effect } from 'effect';
 import { evidenceFixture } from './fixtures/evidence.ts';
 import { verifyEffect } from '../src/verify.ts';
@@ -149,6 +149,7 @@ test('evidence fixture', async ({ page }) => {
     assert.equal(summary.replays[0].provenance.kind, reused ? 'stabilization' : 'replay', JSON.stringify(summary));
     assert.equal(executions, ['pass', 'product-failure'].includes(scenario) ? 1 : 2);
     assert.ok(summary.replays[0].mp4Bytes > 0);
+    assert.ok(JSON.parse(readFileSync(join(dirname(summary.replays[0].video), 'timeline.json'), 'utf8')).steps.length > 0);
     assert.equal(JSON.parse(readFileSync(join(f.runDir, 'verification.json'), 'utf8')).source, summary.replays[0].provenance.kind);
     assert.equal(summary.verification.steps[0].verdict, failed ? 'fail' : 'pass');
     if (scenario === 'additional-target') assert.equal(summary.replays[1].provenance.kind, 'replay');

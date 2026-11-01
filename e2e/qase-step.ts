@@ -3,12 +3,22 @@ import { join, basename } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { observeBrowser } from '../src/browser-observer.ts';
 import { atomicJson } from '../src/network.ts';
+import type { ReplayTimeline, RecordedStep } from '../src/replay-timeline.ts';
 
 // The shared helper is imported by generated specs, including previously saved replays.
 const observers = new WeakMap<Page, ReturnType<typeof observeBrowser>>();
+const timelines = new WeakMap<Page, { data: ReplayTimeline; save: () => void }>();
 if (process.env.E2E_OBSERVATION_RUN_DIR) {
   test.beforeEach(async ({ page }) => {
     const artifactDir = process.env.E2E_OUTPUT_DIR!;
+    const data: ReplayTimeline = { version: 1, clock: 'wall', steps: [] };
+    const save = () => atomicJson(join(artifactDir, 'timeline.json'), data);
+    timelines.set(page, { data, save });
+    page.once('close', () => {
+      data.closedAt = Date.now();
+      save();
+    });
+    save();
     observers.set(
       page,
       observeBrowser(page, {
@@ -56,6 +66,15 @@ const showCaption = (page: Page, text: string) =>
 
 export const qaseStep = async <T>(page: Page, position: number, title: string, body: () => Promise<T>): Promise<T> =>
   test.step(`Step ${position}: ${title}`, async () => {
+    const timeline = timelines.get(page);
+    const recorded: RecordedStep = {
+      position,
+      title,
+      startedAt: Date.now(),
+      status: 'incomplete',
+    };
+    timeline?.data.steps.push(recorded);
+    timeline?.save();
     if (process.env.E2E_OBSERVATION_RUN_DIR)
       atomicJson(join(process.env.E2E_OBSERVATION_RUN_DIR, 'live/action.json'), {
         name: `Step ${position}: ${title}`,
@@ -66,8 +85,15 @@ export const qaseStep = async <T>(page: Page, position: number, title: string, b
     const reshow = () => void showCaption(page, `Step ${position}: ${title}`);
     page.on('load', reshow);
     try {
-      return await body();
+      const result = await body();
+      recorded.status = 'passed';
+      return result;
+    } catch (error) {
+      recorded.status = 'failed';
+      throw error;
     } finally {
+      recorded.endedAt = Date.now();
+      timeline?.save();
       page.off('load', reshow);
     }
   });
@@ -79,7 +105,10 @@ export const cleanup = async (page: Page, what: string, body: () => Promise<void
     try {
       await body();
     } catch (error) {
-      test.info().annotations.push({ type: 'cleanup-failed', description: `${what}: ${String(error).split('\n')[0]}` });
+      test.info().annotations.push({
+        type: 'cleanup-failed',
+        description: `${what}: ${String(error).split('\n')[0]}`,
+      });
       console.warn(`cleanup failed (${what}) on ${page.url()}: ${String(error).split('\n')[0]}`);
     }
   });

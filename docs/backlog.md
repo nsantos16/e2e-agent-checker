@@ -14,15 +14,13 @@ A verification drives the frontend in a browser. A local run serves a frontend w
 
 **Read:** `src/slots.ts`, [environments](environments.md), [browser and network evidence](browser-observability.md), [ADR-0003](adr/0003-frontend-worktrees-against-shared-dev-backend.md), [PoC results](poc-results.md).
 
-## 3. Session summary for a pull request
+## 3. Session summary for a pull request — implemented
 
-Recorded 2026-10-19.
+Implemented 2026-11-01, including optional voice demos.
 
-A finished run writes `runs/<id>/pr-comment.md` from `prComment()` in `src/verify.ts`: a per-case step table, replay status, and video path. `attach_to_pr` posts that one job's comment and can attach that job's MP4. There is no tool or endpoint that summarizes a session of runs into one pull-request explanation of the demo and its videos.
+Stable batch/session membership, explicit cross-batch collections, standardized evidence summaries, API/MCP/UI access and explicit deduplicated publication are implemented. Voice narration defaults off and has shared persisted settings, per-demo overrides, bounded subscription text generation, a separate Realtime speech integration, content caches, cancellation, isolated usage, and synchronized MP4/audio/caption artifacts. Original silent evidence and verification outcomes are retained.
 
-**Request:** Add an MCP tool or endpoint that returns the pull-request summary for the session. Use it to publish, and to generate one standard format for how demos and videos from this tool are explained.
-
-**Read:** `prComment` in `src/verify.ts`, `attach_to_pr` in `src/mcp-server.ts`, [agent MCP](agent-mcp.md), [MCP contract](mcp-contract.md).
+See [session summaries and voice demos](session-demos.md) for the contract, setup, limitations and verification. Automated checks use local model/speech/publication fixtures; live credentialed speech and actual PR publication were not exercised during implementation.
 
 ## 4. Track each run by the team member who started it
 

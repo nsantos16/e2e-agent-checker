@@ -140,6 +140,19 @@
       },
     ];
     window.fetch = async (path, options) => {
+      if (path === '/api/settings/voice')
+        return Response.json({
+          settings: {
+            enabled: false,
+            textModel: 'gpt-6-luna',
+            speechModel: 'gpt-realtime-2.1-mini',
+            voice: 'marin',
+            speechCredentialRef: null,
+            revision: 'fixture',
+          },
+          speech: { status: 'not-configured', verified: false },
+        });
+      if (/^\/api\/jobs\/[^/]+\/demos$/.test(path)) return Response.json({ demos: [], silentVideo: null });
       if (path === '/api/environments' && options?.method === 'POST') {
         const body = JSON.parse(options.body);
         const saved = { ...body.environment, revision: 'updated' };

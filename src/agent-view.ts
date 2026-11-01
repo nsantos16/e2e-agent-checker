@@ -5,6 +5,8 @@ import type { Job } from './jobs.ts';
 import { readJson } from './network.ts';
 import { readNetwork } from './observations.ts';
 import { explorationReportPath } from './saved-specs.ts';
+import { primarySessionId } from './sessions.ts';
+import { demoView } from './demos.ts';
 
 export const terminal = (job: { status: string }) => !['queued', 'running', 'cancelling'].includes(job.status);
 export const clip = (value: string | undefined, length = 500) => (value && value.length > length ? value.slice(0, length) + '…' : value);
@@ -25,6 +27,8 @@ export function jobSummary(job: Job, base: string) {
     providerSnapshot: job.providerSnapshot,
     retryAt: job.retryAt,
     batchId: job.batchId,
+    sessionId: primarySessionId(job),
+    build: job.build,
     createdAt: job.createdAt,
     cacheClearedAt: job.cacheClearedAt,
     timing: job.timing,
@@ -158,6 +162,15 @@ export function readEvidence(job: Job, base: string, options: { artifact?: strin
       verdict: job.outcome ?? (historical ? null : (job.exploreVerdict ?? report?.verdict ?? null)),
       specSelection: job.specSelection,
       historicalExploration: job.historicalExploration,
+      sessionId: primarySessionId(job),
+      sessionSummaryUrl: `${base}/api/sessions/${primarySessionId(job)}/summary`,
+      demos: demoView(job, base).map((d) => ({
+        id: d.id,
+        status: d.status,
+        options: d.options,
+        error: d.error,
+        artifacts: d.artifacts,
+      })),
       // Keep a completed failure distinct from an infrastructure failure; report is available in full on demand.
       failedStepCount: failedSteps.length,
       failedSteps: failedSteps.slice(0, 10).map((s) => ({

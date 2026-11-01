@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { z } from 'zod';
+import { scrubSpeechCredentials } from './voice-settings.ts';
 
 export const environmentId = z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/);
 export const secretRef = z
@@ -90,6 +91,7 @@ export const listEnvironments = (): Environment[] => {
 export function childEnvironment(source: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   listEnvironments();
   const env = { ...source };
+  scrubSpeechCredentials(env);
   for (const name of credentialVariables) delete env[name];
   return env;
 }

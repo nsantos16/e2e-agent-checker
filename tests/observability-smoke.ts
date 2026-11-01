@@ -7,6 +7,8 @@ import { stageTools } from '../src/stage-tools.ts';
 import { readNetwork, readObservation } from '../src/observations.ts';
 import { replay } from '../src/replay.ts';
 import { writeReplayEnv } from '../src/codify.ts';
+import { alignTimeline } from '../src/replay-timeline.ts';
+import { videoDuration } from '../src/demo-media.ts';
 
 const root = new URL('..', import.meta.url).pathname;
 const runDir = mkdtempSync(join(root, 'runs/observation-smoke-'));
@@ -116,6 +118,12 @@ try {
   });
   assert.equal(replayed.status, 'passed');
   assert(replayed.video && existsSync(replayed.video));
+  const timeline = JSON.parse(readFileSync(join(runDir, 'replay-observation/timeline.json'), 'utf8'));
+  assert(timeline.closedAt, 'Replay timing records the page-close boundary');
+  const timedSteps = alignTimeline(timeline, await videoDuration(replayed.video!));
+  assert.equal(timedSteps.length, 1);
+  assert.equal(timedSteps[0].status, 'passed');
+  assert(timedSteps[0].endSeconds > timedSteps[0].startSeconds);
   const network = readNetwork(runDir, { errorsOnly: true });
   assert(network.capturedStages.includes('replay-observation'));
   assert(network.capturedStages.some((s) => s.startsWith('codify/')));

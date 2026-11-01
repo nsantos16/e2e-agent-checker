@@ -19,8 +19,11 @@ import { claudeUsage, emptyUsage, mergeUsage, noModelUsage, type Usage, type Run
 import { explorationReportPath, runsRoot, type BuildProvenance, type SpecSelection } from './saved-specs.ts';
 import { organizeItem, type ItemOrganization } from './organization.ts';
 import { cleanRunCaches, type CleanupReport } from './run-cache.ts';
+import { activeDemoRunDirs } from './demos.ts';
 import { appSettings } from './settings.ts';
 import { profilePath } from './providers/instances.ts';
+import { getSession, primarySessionId, syncSessions } from './sessions.ts';
+import { sessionIdSchema } from './demo-contract.ts';
 
 export type JobStatus = 'queued' | 'running' | 'cancelling' | 'done' | 'failed' | 'cancelled' | 'interrupted';
 export type Job = ItemOrganization & {
@@ -75,6 +78,13 @@ export type Job = ItemOrganization & {
   };
   retryAt?: number;
   batchId?: string;
+  sessionId?: string;
+  build?: {
+    commit: string;
+    branch: string;
+    dirty: boolean;
+    capturedAt: string;
+  };
   replayOf?: string;
   confirmationReplay?: boolean;
   forceFresh?: boolean;
@@ -130,7 +140,13 @@ for (const j of jobs.values()) {
     recovered = true;
   }
 }
+for (const job of jobs.values())
+  if (!job.sessionId) {
+    job.sessionId = primarySessionId(job, [...jobs.values()]);
+    recovered = true;
+  }
 if (recovered) persist();
+syncSessions([...jobs.values()]);
 const queue: Job[] = [];
 const controllers = new Map<string, AbortController>();
 const active = new Set<Job>();
@@ -354,6 +370,7 @@ export const batchSchema = z
     targets: z.array(targetSchema).min(1).max(8).optional(),
     limits: limitsSchema.default({ timeoutMs: 20 * 60_000, maxAttempts: 8 }),
     idempotencyKey: z.string().min(1).max(128).optional(),
+    sessionId: sessionIdSchema.optional(),
   })
   .strict();
 const submission = Semaphore.makeUnsafe(1);
@@ -363,6 +380,7 @@ const submitBatchLockedEffect = (input: unknown) =>
   Effect.gen(function* () {
     if (stopping) return yield* Effect.fail(new RunError('APP_UNAVAILABLE', 'Server is stopping'));
     const b = batchSchema.parse(input);
+    if (b.sessionId) getSession(b.sessionId);
     const environment = yield* (yield* EnvironmentRepository).get(b.environmentId);
     if (b.userId && b.role && b.userId !== b.role) throw new RunError('INVALID_INPUT', 'userId and legacy role must match');
     const user = getTestUser(environment, b.userId ?? b.role);
@@ -439,6 +457,7 @@ const submitBatchLockedEffect = (input: unknown) =>
               nativeProfile: profilePath(selection.instance),
             },
             batchId,
+            sessionId: b.sessionId ?? batchId,
             limits: b.limits,
             forceFresh: b.forceFresh,
             buildId: b.buildId,
@@ -452,6 +471,7 @@ const submitBatchLockedEffect = (input: unknown) =>
       ),
     );
     for (const j of created) jobs.set(j.id, j);
+    syncSessions([...jobs.values()]);
     persist();
     queue.push(...created);
     pump();
@@ -564,12 +584,14 @@ export function replayJob(id: string) {
     providerSnapshot: old.providerSnapshot,
     limits: old.limits,
     replayOf: id,
+    sessionId: primarySessionId(old, [...jobs.values()]),
     status: 'queued',
     createdAt: new Date().toISOString(),
     log: [],
     usage: noModelUsage('replay'),
   };
   jobs.set(job.id, job);
+  syncSessions([...jobs.values()]);
   persist();
   queue.push(job);
   pump();
@@ -583,7 +605,13 @@ export const listJobs = (includeDeleted = false) => [...jobs.values()].filter((j
 let cleanupReport: CleanupReport | null = null;
 export const getCleanupReport = () => cleanupReport;
 export function cleanupRunCache() {
-  cleanupReport = cleanRunCaches(listJobs(true), appSettings.get(), { runs: runsRoot(), generated: join(root, 'e2e/generated') });
+  cleanupReport = cleanRunCaches(
+    listJobs(true),
+    appSettings.get(),
+    { runs: runsRoot(), generated: join(root, 'e2e/generated') },
+    Date.now(),
+    activeDemoRunDirs(),
+  );
   if (cleanupReport.removed.length) persist();
   return cleanupReport;
 }

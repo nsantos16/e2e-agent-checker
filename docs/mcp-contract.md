@@ -2,6 +2,8 @@
 
 > Current implementation: [Agent MCP v0.7](agent-mcp.md), including [automatic saved-spec reuse](saved-spec-reuse.md), local case CRUD, Qase refresh, compact responses, waits, evidence and browser frames. Provider preflight is now deferred until authoring is necessary.
 >
+> Session summary and optional narration extensions are implemented in [session summaries and voice demos](session-demos.md), using shared HTTP/MCP/UI schemas.
+>
 > Historical design baseline. See [implemented scope and verification](runtime-milestone.md) for current behavior, the T3-style UI, and the Cursor capability gate. Tables below describe the pre-implementation audit or proposed contract.
 
 Date: 2026-10-12. Status: proposed; not the current server implementation. See [next milestone](next-milestone.md) for the selected subscription-first direction and implementation order.

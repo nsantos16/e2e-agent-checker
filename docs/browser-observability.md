@@ -36,3 +36,7 @@ node tests/observability-smoke.ts
 ```
 
 The smoke test uses a disposable localhost page and makes **zero model calls**. It verifies live frame capture, an HTTP 503 with `smoke-request-503`, a dropped connection, automatic tool-result context, redaction, stabilization capture, step correlation, and replay capture/video. Verified run: `runs/observation-smoke-8FlbIh`, with evidence from explore, `codify/attempt.7QfGDt`, and replay. The app's browser checks cover error filtering, escaped response text, frame/player identity and live-to-closed transitions.
+
+## Narrated replay derivatives
+
+The shared `qaseStep` helper also records actual step timing/results in `timeline.json`. Optional voice demos reuse the saved replay and preserve silent evidence and on-page captions. They align narration to recording boundaries and may hold a final step frame while speech finishes. Timings are approximate at capture precision, and historical/custom recordings without the helper cannot be retroactively aligned. Synthetic voice is labeled in the UI and media. Generation is explicit, default-off, separately cancellable and does not change test results. See [session summaries and voice demos](session-demos.md).

@@ -183,6 +183,65 @@ test('real local API and stdio MCP expose compact jobs, selected diagnostics, pa
       assert.ok(!response.isError, JSON.stringify(response.content));
       return (response.structuredContent as any).data;
     };
+    const voice = await call('get_voice_settings', {});
+    assert.equal(voice.settings.enabled, false);
+    assert.equal(voice.speech.status, 'not-configured');
+    const { revision: voiceRevision, speechCredentialRef: unusedRef, ...voiceOptions } = voice.settings;
+    const voiceSaved = await call('save_voice_settings', {
+      expectedRevision: voiceRevision,
+      options: { ...voiceOptions, voice: 'cedar' },
+      speechCredentialRef: 'env://OFFLINE_SPEECH_FIXTURE',
+    });
+    const httpVoice = await (await fetch(base + '/api/settings/voice')).json();
+    assert.deepEqual(httpVoice, voiceSaved, 'UI HTTP and MCP use the same persisted settings');
+    const voiceHttpSaved = await (
+      await fetch(base + '/api/settings/voice', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          expectedRevision: voiceSaved.settings.revision,
+          options: voiceOptions,
+          speechCredentialRef: null,
+        }),
+      })
+    ).json();
+    assert.deepEqual(await call('get_voice_settings', {}), voiceHttpSaved);
+    const rawVoiceSecret = await client.callTool({
+      name: 'save_voice_settings',
+      arguments: {
+        expectedRevision: voiceHttpSaved.settings.revision,
+        options: voiceOptions,
+        speechCredentialRef: 'raw-api-key',
+      },
+    });
+    assert.equal(rawVoiceSecret.isError, true);
+    const sessions = await call('list_sessions', {});
+    assert.deepEqual(sessions.sessions.find((s: any) => s.id === 'agent-test')?.jobIds, ['agent-test']);
+    const session = await call('create_session', {
+      title: 'PR regression proof',
+      jobIds: ['agent-test'],
+    });
+    const summary = await call('get_session_summary', {
+      sessionId: session.id,
+    });
+    assert.equal(summary.counts.fail, 1);
+    assert.match(summary.markdown, /API rejected the request/);
+    assert.match(summary.markdown, /Failures, blocked and incomplete/);
+    const again = await (await fetch(base + `/api/sessions/${session.id}/summary`)).json();
+    assert.equal(again.revision, summary.revision);
+    assert.equal(again.markdown, summary.markdown, 'UI HTTP and MCP expose one standard format');
+    const markdown = await fetch(base + `/api/sessions/${session.id}/summary?format=markdown`);
+    assert.equal(await markdown.text(), summary.markdown);
+    assert.equal((await call('get_demos', { jobId: 'agent-test' })).demos.length, 0, 'summary reads never start narration');
+    const noPublish = await fetch(base + '/api/publish', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        sessionId: session.id,
+        pr: 'https://github.com/test/example/pull/1',
+      }),
+    });
+    assert.equal(noPublish.status, 400, 'publication is always explicit');
     const pricingEvidence = await call('get_evidence', { jobId: 'agent-test', artifact: 'pricing' });
     assert.match(pricingEvidence.text, /test-snapshot/);
     const usageEvidence = await call('get_evidence', { jobId: 'agent-test', artifact: 'usage' });

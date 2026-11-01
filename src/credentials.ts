@@ -53,6 +53,7 @@ const read = (ref: string) =>
   });
 export class CredentialStore extends Context.Service<CredentialStore, { read: typeof read }>()('checker/CredentialStore') {}
 export const CredentialStoreLive = Layer.succeed(CredentialStore, { read });
+export const resolveCredential = (ref: string, signal?: AbortSignal) => runEffect(read(ref), signal);
 export const resolveTestUserEffect = (user: TestUser) =>
   Effect.gen(function* () {
     const store = yield* CredentialStore;

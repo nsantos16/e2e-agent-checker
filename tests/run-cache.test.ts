@@ -115,3 +115,12 @@ test('cleanup refuses arbitrary paths, root directories and symbolic links', (t)
   assert.equal(readFileSync(join(outside, 'keep.txt'), 'utf8'), 'evidence');
   assert.ok(existsSync(join(template.runDir!, 'explore/report.json')));
 });
+test('cleanup protects terminal runs while narration is generating', (t) => {
+  const { roots, job } = setup(t);
+  const run = job('narrating');
+  const pending = cleanRunCaches([run], { runCacheAfterDays: 1 }, roots, now, [run.runDir!]);
+  assert.equal(pending.removed.length, 0);
+  assert.match(pending.skipped[0].reason, /demo generation/);
+  assert.ok(existsSync(run.runDir!));
+  assert.equal(cleanRunCaches([run], { runCacheAfterDays: 1 }, roots, now, []).removed.length, 1);
+});

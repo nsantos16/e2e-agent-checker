@@ -800,7 +800,10 @@ kbd {
 }
 .worktree-control {
   max-width: 240px;
-  flex: 1;
+}
+.composer-toolbar .worktree-control {
+  min-width: 180px;
+  flex: 1 1 200px;
 }
 .worktree-control > svg {
   width: 13px;
@@ -1097,7 +1100,14 @@ dialog::backdrop {
   white-space: pre-wrap;
 }
 .environment-control {
-  max-width: 155px;
+  max-width: 200px;
+}
+.composer-toolbar .environment-control {
+  min-width: 160px;
+  flex: 0 1 180px;
+}
+.environment-control select {
+  width: 100%;
 }
 .composer-toolbar {
   flex-wrap: wrap;
@@ -1330,9 +1340,6 @@ dialog::backdrop {
   .dock {
     padding: 10px 20px 15px;
   }
-  .worktree-control {
-    max-width: 165px;
-  }
   .composer-toolbar {
     flex-wrap: wrap;
   }
@@ -1390,9 +1397,6 @@ dialog::backdrop {
   .model-picker-body {
     grid-template-columns: 104px minmax(0, 1fr);
   }
-  .worktree-control {
-    max-width: 160px;
-  }
   .run-metrics {
     grid-template-columns: repeat(3, 1fr);
   }
@@ -1419,30 +1423,40 @@ dialog::backdrop {
   }
   .composer-toolbar {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 30px auto;
-    grid-template-areas: 'model options run' 'environment environment environment' 'worktree worktree worktree';
+    grid-template-columns: minmax(0, 1fr) 36px auto;
+    gap: 8px;
   }
   #model-button {
-    grid-area: model;
+    grid-column: 1;
+    grid-row: 1;
+    max-width: none;
+    min-height: 36px;
   }
   #options-open {
-    grid-area: options;
+    grid-column: 2;
+    grid-row: 1;
+    width: 36px;
+    height: 36px;
   }
   #run-selected {
-    grid-area: run;
+    grid-column: 3;
+    grid-row: 1;
+    min-height: 36px;
   }
   .environment-control {
-    grid-area: environment;
-    max-width: 100%;
+    grid-column: 1/-1;
+    grid-row: 2;
+    max-width: none;
   }
-  #environment {
+  .environment-control select {
     width: 100%;
   }
   .composer-toolbar .spacer {
     display: none;
   }
   .worktree-control {
-    grid-area: worktree;
+    grid-column: 1/-1;
+    grid-row: 3;
     max-width: 100%;
     padding-top: 0 !important;
     padding-bottom: 0 !important;
@@ -2947,4 +2961,320 @@ dialog::backdrop {
 .model-effort select {
   min-width: 0;
   max-width: 100%;
+}
+
+.voice-settings {
+  padding: 24px;
+}
+.narration-heading h3,
+.narration-heading h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.narration-heading h4 {
+  font-size: 13px;
+}
+.narration-heading p,
+.narration-help {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.voice-fields {
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  margin: 22px 0 0;
+  display: grid;
+  gap: 22px;
+}
+.voice-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  cursor: pointer;
+}
+.voice-toggle input[type='checkbox'],
+.session-members input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+}
+.voice-toggle strong {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.6;
+}
+.voice-toggle small {
+  display: block;
+  color: var(--muted);
+  line-height: 1.6;
+  margin-top: 4px;
+}
+.voice-section,
+.session-form {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.voice-section + .voice-section {
+  border-top: 1px solid var(--line);
+  padding-top: 22px;
+}
+.voice-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 16px;
+}
+.narration-field {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.narration-field input,
+.narration-field select {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding: 9px 10px;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--surface);
+}
+.narration-field input[readonly] {
+  color: var(--muted);
+  background: var(--bg);
+}
+.voice-connection {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 12px 14px;
+  background: var(--hover);
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.voice-connection strong {
+  margin-left: auto;
+  font-weight: 500;
+}
+.voice-connection small {
+  width: 100%;
+  color: var(--muted);
+}
+.narration-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  font-size: 12px;
+}
+.voice-actions {
+  border-top: 1px solid var(--line);
+  padding-top: 18px;
+}
+.narration-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 9px 14px;
+  border: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.5;
+  white-space: normal;
+}
+.narration-message {
+  margin: 16px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.narration-message:empty {
+  display: none;
+}
+.narration-message[role='alert'] {
+  color: var(--red);
+}
+.demo-panel,
+.session-panel {
+  min-width: 0;
+  display: grid;
+  gap: 20px;
+  padding: 22px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.session-panel {
+  margin-top: 22px;
+}
+.demo-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
+  gap: 16px;
+}
+.demo-actions {
+  align-items: flex-end;
+  justify-content: space-between;
+}
+.demo-actions .narration-help {
+  flex: 1 1 240px;
+  margin: 0;
+}
+.speech-readiness {
+  display: block;
+  margin-top: 4px;
+}
+.demo-artifact {
+  min-width: 0;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.demo-artifact .meta {
+  color: var(--muted);
+  font-size: 11px;
+}
+.demo-progress {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+.demo-progress span {
+  color: var(--muted);
+}
+.demo-artifact video {
+  display: block;
+  width: 100%;
+  margin: 16px 0;
+}
+.narration-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+}
+.narration-panel-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.session-content {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+}
+.session-disclosure {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.session-disclosure > summary {
+  padding: 14px;
+  cursor: pointer;
+}
+.session-disclosure > summary:hover {
+  background: var(--hover);
+  border-radius: 8px;
+}
+.session-disclosure > summary:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 3px;
+}
+.session-form {
+  padding: 16px;
+  border-top: 1px solid var(--line);
+}
+.session-form > button {
+  justify-self: start;
+}
+.session-members {
+  max-height: 200px;
+  overflow: auto;
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px;
+}
+.session-members label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.session-members label:hover {
+  background: var(--hover);
+}
+.session-members label span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.session-members strong,
+.session-members small {
+  display: block;
+  font-weight: 400;
+}
+.session-members small {
+  margin-top: 4px;
+  color: var(--muted);
+}
+.session-preview {
+  display: grid;
+  min-width: 0;
+  gap: 14px;
+}
+.session-markdown {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 480px;
+  overflow: auto;
+  margin: 0;
+  padding: 18px;
+  font-size: 12px;
+  line-height: 1.7;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+@media (max-width: 540px) {
+  .voice-settings,
+  .demo-panel,
+  .session-panel {
+    padding: 16px;
+  }
+  .voice-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .voice-actions > button,
+  .demo-actions > button {
+    flex: 1 1 100%;
+  }
+  .session-markdown {
+    padding: 12px;
+    font-size: 11px;
+  }
 }

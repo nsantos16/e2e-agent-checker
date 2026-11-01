@@ -87,7 +87,7 @@ Use `create_case`, `get_case`, `update_case` and `delete_case` for native case m
 | `cancel_job` / `replay_job` | Compact state / new job ID |
 | `attach_to_pr` | Publication acknowledgment |
 
-All 25 tools advertise schemas and read/write annotations. Initialization includes a short workflow; `checker://workflow` exposes the same guidance as an MCP resource. Successful tool calls include structured data and a JSON text fallback for clients that only consume text. Operational errors use `isError`, a code, a bounded message and a suggested next action. Standard schema errors are handled by the MCP SDK.
+All 34 tools advertise schemas and read/write annotations. Initialization includes a short workflow; `checker://workflow` exposes the same guidance as an MCP resource. Successful tool calls include structured data and a JSON text fallback for clients that only consume text. Operational errors use `isError`, a code, a bounded message and a suggested next action. Standard schema errors are handled by the MCP SDK.
 
 Network pagination is a newest-first offset over retained rows. During a live run, new rows may shift offsets; use returned row IDs for follow-up diagnosis. Logs are the last 80 retained entries, not a complete transcript. Artifacts are resolved by fixed IDs and canonical paths within the selected job's run directory; arbitrary filesystem reads are not exposed. Traces stay local and may contain application data.
 
@@ -102,3 +102,7 @@ Verification: real MCP SDK client against both a controlled HTTP fixture and the
 Claude/Codex native worker capability and subscription restrictions are unchanged. Cursor works as an MCP caller; its verification worker remains disabled until isolated tools can be guaranteed. Login itself remains in each provider's native flow. See [runtime status](runtime-milestone.md) and [capture limits](browser-observability.md).
 
 Usage summaries include `estimatedApiCostUsd`, `providerReportedCostUsd`, and `pricingSnapshotId`. Estimates use standard API rates and do not indicate subscription charges. Use `get_evidence({jobId,artifact:"pricing"})` for saved model rates/source/time, or `artifact:"usage"` for stage usage. These remain on demand to keep normal polling compact. See [usage and pricing](usage-pricing.md).
+
+## Session summaries and optional voice demos
+
+Use `list_sessions`, `create_session`, `add_session_runs` and `get_session_summary` for explicit membership and one standard PR summary. New batches group automatically; `sessionId` on submissions joins multiple batches. `get_voice_settings` / `save_voice_settings` persist the same Voice narration settings used by the UI. `generate_demo` explicitly requests narrated or silent output; `get_demos` only reads progress/artifacts and `cancel_demo` preserves the verification outcome. Defaults are off. `attach_to_pr` accepts exactly one of `sessionId` or `jobId`, `publish:true`, and a `video` choice (`silent`, `narrated`, `none`). See [session summaries and voice demos](session-demos.md) for complete schemas, credential references, caching, usage, limitations and examples.

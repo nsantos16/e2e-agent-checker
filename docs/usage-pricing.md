@@ -31,3 +31,7 @@ Pass this to `get_evidence`; `artifact:"usage"` returns the per-stage accounting
 - [T3 Code usage semantics](https://github.com/pingdotgg/t3code/blob/main/docs/user/usage.md)
 
 Each new run and stage records its selected instance, account fingerprint, model and supported options. The provider account/plan snapshot is identity metadata, not a quota or billed-cost estimate. Native usage-limit events retain reset times only when reported; see [provider instances](provider-instances.md).
+
+## Narration accounting
+
+Narration does not enter verification totals. Each demo manifest snapshots the selected text/speech model and voice, script-worker usage, measured Realtime speech token categories, standard-rate source/date, and cache-hit flags. Codex `gpt-6-luna` text uses its native subscription with a separately labeled API-equivalent estimate; `haiku` aliases are not priced by guessing a version. Speech uses a separate explicit API credential reference and records actual API response usage. Its dollar figure is a rate-based estimate, not an invoice; billed cost remains unknown. Partial/missing usage remains unavailable, and cached usage is provenance rather than a new charge. No per-minute price is invented. See [voice budgets, caches and sources](session-demos.md).

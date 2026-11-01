@@ -6,9 +6,11 @@ import type { Check, Environment, TestUser } from '../types.ts';
 import { Dialog, DialogHeader } from './Dialog.tsx';
 import { ArchivedSettings, SidebarSettings, StorageSettings } from './ManagementSettings.tsx';
 import { Icon } from './Icon.tsx';
+import { VoiceSettings } from './Demos.tsx';
 const sections = [
   { id: 'connections', name: 'Providers', icon: 'model' },
   { id: 'environments', name: 'Environments', icon: 'browser' },
+  { id: 'voice', name: 'Voice narration', icon: 'play' },
   { id: 'sidebar', name: 'Sidebar', icon: 'sidebar' },
   { id: 'archived', name: 'Archived', icon: 'archive' },
   { id: 'storage', name: 'Storage', icon: 'options' },
@@ -101,6 +103,7 @@ export function Settings({ open }: { open: boolean }) {
             </div>
           </div>
           {open && tab === 'environments' && <EnvironmentSettings missing={missing} />}
+          {open && tab === 'voice' && <VoiceSettings />}
           {open && tab === 'sidebar' && <SidebarSettings />}
           {open && tab === 'archived' && <ArchivedSettings />}
           {open && tab === 'storage' && <StorageSettings />}

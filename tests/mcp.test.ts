@@ -31,7 +31,14 @@ test('MCP schemas, structured responses, operational errors, and batch forwardin
     if (req.url === '/api/providers')
       return res.end(
         JSON.stringify([
-          { id: 'codex', name: 'Codex', installed: true, auth: 'subscription', ready: true, models: [{ id: 'model', name: 'Model' }] },
+          {
+            id: 'codex',
+            name: 'Codex',
+            installed: true,
+            auth: 'subscription',
+            ready: true,
+            models: [{ id: 'model', name: 'Model' }],
+          },
         ]),
       );
     if (req.url?.startsWith('/api/jobs/one/network?'))
@@ -42,7 +49,15 @@ test('MCP schemas, structured responses, operational errors, and batch forwardin
           dropped: 0,
           matching: 1,
           capturedStages: ['explore'],
-          requests: [{ id: 'request-1', method: 'GET', url: 'https://example.test/failure', status: 503, requestId: 'req-1' }],
+          requests: [
+            {
+              id: 'request-1',
+              method: 'GET',
+              url: 'https://example.test/failure',
+              status: 503,
+              requestId: 'req-1',
+            },
+          ],
         }),
       );
     if (req.url === '/api/jobs' && req.method === 'POST') return res.end('["one","two"]');
@@ -62,14 +77,24 @@ test('MCP schemas, structured responses, operational errors, and batch forwardin
   );
   try {
     const { tools } = await client.listTools();
-    assert.equal(tools.length, 29);
+    assert.equal(tools.length, 38);
     assert.ok(tools.every((t) => t.outputSchema));
     assert.equal(tools.find((t) => t.name === 'get_job')?.annotations?.readOnlyHint, true);
     assert.equal(tools.find((t) => t.name === 'verify_case')?.annotations?.readOnlyHint, false);
+    assert.equal(tools.find((t) => t.name === 'get_voice_settings')?.annotations?.readOnlyHint, true);
+    assert.equal(tools.find((t) => t.name === 'generate_demo')?.annotations?.readOnlyHint, false);
+    assert.equal(tools.find((t) => t.name === 'generate_demo')?.annotations?.openWorldHint, true);
+    assert.equal(tools.find((t) => t.name === 'get_session_summary')?.annotations?.readOnlyHint, true);
     assert.match(client.getInstructions() ?? '', /wait_jobs/);
-    const result = await client.callTool({ name: 'list_providers', arguments: {} });
+    const result = await client.callTool({
+      name: 'list_providers',
+      arguments: {},
+    });
     assert.equal((result.structuredContent as any).data.providers[0].auth, 'subscription');
-    const failed = await client.callTool({ name: 'get_job', arguments: { jobId: 'missing' } });
+    const failed = await client.callTool({
+      name: 'get_job',
+      arguments: { jobId: 'missing' },
+    });
     assert.equal(failed.isError, true);
     assert.match(JSON.stringify(failed.content), /NOT_FOUND/);
     const batch = await client.callTool({
@@ -82,6 +107,7 @@ test('MCP schemas, structured responses, operational errors, and batch forwardin
         confirmationReplay: true,
         forceFresh: true,
         buildId: 'new-build',
+        sessionId: 'chosen-session',
       },
     });
     assert.deepEqual((batch.structuredContent as any).data.jobIds, ['one', 'two']);
@@ -90,9 +116,15 @@ test('MCP schemas, structured responses, operational errors, and batch forwardin
     assert.equal(requests.at(-1).body.confirmationReplay, true);
     assert.equal(requests.at(-1).body.forceFresh, true);
     assert.equal(requests.at(-1).body.buildId, 'new-build');
+    assert.equal(requests.at(-1).body.sessionId, 'chosen-session');
     const nativeRun = await client.callTool({
       name: 'verify_case',
-      arguments: { project: 'LOCAL', caseId: 8, worktreePath: '/checkout', target: { provider: 'codex', model: 'model' } },
+      arguments: {
+        project: 'LOCAL',
+        caseId: 8,
+        worktreePath: '/checkout',
+        target: { provider: 'codex', model: 'model' },
+      },
     });
     assert.equal(nativeRun.isError, undefined);
     assert.deepEqual(requests.at(-1).body.cases, [{ project: 'LOCAL', id: 8 }]);
@@ -105,12 +137,22 @@ test('MCP schemas, structured responses, operational errors, and batch forwardin
     assert.equal(tools.find((t) => t.name === 'create_case')?.annotations?.readOnlyHint, false);
     assert.equal(tools.find((t) => t.name === 'delete_case')?.annotations?.destructiveHint, true);
     assert.equal(tools.find((t) => t.name === 'sync_case')?.annotations?.openWorldHint, true);
-    const network = await client.callTool({ name: 'get_network', arguments: { jobId: 'one', stage: 'explore' } });
+    const network = await client.callTool({
+      name: 'get_network',
+      arguments: { jobId: 'one', stage: 'explore' },
+    });
     assert.equal((network.structuredContent as any).data.requests[0].status, 503);
     assert.match(requests.at(-1).path, /errorsOnly=1/);
     assert.match(requests.at(-1).path, /stage=explore/);
     const before = requests.length;
-    const idle = await client.callTool({ name: 'wait_jobs', arguments: { jobIds: ['active'], revisions: { active: 'one' }, waitMs: 100 } });
+    const idle = await client.callTool({
+      name: 'wait_jobs',
+      arguments: {
+        jobIds: ['active'],
+        revisions: { active: 'one' },
+        waitMs: 100,
+      },
+    });
     assert.deepEqual((idle.structuredContent as any).data.jobs, []);
     assert.equal((idle.structuredContent as any).data.timedOut, true);
     assert.deepEqual((idle.structuredContent as any).data.pendingJobIds, ['active']);
@@ -120,7 +162,11 @@ test('MCP schemas, structured responses, operational errors, and batch forwardin
     }, 50);
     const changed = await client.callTool({
       name: 'wait_jobs',
-      arguments: { jobIds: ['active'], revisions: { active: 'one' }, waitMs: 1500 },
+      arguments: {
+        jobIds: ['active'],
+        revisions: { active: 'one' },
+        waitMs: 1500,
+      },
     });
     assert.equal((changed.structuredContent as any).data.jobs[0].revision, 'two');
     assert.equal((changed.structuredContent as any).data.timedOut, false);
@@ -128,7 +174,10 @@ test('MCP schemas, structured responses, operational errors, and batch forwardin
       status = 'done';
       revision = 'three';
     }, 50);
-    const completed = await client.callTool({ name: 'wait_jobs', arguments: { jobIds: ['active'], waitMs: 1500 } });
+    const completed = await client.callTool({
+      name: 'wait_jobs',
+      arguments: { jobIds: ['active'], waitMs: 1500 },
+    });
     assert.deepEqual((completed.structuredContent as any).data.pendingJobIds, []);
     assert.equal((completed.structuredContent as any).data.jobs[0].terminal, true);
     const publish = await client.callTool({

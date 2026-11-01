@@ -32,7 +32,7 @@ Store and API tests cover archive/restore of drafts, revision conflicts, deleted
 
 ## Agent MCP contract and API integration
 
-`npm test` includes real stdio MCP client tests against a controlled HTTP fixture and a separate local app with disposable job/artifact state. They cover all 29 tool schemas, tool annotations, batch waiting and revisions, failure summaries, case search/read, bounded network and artifact pages, canonical artifact boundaries, and on-demand image delivery with unchanged-frame suppression. They do not launch model calls or publish evidence.
+`npm test` includes real stdio MCP client tests against a controlled HTTP fixture and a separate local app with disposable job/artifact state. They cover all 38 tool schemas, tool annotations, batch waiting and revisions, failure summaries, case search/read, bounded network and artifact pages, canonical artifact boundaries, and on-demand image delivery with unchanged-frame suppression. They do not launch model calls or publish evidence.
 
 ## Environment login smoke
 
@@ -79,3 +79,9 @@ The [component comparison](../docs/sol61-batch-ablation.md) then compared the re
 ## Provider instances
 
 `providers.test.ts` uses real child processes implementing fake Claude and Codex native protocols, with isolated temporary profiles for two accounts each. `provider-api.test.ts` drives the built Settings/composer in headless Playwright against the real HTTP API and stdio MCP, with fake native accounts. No native credentials are read or changed. `provider-smoke.ts --provider claude-code --model sonnet` (or `--provider codex --model gpt-6.1-sol`, optionally `--instance ID`) is the separate opt-in live subscription fixture. See [native provider validation](../docs/provider-instances.md#verification) for recorded live results.
+
+## Session summaries and voice demos
+
+Native protocol fixtures also verify that narration uses the configured Codex/Claude default profile, keeps subscription authentication and snapshots identity/options. Retention coverage protects active demos, and session summaries distinguish historical passes from current failures and expired artifacts.
+
+`npm test` also covers explicit membership, missing/blocked/incomplete outcomes, HTTP/MCP settings parity, default-off behavior, content caches, cancellation/uncertain request receipts, isolated narration usage, Realtime protocol fixtures, real ffmpeg audio/video/subtitle packaging, and mocked PR publication. `node tests/demo-ui-smoke.ts` checks real UI settings, per-demo overrides, session summaries and missing-credential errors against a disposable local API, then runs the existing playback/workspace browser regressions. These tests do not call paid models or publish real comments. The browser observation smoke also checks actual replay timing. Live native script generation and credentialed Realtime synthesis require separate verification.

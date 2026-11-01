@@ -52,6 +52,19 @@
     ];
     window.fixtureDetails = {};
     window.fetch = async (path) => {
+      if (path === '/api/settings/voice')
+        return Response.json({
+          settings: {
+            enabled: false,
+            textModel: 'gpt-6-luna',
+            speechModel: 'gpt-realtime-2.1-mini',
+            voice: 'marin',
+            speechCredentialRef: null,
+            revision: 'fixture',
+          },
+          speech: { status: 'not-configured', verified: false },
+        });
+      if (/^\/api\/jobs\/[^/]+\/demos$/.test(path)) return Response.json({ demos: [], silentVideo: null });
       if (path === '/api/jobs') return Response.json(window.fixtureJobs);
       if (/^\/api\/jobs\/playback-[^/]+$/.test(path)) {
         const id = path.split('/').pop();

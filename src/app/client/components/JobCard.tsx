@@ -5,6 +5,7 @@ import { dollars, duration, modelName, number, outcomeLabel, STAGES, terminal } 
 import type { JobView } from '../types.ts';
 import { Icon } from './Icon.tsx';
 import { ObservationPanel } from './NetworkInspector.tsx';
+import { DemoPanel, SessionPanel } from './Demos.tsx';
 export function JobCard({ job: j }: { job: JobView }) {
   const { state: s, actions: store } = useWorkspace();
   const [busy, setBusy] = useState(false);
@@ -165,6 +166,7 @@ export function JobCard({ job: j }: { job: JobView }) {
         </p>
       )}
       {!j.cacheClearedAt && (active || open) && <ObservationPanel job={j} active={active} />}
+      {active && <SessionPanel key={j.id} job={detail ?? j} />}
       {open && detail && <RunEvidence job={j} detail={detail} active={active} />}
     </div>
   );
@@ -177,6 +179,7 @@ function RunEvidence({ job, detail, active }: { job: JobView; detail: JobView; a
   return (
     <div className="detail">
       {detail.video && <video ref={video} src={fileUrl(detail.video)} controls preload="metadata" />}
+      {detail.video && <DemoPanel job={detail} active={active} />}
       <div className="detail-content">
         {job.timing && (
           <div className="metrics">

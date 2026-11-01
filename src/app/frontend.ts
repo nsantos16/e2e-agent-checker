@@ -9,7 +9,7 @@ const newestSource = (path: string): number => {
 // Direct CLI and MCP startup also serve the current UI, without a separate dev server.
 export async function ensureFrontend() {
   const entry = join(frontendDirectory, 'index.html');
-  const inputs = ['src/app/client', 'src/providers/schema.ts', 'vite.config.ts', 'package-lock.json'].map((path) => join(root, path));
+  const inputs = ['src/app/client', 'src/providers/schema.ts', 'src/demo-contract.ts', 'vite.config.ts', 'package-lock.json'].map((path) => join(root, path));
   if (existsSync(entry) && inputs.every((path) => !existsSync(path) || newestSource(path) <= statSync(entry).mtimeMs)) return;
   const { build } = await import('vite');
   await build({ configFile: join(root, 'vite.config.ts'), logLevel: 'warn' });
@@ -19,5 +19,8 @@ export function frontendAsset(pathname: string): { body: Buffer; type: string } 
   if (!match) return null;
   const path = join(frontendDirectory, 'assets', match[1]);
   if (!existsSync(path)) return null;
-  return { body: readFileSync(path), type: match[2] === 'js' ? 'text/javascript; charset=utf-8' : 'text/css; charset=utf-8' };
+  return {
+    body: readFileSync(path),
+    type: match[2] === 'js' ? 'text/javascript; charset=utf-8' : 'text/css; charset=utf-8',
+  };
 }

@@ -3,7 +3,7 @@ import { runEffect } from './runtime/effect.ts';
 import { CheckerLive } from './runtime/services.ts';
 import { commandEffect } from './process.ts';
 import { readTestResult } from './test-results.ts';
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { writeReplayEnv } from './codify.ts';
 import { config } from './config.ts';
@@ -105,6 +105,8 @@ export const replayEffect = (opts: ReplayOptions) =>
         const final = qualifyAttempt(opts.evidenceContext, opts.reuseAttempt);
         if (Exit.isSuccess(conversion) && final.eligible) {
           const { manifest, result } = final;
+          const timeline = join(manifest.artifactDir, 'timeline.json');
+          if (existsSync(timeline)) copyFileSync(timeline, join(outDir, 'timeline.json'));
           return {
             status: result.status,
             exitCode: manifest.code,

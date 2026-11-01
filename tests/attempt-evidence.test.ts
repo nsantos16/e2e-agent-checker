@@ -364,6 +364,21 @@ test('promotion packages the manifest video without another test and retains fai
   for (const failed of [false, true]) {
     const f = evidenceFixture();
     try {
+      const timeline = {
+        version: 1,
+        clock: 'wall',
+        closedAt: 1500,
+        steps: [
+          {
+            position: 1,
+            title: 'Open',
+            status: failed ? 'failed' : 'passed',
+            startedAt: 1000,
+            endedAt: 1400,
+          },
+        ],
+      };
+      writeFileSync(join(f.artifactDir, 'timeline.json'), JSON.stringify(timeline));
       const { verified } = f.build(failed);
       const calls: string[] = [];
       const result = await runEffect(
@@ -398,6 +413,7 @@ test('promotion packages the manifest video without another test and retains fai
       assert.equal(result.provenance.independentRun, false);
       assert.equal(result.trace, f.trace);
       assert.equal(result.results, join(f.artifactDir, 'results.json'));
+      assert.deepEqual(JSON.parse(readFileSync(join(f.runDir, 'replay-fixture/timeline.json'), 'utf8')), timeline);
       assert.match(result.log, /fixture test execution/);
       if (failed) {
         assert.equal(result.failedStep, 'Step 1: Open');
