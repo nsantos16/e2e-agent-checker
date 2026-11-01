@@ -1,24 +1,24 @@
 # Team web architecture
 
-Status: independent checker backend and local-execution/shared-storage split confirmed by the user; implementation remains proposed. Prepared 2026-11-01 against `origin/main` at `1c3c5c59225804765cbd7c099caf36064dd5e1a3`. The working checkout is older; this audit used the main revision explicitly.
+Status: independent checker backend, local-execution/shared-storage split, and Clerk authentication confirmed by the user; implementation remains proposed. Clerk selected 2026-11-01 for the initial small-team rollout. The original code audit was prepared 2026-11-01 against `origin/main` at `1c3c5c59225804765cbd7c099caf36064dd5e1a3`; the working checkout was older, so that audit used the main revision explicitly.
 
 ## Selected architecture
 
-Keep the checker's existing React/Vite UI and Node/Effect verification pipeline. Build a standalone checker backend with its own PostgreSQL database, authentication, and private object storage, and separate execution into authenticated local workers. References to the existing codebase mean `e2e-agent-checker`, not the backend of an application being tested.
+Keep the checker's existing React/Vite UI and Node/Effect verification pipeline. Build a standalone checker backend with its own PostgreSQL database and private object storage, use Clerk for authentication, and separate execution into authenticated local workers. References to the existing codebase mean `e2e-agent-checker`, not the backend of an application being tested.
 
-Confirmed requirement: worktrees, verification, and demo generation execute locally on each developer's machine; status and artifacts are available in a shared team space. Central execution is outside the selected scope. Invite-only access for one internal organization remains the proposed admission policy. Hosting provider and identity provider remain open choices.
+Confirmed requirement: worktrees, verification, and demo generation execute locally on each developer's machine; status and artifacts are available in a shared team space. Central execution is outside the selected scope. Invite-only access for one internal organization remains the proposed admission policy. Clerk is the selected authentication service; the sign-in method enabled within Clerk and the hosting provider remain open choices.
 
 ### Independent backend boundary
 
-The checker is a standalone product with its own API, user and organization records, login sessions, job coordination, database migrations, storage permissions, configuration, and deployment lifecycle. Its backend is independently deployable from its web UI and local workers; those components can remain in this checker's repository with explicit API/protocol contracts.
+The checker is a standalone product with its own API, application user and organization records, job coordination, database migrations, storage permissions, configuration, and deployment lifecycle. A dedicated Clerk application manages its authentication identities and login sessions. Its backend is independently deployable from its web UI and local workers; those components can remain in this checker's repository with explicit API/protocol contracts.
 
 The application being tested is an external target. Local workers interact with its existing UI/API using configured test accounts. Backend-derived mocking can inspect explicitly supplied source code and schemas on the developer machine; it does not require installing checker routes, libraries, or database tables in the target backend. Target-specific behavior belongs in configuration or optional worker adapters, not imports of business-backend services into the hosted checker.
 
-Checker authentication and authorization use checker-owned records and sessions. An optional Google/GitHub/Microsoft sign-in uses a separately registered checker identity application. Reusing an identity provider does not reuse the product backend's login endpoints, cookies, authorization logic, or database.
+Checker authentication uses a dedicated Clerk application; checker authorization uses application-owned memberships, roles, and grants. Google/GitHub/Microsoft sign-in can be configured within that Clerk application. Reusing an identity provider does not reuse the product backend's login endpoints, cookies, authorization logic, or database. Backend independence permits this external authentication dependency.
 
 Use dedicated checker deployment resources, database credentials, and artifact storage permissions. Hosting may be chosen independently. The shared checker can serve sign-in, history, and uploaded evidence even when a target backend is unavailable; only work requiring that target should report its unavailability.
 
-The hosted service owns identity, permissions, shared cases, job requests, history, and evidence access. Local workers own repository worktrees, browser execution, native provider processes, target-app login, demo recording, narration orchestration, and media assembly. They connect outward to the service over HTTPS; teammates do not expose their laptop's HTTP server to the internet.
+The hosted checker service owns identity mappings, application permissions, shared cases, job requests, history, and evidence access; Clerk owns authentication and login-session state. Local workers own repository worktrees, browser execution, native provider processes, target-app login, demo recording, narration orchestration, and media assembly. They connect outward to the service over HTTPS; teammates do not expose their laptop's HTTP server to the internet.
 
 This preserves the current subscription workflow while making results available to the team. A personal worker only executes its owner's requests initially. Sharing a result does not give another member permission to run code on that machine or use its provider account.
 
@@ -50,24 +50,30 @@ The recent provider-instance, session-summary, demo, and archive features remain
 
 ## Identity, login, and permissions
 
-Choose Google/GitHub/Microsoft/OIDC sign-in for the independent checker, with invitations controlling admission and a checker-specific identity application. Bind accounts to the provider's stable issuer/subject identity, not an editable display name. Store membership and login sessions in the checker's own database. Disable public signup and self-service organization creation for the pilot. Avoid building password recovery and MFA ourselves; use the identity provider's policies.
+**Selected authentication service: Clerk.** Use a dedicated Clerk application for the initial small internal team, with its React integration and server SDK in the independent checker API. Clerk handles sign-in, authentication identities, and login sessions. PostgreSQL stores application users, identity mappings, permissions, run attribution, and audit records. Sources: [Clerk authentication model](https://clerk.com/docs/guides/how-clerk-works/overview), [React integration](https://clerk.com/docs/react/getting-started/quickstart), [Fastify integration](https://clerk.com/docs/fastify/getting-started/quickstart).
 
-**Recommended candidate: Better Auth with PostgreSQL.** Its documented database sessions and organization plugin cover useful foundations: session expiry/revocation, memberships, roles, and invitations. Validate its Node handler, chosen identity provider, migrations, and revocation behavior in a small integration spike before committing to a version. Domain authorization remains our responsibility. Sources: [sessions](https://better-auth.com/docs/concepts/session-management), [organizations](https://better-auth.com/docs/plugins/organization), [PostgreSQL adapter](https://better-auth.com/docs/adapters/postgresql), [Node integration](https://better-auth.com/docs/installation).
+Proposed pilot admission: configure Clerk's invite-only mode and one approved organization; select the team's sign-in method before milestone 1. Require both valid authentication and approved checker membership. Disable self-service organization creation for the pilot and reject other organizations at the API. Validate the complete invitation-to-membership flow rather than assuming sign-in alone grants access. Clerk organizations supply invitations and membership information; the checker retains the application roles and environment/worker grants below. Sources: [restricted access](https://clerk.com/docs/guides/secure/restricting-access), [organizations](https://clerk.com/docs/react/guides/organizations/getting-started).
+
+Map Clerk's stable user ID within the configured instance/issuer to an internal user ID, and its organization ID to an internal organization ID. Keep internal IDs on cases, runs, artifacts, and grants. Authenticate each browser/API request with the server SDK, validating token signature, expiry, issuer, and allowed client origins, then load current checker access. Expose a provider-neutral actor context to domain services so a future auth migration does not rewrite run ownership. Never trust email, a display name, or a caller-supplied identity as the binding.
+
+Synchronize identity and membership metadata through signature-verified, idempotent webhooks, with duplicate/out-of-order handling and reconciliation. Complete first-login admission from server-verified Clerk state instead of waiting for a webhook; unknown or inactive membership grants no access. A stale event must not reactivate a locally removed member. Webhook projections and observed session metadata support history, not independent login validation. Source: [Clerk synchronization guidance](https://clerk.com/docs/guides/development/webhooks/syncing).
 
 Keep these concepts distinct:
 
 | Concept | Meaning | Persistence/ownership |
 | --- | --- | --- |
-| Team member | Person allowed to use the checker | User, external identity, organization membership |
-| Login session | One authenticated browser/device | Auth library's session table, expiration and revocation |
+| Team member | Person allowed to use the checker | Clerk identity/organization membership mapped to an internal user and application access record |
+| Login session | One authenticated browser/device | Clerk session authority; local non-secret session references and observations for auditing |
 | Verification session | Named collection of runs for a feature or PR | Organization-owned session and run memberships |
 | Run / attempt | Requested verification and a particular execution | Requesting member, worker, snapshots, status, events, timestamps |
 | Provider session | Claude/Codex runtime conversation | External session/turn IDs on an attempt; credentials remain with the runtime |
 | Test account | User logged into the application being tested | Environment account metadata and secret references; browser state stays on the worker |
 
-A member's account page should list active login devices and offer sign-out of one or all sessions. Use Secure/HttpOnly cookies, an appropriate SameSite policy, explicit trusted origins, and CSRF protection for cookie-authenticated mutations. Proposed pilot policy: seven-day idle expiry with a separate 30-day absolute limit and recent authentication for sensitive account changes. These are product choices to implement and test, not assumed library defaults.
+A member's account page should obtain active login sessions from Clerk and offer their revocation through Clerk. Let its SDK manage the authentication cookies/token flow; configure HTTPS, trusted origins, and appropriate mutation protections around the API. Keep a finite session lifetime and require recent authentication for sensitive account changes. Proposed pilot policy: seven-day inactivity expiry and a 30-day maximum, subject to the selected Clerk plan and supported settings. Inactivity expiry requires a paid production plan; confirm the launch policy and required features before rollout. Source: [session options](https://clerk.com/docs/guides/secure/session-options).
 
-Keep login-session validation and membership checks authoritative in the database initially. Avoid a cache that permits access after revocation. Removal from the organization invalidates its API/MCP access, closes live streams, disables owned worker grants, prevents new leases, and requests cancellation of affected active work. Remote cancellation cannot undo side effects already performed.
+Keep checker membership, grants, and local access blocks authoritative in PostgreSQL. For removal through the checker, persist the local denial first, close live streams, disable worker/MCP grants, prevent new leases, and request cancellation of affected active work; then reconcile the Clerk membership/session changes with retryable delivery. Session-revocation actions also record a local denial for the affected session IDs before calling Clerk. Remote cancellation cannot undo side effects already performed.
+
+Offline JWT verification does not observe a Clerk-side revocation until token expiry or a separate status check. Changes made directly in Clerk also reach local membership records asynchronously. Measure and document those delays in milestone 1; use a current Clerk status check where immediate provider-side revocation is required, denying the operation if that check cannot complete. End or reauthenticate live streams by token expiry and recheck local access while streaming. A browser sign-out and revocation of a worker's separate device grant are distinct actions. Source: [Clerk token and refresh behavior](https://clerk.com/docs/guides/how-clerk-works/overview).
 
 | Role | Initial permissions |
 | --- | --- |
@@ -80,11 +86,12 @@ Use explicit environment/worker grants for execution and publication. Admin stat
 
 ## PostgreSQL model
 
-The following are logical names, not a ready-to-run migration. Use the auth library's actual generated schema for identity/session tables instead of maintaining a parallel implementation.
+The following are logical names, not a ready-to-run migration. Clerk owns authentication identities, invitations, and session issuance. Store mappings and application access records, not a parallel password or login-token store. Local session observations must not be presented as an authoritative list of active Clerk sessions.
 
 | Area | Tables and important relationships |
 | --- | --- |
-| Identity | `users`, `auth_identities`, `auth_sessions`, `organizations`, `memberships`, `invitations` |
+| Identity and application access | `users`, `auth_identity_bindings`, `organizations`, `memberships`; stable internal IDs, unique Clerk instance/user and organization mappings, application roles/access state |
+| Authentication tracking | `auth_session_observations`, `auth_access_blocks`, `auth_webhook_receipts`; non-secret session IDs, observed timestamps, local denials, event deduplication/reconciliation |
 | Configuration | `projects`, `environments`, `test_accounts`, `execution_grants`; secret references only |
 | Execution inventory | `workers`, `provider_instances`, `workspace_bindings`; member ownership, capabilities, last heartbeat, revocation |
 | Cases | `cases`, immutable `case_versions`; stable IDs, revisions, archive/delete state |
@@ -97,7 +104,7 @@ Every organization-owned row needs `org_id`. Enforce organization-scoped lookups
 
 Key relationships and constraints:
 
-- Membership is unique by organization/user. Keep historical actor attribution after a member leaves.
+- Membership is unique by organization/user. Keep historical actor attribution after a member leaves or their Clerk identity is deleted; deletion disables access without deleting run history.
 - A verification session can contain many runs; use `session_runs` so existing explicit and batch groupings can coexist.
 - A run records its requester, test account, case version, environment revision, requested provider/model/settings, execution destination, replay source, and immutable input snapshots.
 - An attempt records the worker, resolved provider version/account identity, lease generation, start/finish times, failure reason, and provider session IDs. Retries create attempts rather than rewriting history.
@@ -146,18 +153,19 @@ Support video range requests, artifact checksums, upload limits, lifecycle delet
 
 **Environments:** configure which members and workers may use each environment/test account, whether mutations are permitted, and the concurrency limit. Enforce restrictions through actual target permissions and execution/network controls. A prompt saying “read only,” or blocking a few HTTP verbs, does not establish read-only behavior. Launch the pilot with approved test/staging environments. Backend-derived mock suites should retain schema/source versions and mark mocked versus live traffic explicitly.
 
-**MCP:** keep the stdio adapter for the first team release, with authenticated access to the shared API and the same member permissions as the web UI. A hosted HTTP MCP endpoint can follow separately; it requires an authorization server, protected resource metadata, audience validation, PKCE, and scoped tokens. Browser session cookies alone do not implement remote MCP authorization. CI uses separate scoped service identities with recorded attribution. See [MCP authorization](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization).
+**MCP:** keep the stdio adapter for the first team release, with authenticated access to the shared API and the same member permissions as the web UI. Use a Clerk-authenticated browser enrollment to authorize a separate, revocable worker/MCP grant; store it securely on the developer machine instead of copying browser cookies or distributing Clerk backend secrets. A hosted HTTP MCP endpoint can follow separately; it requires an authorization server, protected resource metadata, audience validation, PKCE, and scoped tokens. Browser session cookies alone do not implement remote MCP authorization. CI uses separate scoped service identities with recorded attribution. See [MCP authorization](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization).
 
 **GitHub/demo/voice:** reuse existing summaries and outputs, with generation and rendering on the requesting member's local worker. Record the requesting member, execution owner, source runs, and output synchronization state. External publication remains an explicit, authorized, audited action. A hosted publisher needs its own scoped integration, such as a GitHub App, rather than ambient credentials from a developer's shell. Voice API credentials and spend limits must be explicit where that mode requires separately billed access; native text generation and speech credentials remain separate choices.
 
 ## Deployment and operations
 
-Initial footprint: an independently deployed Node checker API, its web frontend, a dedicated managed PostgreSQL database, private object storage, and a local worker on each developer machine. The frontend can be served through the same public origin while retaining a separate build. A maintenance process handles lease reconciliation, artifact cleanup, and publication retries; it may use the backend image with a separate command. Verification and demo workloads execute on local workers; hosted services handle coordination, storage, and sharing. Deployment requires no changes to a target application's backend.
+Initial footprint: an independently deployed Node checker API, its web frontend, a dedicated Clerk application, a dedicated managed PostgreSQL database, private object storage, and a local worker on each developer machine. The frontend can be served through the same public origin while retaining a separate build. A maintenance process handles lease reconciliation, artifact cleanup, auth synchronization, and publication retries; it may use the backend image with a separate command. Verification and demo workloads execute on local workers; hosted services handle coordination, storage, and sharing. Deployment requires no changes to a target application's backend.
 
 Before team launch, implement:
 
 - TLS and a configured canonical public URL; secure proxy handling and origin rules for login, APIs, events, and links.
 - Separate staging/production configuration, databases, buckets, and secrets; versioned migrations with a rollback/forward-fix procedure.
+- Separate Clerk development/production instances and approved domains; keep Clerk backend keys and webhook signing secrets on the hosted backend. Verify the selected plan's required features before launch.
 - Database backups and a demonstrated restore; object retention and a recovery policy consistent with database references.
 - Health/readiness checks, graceful API shutdown, worker draining, and protocol version compatibility during deployment.
 - Structured logs and traces keyed by organization/run/attempt, secret redaction, error reporting, and alerts for queue age, lost workers, failed uploads, and database failures.
@@ -170,11 +178,11 @@ Actual hosting size and cost should follow observed run volume, video retention,
 
 Treat migration as a controlled import of existing checker data, not ongoing dual writes. Snapshot the checker's JSON stores, case/version data, and run artifacts. Product-backend databases and user tables are outside this migration. Preserve legacy IDs, session memberships, revisions, archive/tombstone state, provenance, and unknown values. Mark historical creators unknown where evidence is missing; do not attribute every old run to the importer.
 
-Import metadata into a seeded organization, upload retained artifacts, verify counts/references/checksums, and map local repositories and provider instances to their owning workers. Native credential homes and target browser sessions are not migrated into the shared database. Freeze local writes for final cutover, then make the hosted database authoritative. Keep the original snapshot for rollback/read-only comparison.
+Import metadata into a seeded organization mapped to the approved Clerk organization, upload retained artifacts, verify counts/references/checksums, and map local repositories and provider instances to their owning workers. Native credential homes and target browser sessions are not migrated into the shared database. Freeze local writes for final cutover, then make the hosted database authoritative for checker domain data; Clerk remains the login-session authority. Keep the original snapshot for rollback/read-only comparison.
 
 | Milestone | Reviewable result |
 | --- | --- |
-| 1. Independent backend and identity | Standalone checker API/deployment, dedicated database, invite-only login, devices/revocation, roles, correct member/test-account attribution, authenticated staging |
+| 1. Independent backend and identity | Standalone checker API/deployment, dedicated database, Clerk invite-only login and session controls, local authorization/audit records, correct member/test-account attribution, authenticated staging |
 | 2. One local worker and shared run | Enrollment, owner-bound claims, one existing case, shared progress and a private report |
 | 3. Local demos and shared artifacts | Local recording/narration/rendering, recoverable uploads, team playback with the producer offline |
 | 4. Recovery and synchronization | Durable local journals, disconnect/restart handling, concurrency locks, stale-lease rejection, cancellation acknowledgement |
