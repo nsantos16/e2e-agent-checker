@@ -1,12 +1,12 @@
 # Team web delivery roadmap
 
-Status: proposed delivery plan, 2026-11-01. Confirmed architecture: a standalone checker backend, with worktrees, verification, and demo generation on each developer's machine and shared status, history, and artifacts. Clerk is selected for authentication for the initial small team. The checker owns its API, application permissions, database, storage, and deployment; Clerk owns login sessions. It requires no integration into the backend of an application being tested. See [team web architecture](team-web-architecture.md) for the system design.
+Status: proposed delivery plan, 2026-11-01. Confirmed architecture: a standalone checker backend, with worktrees, verification, and demo generation on each developer's machine and shared status, history, and artifacts. Clerk is selected for authentication for the initial small team, and TanStack is preferred across the frontend. The checker owns its API, application permissions, database, storage, and deployment; Clerk owns login sessions. It requires no integration into the backend of an application being tested. See [team web architecture](team-web-architecture.md) for the system design.
 
 Deliver six milestones, with a working flow across two developers by milestone 2 and shared demo playback by milestone 3. Complete reliability, access, migration, and operational checks before the team rollout. Each milestone should be reviewable and usable in staging; application authentication and authorization start in milestone 1.
 
 ## Decisions to make before implementation
 
-Backend independence, local execution, shared results, and Clerk authentication are confirmed. The remaining choices below are recommendations, not recorded approvals.
+Backend independence, local execution, shared results, Clerk authentication, and the TanStack frontend preference are confirmed. The remaining choices below are recommendations, not recorded approvals.
 
 | Decision | Recommended starting choice | Consequence and deadline |
 | --- | --- | --- |
@@ -22,11 +22,12 @@ The earliest remaining choices are the sign-in method within Clerk, team access 
 
 ## Engineering defaults
 
-Clerk is the selected authentication service. Other choices below can be taken as implementation defaults unless an existing infrastructure constraint changes them.
+Clerk is the selected authentication service, and suitable TanStack packages are the preferred frontend defaults. Other choices below can be taken as implementation defaults unless an existing infrastructure constraint changes them.
 
 | Area | Proposed decision | Why |
 | --- | --- | --- |
 | Application structure | Separate checker backend, React/Vite frontend, Node/Effect worker, and shared contracts within `e2e-agent-checker`; independent runtime/build boundaries | Reuse this checker's verification/provider pipeline. Keep business-backend modules, routes, and deployment out of its dependency graph. |
+| Frontend — TanStack preferred | TanStack Router and Query for navigation/API state; Form with Zod for application forms; Table for data grids; Virtual for long lists when needed | Reuse React components and styling, add shareable typed routes, and centralize server state. Keep React/Vite for the first SPA; reconsider TanStack Start when frontend server features are needed. |
 | Authentication — selected | Clerk for the initial team, integrated into React and the standalone API; invite-only access proposed | Clerk operates authentication and login sessions. The checker maps identities to internal IDs and owns domain roles/grants. Validate admission, session controls, synchronization, and revocation in milestone 1. |
 | Shared persistence | Dedicated checker PostgreSQL for identity mappings, application memberships, auth audit observations, cases, verification sessions, jobs, ownership, events, and artifact metadata | Keep domain ownership and access checks independent of the product backend and of provider-specific IDs. Clerk remains authoritative for login sessions. |
 | Local persistence | A small transactional worker journal, with SQLite as the proposed implementation; media remains in local staging files | Persist event acknowledgements, attempts, and upload checkpoints across worker restarts. The hosted database remains authoritative for shared configuration and admitted requests. |
@@ -50,7 +51,11 @@ Store internal user/organization IDs mapped to Clerk, application memberships/ro
 
 Add checker-owned PostgreSQL migrations and repository interfaces for shared state. Establish organization-scoped foreign keys, immutable case/run inputs, optimistic revision checks, and artifact metadata. Deploy the standalone API and web UI to private staging with a canonical HTTPS URL and basic logs/health checks. Use fixtures and a representative checker-data import sample while existing local use continues.
 
+Establish the TanStack Router route tree, Clerk-aware route context, and TanStack Query client over shared typed API contracts. Migrate the first case/session list and detail view, with validated URL filters and loading/error states. Introduce TanStack Form for application editors and TanStack Table for the first structured listing. Scope cached data to the active identity and organization; clear protected state and stop requests/streams when access changes. Deploy SPA route fallbacks so a shared link loads directly.
+
 **Completion checks:** anonymous access is rejected; an uninvited identity or wrong organization cannot join; viewer mutations fail; checker-side removal blocks access and active streams; spoofed requester IDs do not change attribution; fixture imports preserve session membership and unknown historical creators. Clerk login and shared metadata survive an API restart. First login works before its webhook arrives; duplicate/stale events cannot restore removed access. Measure Clerk-side revocation delay with an existing token, reconcile dashboard membership changes, and verify expired tokens/streams are rejected. Clerk failures cannot admit unknown users or bypass checks that require current provider state. Checker login and metadata browsing work without a target backend; the checker build/deployment uses no product-backend modules or database credentials.
+
+**Frontend checks:** direct links and browser back/forward restore the intended route and filters; signed-out navigation returns through Clerk; switching identity cannot expose or repopulate another member's cached data; form/server errors render clearly; authenticated API errors leave a recoverable screen. Backend authorization remains effective when route guards are bypassed.
 
 ## Milestone 2 — One local worker and one shared run
 
@@ -59,6 +64,8 @@ Add checker-owned PostgreSQL migrations and repository interfaces for shared sta
 Extract local execution from the HTTP server behind a versioned worker protocol. Implement one-time enrollment authorized by a Clerk-authenticated browser session, separate revocable device credentials, worker ownership, workspace bindings, capability reporting, and outbound job polling. Resolve native provider profiles and target credentials locally. Keep local paths and secret files out of shared payloads; Clerk backend keys remain on the hosted API.
 
 Implement the minimum durable path: create request and idempotency receipt transactionally, claim it for the correct worker, record an attempt and lease, send ordered progress, finalize, and upload one private report. Include basic cancellation and expiry handling from the first worker implementation. Exercise the existing verification pipeline rather than replacing it.
+
+Connect authenticated SSE updates to TanStack Query resource updates or invalidation, and refetch authoritative state after reconnecting. Reuse backend idempotency keys for retried run submissions so UI retries cannot duplicate execution.
 
 **Completion checks:** the job executes on A's machine; B can read permitted results but cannot claim/control A's worker; duplicate submission does not create duplicate work; an offline worker's request stays queued; a hosted API restart does not kill a healthy local process or lose queued requests; report access is private.
 
@@ -92,6 +99,8 @@ Enforce shared test-account and workspace concurrency across workers. Distinguis
 
 Finish member invitations/roles, active-device management, worker onboarding/status, per-member provider selection, shared verification sessions, run filters, replay-on-my-machine, demo generation, and private evidence links. Display the selected worker, target environment, actual build provenance, and last confirmed update clearly.
 
+Extend TanStack Form and Table across the remaining application editors and structured lists. Use Router search parameters for shareable history filters and TanStack Virtual for large logs/history where needed. Preserve accessible controls, existing styling, server pagination, and useful loading/error/empty states as screens migrate.
+
 Wire local MCP to authenticated shared operations through a separately scoped, revocable enrollment grant authorized by the member's Clerk login. Record the client/device actor without trusting caller-supplied attribution. Apply environment execution/write permissions at admission and execution; provide minimal test-account access for the pilot. Audit external publication, cancellation, settings changes, and artifact access where required. Preserve existing session summaries, demos, provider accounts, and mocked-suite provenance.
 
 **Completion checks:** the same allowed/denied actions behave consistently in UI, local MCP, and direct API requests; removing access terminates new operations and live visibility; another member's replay uses the requester's authorized machine and provider; publication records the authorized requester and output.
@@ -108,7 +117,7 @@ Finish production configuration, least-privilege storage/database access, backup
 
 ## Implementation order and scope
 
-Use incremental changes: standalone checker backend, identity, and repositories → worker protocol and one case → local demo and media upload → recovery drills → team UI/local MCP → migration and rollout. Build enough UI for each milestone to be reviewable. Authentication, authorization, and basic fault handling belong in every applicable milestone; later milestones extend coverage and recovery rather than introduce those protections for the first time.
+Use incremental changes: standalone checker backend, identity, repositories, and TanStack frontend foundation → worker protocol and one case → local demo and media upload → recovery drills → team UI/local MCP → migration and rollout. Build enough UI for each milestone to be reviewable, adopting the preferred TanStack packages as each screen is migrated. Authentication, authorization, and basic fault handling belong in every applicable milestone; later milestones extend coverage and recovery rather than introduce those protections for the first time.
 
 Backlog member attribution is foundational work in milestone 1. Concurrent-environment presentation and environment write permissions enter milestones 4–5. Backend-derived mocking should store its suite/schema provenance through the same run/artifact interfaces. Persona configuration can follow the team pilot. Provider harnesses, summaries, and voice demos should be adapted to worker ownership and shared storage rather than rebuilt.
 

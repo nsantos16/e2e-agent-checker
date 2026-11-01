@@ -1,10 +1,10 @@
 # Team web architecture
 
-Status: independent checker backend, local-execution/shared-storage split, and Clerk authentication confirmed by the user; implementation remains proposed. Clerk selected 2026-11-01 for the initial small-team rollout. The original code audit was prepared 2026-11-01 against `origin/main` at `1c3c5c59225804765cbd7c099caf36064dd5e1a3`; the working checkout was older, so that audit used the main revision explicitly.
+Status: independent checker backend, local-execution/shared-storage split, Clerk authentication, and preference for TanStack across the frontend confirmed by the user; implementation remains proposed. Clerk and the TanStack preference were selected 2026-11-01 for the initial small-team rollout. The original code audit was prepared 2026-11-01 against `origin/main` at `1c3c5c59225804765cbd7c099caf36064dd5e1a3`; the working checkout was older, so that audit used the main revision explicitly.
 
 ## Selected architecture
 
-Keep the checker's existing React/Vite UI and Node/Effect verification pipeline. Build a standalone checker backend with its own PostgreSQL database and private object storage, use Clerk for authentication, and separate execution into authenticated local workers. References to the existing codebase mean `e2e-agent-checker`, not the backend of an application being tested.
+Keep the checker's existing React/Vite UI and Node/Effect verification pipeline. Prefer TanStack for frontend routing, server state, forms, tables, and long-list rendering. Build a standalone checker backend with its own PostgreSQL database and private object storage, use Clerk for authentication, and separate execution into authenticated local workers. References to the existing codebase mean `e2e-agent-checker`, not the backend of an application being tested.
 
 Confirmed requirement: worktrees, verification, and demo generation execute locally on each developer's machine; status and artifacts are available in a shared team space. Central execution is outside the selected scope. Invite-only access for one internal organization remains the proposed admission policy. Clerk is the selected authentication service; the sign-in method enabled within Clerk and the hosting provider remain open choices.
 
@@ -47,6 +47,26 @@ One checker repository with separate backend, web UI, worker, and shared-contrac
 | MCP uses stdio and a local unauthenticated app connection | Add authenticated API access and a separately authorized remote MCP transport |
 
 The recent provider-instance, session-summary, demo, and archive features remain part of the design. Their persistence and ownership change; their product behavior should be reused.
+
+## Frontend architecture
+
+Use TanStack as the default choice for the frontend capabilities below. Adopt it as each shared-team screen is built or migrated, reusing existing React components and styles. Prefer a suitable TanStack package before adding a competing library or custom infrastructure for the same responsibility. Pin compatible stable versions during implementation.
+
+| Responsibility | Default | Application use |
+| --- | --- | --- |
+| Navigation and URL state | [TanStack Router](https://tanstack.com/router/latest/docs/installation/with-vite) | Typed file-based routes, validated search parameters, shared run/session links, history filters, nested layouts, pending/error states, and Clerk-aware navigation |
+| Shared API state | [TanStack Query](https://tanstack.com/query/latest/docs/framework/react/overview) | Fetching, caching, pagination, mutations, invalidation, and refetching cases, runs, artifacts, workers, and team settings |
+| Application forms | [TanStack Form](https://tanstack.com/form/latest/docs/framework/react/guides/validation) with shared Zod schemas | Case/environment editors, run/demo requests, and settings; field errors and asynchronous submission; Clerk retains its sign-in/account flows |
+| Data grids | [TanStack Table](https://tanstack.com/table/latest/docs/overview) | Run history, cases, workers, and member lists with sorting, filtering, selection, and server pagination where appropriate |
+| Long lists and feeds | [TanStack Virtual](https://tanstack.com/virtual/latest/docs/introduction) | Large run/event/log views and table rows when rendering volume warrants virtualization |
+
+The first frontend remains a React/Vite single-page application consuming the independent checker's HTTPS API. TanStack Router integrates with Vite directly. TanStack Start remains an option if server rendering, prerendering, or other frontend server features become requirements; it supports [SPA mode](https://tanstack.com/start/latest/docs/framework/react/guide/spa-mode) and does not require moving checker domain services into frontend server functions. The first release has no server-rendering requirement.
+
+Share typed API contracts and Zod validation with the backend while keeping server credentials and implementation modules out of the browser bundle. Route loaders should prefetch or read the same Query definitions used by screens, with Query owning the API cache. Follow the [Router external-data integration](https://tanstack.com/router/latest/docs/guide/external-data-loading). Keep transient presentation state, such as an open dialog, local to React; additional TanStack packages should address a concrete need without duplicating the API cache or worker journal.
+
+Scope Query keys by authenticated user/organization and resource/filter/pagination inputs. Wait for Clerk initialization and approved membership before protected queries. On sign-out, revocation, or identity/organization change, stop old streams and requests, discard protected cached data, and prevent late results from repopulating the next identity's cache. Route guards guide navigation; the backend still authorizes every operation. Keep the initial cache in memory.
+
+Use authenticated SSE events to update matching cached resources when revisions are known or invalidate/refetch affected queries. Reconnection must reconcile durable server state and event cursors; Query is a view of that state, not the job queue. Mutations that start runs or demos use backend idempotency keys, and execution remains subject to server admission and worker leases. Form validation supplements server validation. Table filters and sort state belong in validated URL parameters where they should be shareable, with API pagination limiting fetched data and virtualization limiting rendered rows.
 
 ## Identity, login, and permissions
 
