@@ -2,9 +2,9 @@
 
 A session has an ID and an explicit list of run IDs. One submission's case × model batch automatically becomes a session using its recorded `batchId`; saved-spec replays inherit their source session. Historical runs with a batch ID use that batch. Other historical runs are singletons, except replays whose source is still known. Membership never comes from timestamps, matching case names or worktree paths.
 
-Choose **Generate summary** in a run's **Session PR summary** panel to read, copy or download the standard Markdown. **Combine runs into an explicit session** selects the exact existing runs for a cross-batch summary. MCP can create an empty session and pass its `sessionId` to successive `verify_case` / `verify_cases` calls. `add_session_runs` adds existing IDs with a membership revision check. Explicit collections may include a run that also belongs to its original batch; adding it does not move it or erase earlier membership. Hiding a run or archiving a case does not remove recorded session membership. If a run record has expired or disappeared, the summary lists it as unavailable, rather than silently excluding it.
+Choose **Generate summary** in a run's **Session PR summary** panel to read, copy or download the standard Markdown. **Combine runs into an explicit session** selects the exact existing runs for a cross-batch summary. MCP can create an empty session and pass its `sessionId` to successive `verify_case` / `verify_cases` calls. `add_session_runs` adds existing IDs with a membership revision check. Explicit collections may include a run that also belongs to its original batch; adding it does not move it or erase earlier membership. Hiding a run or archiving a case does not remove recorded session membership. Deleted or missing run records are listed as unavailable; cache expiry retains the saved run outcome and identifies missing artifacts.
 
-The standardized format includes all members, case revisions/titles where saved, pipeline outcome, exploration results, deterministic replay results, environment and test user, recorded build commit/dirty state, failure and blocked/incomplete work, step evidence, demos, and limitations. `done` is not a pass. Historical or hosted build commits remain unknown unless recorded; current checkout state is never used to invent a historical build. Per-run step evidence is capped at 100 entries and 600 characters each, with an explicit truncation note. Session summaries use deterministic formatting: they require no text or speech model, and reads do not create demos or publish anything.
+The standardized format includes all members, case revisions/titles where saved, pipeline outcome, exploration results, deterministic replay results, environment and test user, recorded build ID/commit/dirty state, failure and blocked/incomplete work, step evidence, demos, and limitations. `done` is not a pass. Historical or hosted build commits remain unknown unless recorded; current checkout state is never used to invent a historical build. Per-run step evidence is capped at 100 entries, with a note when remaining steps are omitted; each evidence text is clipped to 600 characters. Session summaries use deterministic formatting: they require no text or speech model, and reads do not create demos or publish anything.
 
 Session membership and summary snapshots persist under `.state/`. `E2E_STATE_DIR` can isolate this data (by default it follows the directory of `E2E_JOBS_PATH`, if configured). Summary revisions hash the actual evidence and membership, so unchanged reads return the same revision.
 
@@ -16,6 +16,7 @@ The UI and MCP use the same backend services and validation schemas.
 | --- | --- | --- |
 | `create_session({title,jobIds?})` | `POST /api/sessions` | Create an explicit session, optionally empty |
 | `list_sessions()` | `GET /api/sessions` | Discover exact membership and revisions |
+| — | `GET /api/sessions/:id` | Retrieve one membership record |
 | `add_session_runs({sessionId,expectedRevision,jobIds})` | `POST /api/sessions/:id/runs` | Add known IDs without guessing |
 | `get_session_summary({sessionId})` | `GET /api/sessions/:id/summary` | Generate/retrieve the standard evidence summary |
 | — | `POST /api/sessions/:id/summary` | Same deterministic generation, no publication |
@@ -37,9 +38,9 @@ Pass the returned session ID to `get_session_summary`. The result includes Markd
 
 ## Voice narration settings
 
-**Settings → Voice narration** persists an enable/disable default, script model, speech model, voice, and a server-side credential reference. The run's **Demo narration** controls use that default or override enabled/model/voice for one requested demo. **Generate demo** is the explicit action that can spend speech API usage. Merely enabling the setting, installing the feature, viewing a run/summary, replaying a spec, or finishing a verification never starts narration.
+**Settings → Voice narration** persists an enable/disable default, script model, speech model, voice, and a server-side credential reference in `.state/voice-settings.json` (subject to `E2E_STATE_DIR`). The run's **Demo narration** controls use that default or override enabled/model/voice for one requested demo. **Generate demo** is the explicit action that can spend speech API usage. Merely enabling the setting, installing the feature, viewing a run/summary, replaying a spec, or finishing a verification never starts narration.
 
-Default: **off**, Codex `gpt-6-luna` for text, OpenAI `gpt-realtime-2.1-mini` for speech, `marin` voice. Claude Code `haiku` is an explicitly selectable subscription alternative. There is no silent provider/model substitution. Script selection runs separately from the verification model, with no tools and low Codex effort. The Haiku alias is not assumed to resolve to a particular version or price.
+Default: **off**, Codex `gpt-6-luna` for text, OpenAI `gpt-realtime-2.1-mini` for speech, `marin` voice. Claude Code `haiku` is an explicitly selectable subscription alternative. There is no silent provider/model substitution. Script selection runs separately from the verification model, with no tools and low effort when the native model advertises it. The Haiku alias is not assumed to resolve to a particular version or price.
 
 Read settings before writing:
 
@@ -108,7 +109,9 @@ The server uses the existing `gh pr comment --body-file --attach` path. It repla
 
 ## Verification and sources
 
-`npm test` covers membership/outcomes, settings parity and persistence, off/on/errors/cancellation, content caches and interrupted-request receipts, transport events and measured usage, media encoding/audio energy, captions, and mocked publication/deduplication. `node tests/demo-ui-smoke.ts` exercises the compiled UI and actual local API, plus existing playback/workspace browser regressions. `node tests/observability-smoke.ts` checks real recorded step timing with the browser/replay pipeline. All use local fixtures; no paid model/speech request or real PR publication is made.
+Release checks at `afecea5` on 2026-11-01 passed: all 148 `npm test` tests, `npm run check`, `npm run build`, `node tests/demo-ui-smoke.ts`, `node tests/observability-smoke.ts`, and `node tests/stabilization-smoke.ts`.
+
+The automated suite covers membership/outcomes, settings parity and persistence, off/on/errors/cancellation, content caches and interrupted-request receipts, native profile/identity isolation, transport events and measured usage, media encoding/audio energy, captions, active-demo retention protection, and mocked publication/deduplication. The demo UI smoke exercises the compiled UI and actual local API at 320, 390, 768 and 1280 pixels, then runs 12 playback and 82 workspace checks. Observation and stabilization smoke tests check real browser recording and retained step timing. All use local fixtures; no paid model/speech request or real PR publication is made. Live native narration text plus credentialed Realtime audio still require separate verification; the open-source sample generations above are a separate measured local path.
 
 Official API details revalidated 2026-11-01:
 

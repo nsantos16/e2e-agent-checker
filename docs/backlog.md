@@ -1,6 +1,6 @@
 # Product backlog
 
-Resume list for another agent. Each item is a request, not current behavior. Read the linked docs and code before changing anything. Leave an item here until it is implemented.
+Open product requests are listed first, with their original item numbers preserved. Move implemented requests to the completed section with links to the shipped behavior and validation. Read the linked docs and current code before starting work; historical design proposals are not implementation contracts.
 
 ## 2. Prove backend changes with request e2e
 
@@ -13,14 +13,6 @@ A verification drives the frontend in a browser. A local run serves a frontend w
 **Request:** Run e2e checks of backend requests so a backend change can be proved, alongside the frontend checks that exist today.
 
 **Read:** `src/slots.ts`, [environments](environments.md), [browser and network evidence](browser-observability.md), [ADR-0003](adr/0003-frontend-worktrees-against-shared-dev-backend.md), [PoC results](poc-results.md).
-
-## 3. Session summary for a pull request — implemented
-
-Implemented 2026-11-01, including optional voice demos.
-
-Stable batch/session membership, explicit cross-batch collections, standardized evidence summaries, API/MCP/UI access and explicit deduplicated publication are implemented. Voice narration defaults off and has shared persisted settings, per-demo overrides, bounded subscription text generation, a separate Realtime speech integration, content caches, cancellation, isolated usage, and synchronized MP4/audio/caption artifacts. Original silent evidence and verification outcomes are retained.
-
-See [session summaries and voice demos](session-demos.md) for the contract, setup, limitations and verification. Automated checks use local model/speech/publication fixtures; live credentialed speech and actual PR publication were not exercised during implementation.
 
 ## 4. Track each run by the team member who started it
 
@@ -51,3 +43,16 @@ An environment is a hosted URL or a local worktree. Settings store its name, tar
 **Request:** Give each environment its own write permission in settings. When the setting disallows writes, as with production, MCP and the other tools say that this environment does not allow write operations. Check that step with the user who invoked the operation.
 
 **Read:** [environments](environments.md), `src/environments.ts`, `src/app/client/components/Settings.tsx`, `src/mcp-server.ts`, `src/jobs.ts`.
+
+## Completed requests
+
+### 3. Session summary for a pull request and optional voice demos
+
+Shipped on `main` on 2026-11-01 in [afecea5](https://github.com/nsantos16/e2e-agent-checker/commit/afecea525e94fa1d48a37b5d722e5908df2ca943).
+
+- Stable batch/session membership and explicit cross-batch collections; standardized summaries include outcomes, environment/build context, recorded evidence, demos, failures and limitations. MCP, HTTP and the UI share generation and retrieval. Publication remains explicit and deduplicated.
+- Persisted, default-off Voice narration settings and per-demo overrides use the same backend schema in MCP and the UI. Bounded subscription text generation and a separate Realtime speech integration produce synchronized MP4/audio/caption artifacts, with caching, cancellation and separate usage. Original silent evidence and test outcomes are retained.
+- Settings and composer spacing work across the tested desktop/mobile widths. Archive/deletion semantics preserve session history, and cache cleanup protects active demo generation.
+- Real local Kokoro, Piper and Chatterbox Nano samples and timing measurements were delivered. These open-source engines remain benchmarked alternatives, not selectable app providers; see the [comparison and artifact locations](research/local-voice-samples.md).
+
+Validation at the shipped revision: 148 automated tests, TypeScript checks, production build, UI/API smoke, playback/workspace regressions, and real browser/FFmpeg observation and stabilization smoke checks passed. Native narration workers and Realtime transport were covered with fixtures; live credentialed narration and real PR publication remain unverified. See [session summaries and voice demos](session-demos.md) for setup, API/MCP usage, budgets and limitations.

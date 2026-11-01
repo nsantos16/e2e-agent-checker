@@ -21,6 +21,8 @@ Promotion requires the last attempt from this run, matching identities before/af
 
 The MP4 is converted from the video attachment named in the attempt's Playwright result. Original video, trace, screenshots, error context, network diagnostics and logs remain in the attempt directory. Captions are enabled explicitly. Promoted videos retain stabilization's `slowMo: 0`; independent replay retains its default `slowMo: 250`. Multi-video attempts conservatively replay because the primary recording is ambiguous.
 
+When the qualified attempt includes `timeline.json`, promotion copies that recorded step timing beside the final MP4 for [optional narration](session-demos.md#evidence-synchronization-and-artifacts). It does not invent timing or execute the browser again. Narration keeps the silent evidence and replay outcome intact; missing historical timing requires a new replay before narration can be generated.
+
 ## Format compatibility
 
 - Existing `summary.replays[]`, job `replay`/`video`, MP4 paths and trace URLs remain available. A `replays[]` entry can now represent promoted stabilization evidence; consumers must inspect `provenance.kind` instead of assuming a second run.

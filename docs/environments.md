@@ -51,7 +51,7 @@ Hosted example:
 }
 ```
 
-Reconnect the MCP client after updating to v0.6 to load all 25 tools. Environments do not add credentials to prompts, tool arguments or run logs; only reference configuration is accepted by `save_environment`.
+Reconnect the MCP client after updating the checker to load its current tool schemas; see the [MCP catalog](agent-mcp.md#compact-defaults). Environments do not add credentials to prompts, tool arguments or run logs; only reference configuration is accepted by `save_environment`.
 
 ## Verification
 

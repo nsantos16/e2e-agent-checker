@@ -26,7 +26,7 @@ A concrete mismatch was reproduced on 2026-11-01: in this task's shell, `claude 
 
 Subscription child processes exclude ambient API keys, endpoint/cloud-provider overrides and externally supplied auth tokens. Settings reports variable **names only**. Global environment variables and secrets are unchanged. Native profiles still reporting API billing are rejected with `AUTH_MODE_MISMATCH`; missing login, expired/rejected login, missing executable, unknown account identity, exhausted usage, and unsupported capabilities have separate actionable errors. There is no billed API worker fallback.
 
-Provider token counts, API-equivalent estimates, provider-reported cost, and real billed cost remain separate. `billedCostUsd: null` means unknown. Neither a CLI dollar figure nor an API-equivalent estimate establishes a subscription charge. Optional speech must use its own connection; summary/narration text can use the exported `runNativeText` entry point with the same `Target` contract.
+Provider token counts, API-equivalent estimates, provider-reported cost, and real billed cost remain separate. `billedCostUsd: null` means unknown. Neither a CLI dollar figure nor an API-equivalent estimate establishes a subscription charge. Session summaries use deterministic formatting without a model call. Optional narration text uses the chosen provider's fixed default instance and native subscription profile, independently of the verification account, with low effort when advertised. Speech uses a separate explicit API credential reference. See [Voice narration settings](session-demos.md#voice-narration-settings) for the shared UI/MCP controls and accounting boundaries.
 
 ## Selection and persistence
 

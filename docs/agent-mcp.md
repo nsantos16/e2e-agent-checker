@@ -75,6 +75,8 @@ Use `create_case`, `get_case`, `update_case` and `delete_case` for native case m
 | --- | --- |
 | `get_setup` | Checks, fixes and provider readiness; no model catalogs |
 | `list_providers` / `list_models` | Readiness only / one provider's catalog |
+| `save_provider_instance` / `select_provider_instance` / `delete_provider_instance` / `provider_login` | Revision-checked instance operations / native terminal login instructions; no credential values |
+| `list_environments` / `save_environment` / `delete_environment` | Target/user profiles and revision-checked configuration; credential references only |
 | `list_cases` / `list_worktrees` | Searchable pages of 10, maximum 50 |
 | `get_case` | One case including its revision and steps |
 | `create_case` / `update_case` / `delete_case` / `sync_case` / `import_case` | Compact mutation acknowledgment |
@@ -85,9 +87,13 @@ Use `create_case`, `get_case`, `update_case` and `delete_case` for native case m
 | `get_evidence` | Manifest by default; selected text pages of 4,000 characters, maximum 16,000 |
 | `get_browser_frame` | One image on explicit request; unchanged-frame suppression |
 | `cancel_job` / `replay_job` | Compact state / new job ID |
-| `attach_to_pr` | Publication acknowledgment |
+| `create_session` / `add_session_runs` / `list_sessions` | Exact recorded member IDs and membership revisions |
+| `get_session_summary` | Standard Markdown and structured evidence; no model or publication calls |
+| `get_voice_settings` / `save_voice_settings` | Shared persisted defaults and speech-reference readiness; no speech generation |
+| `generate_demo` / `get_demos` / `cancel_demo` | Explicit generation or cache reuse / artifact status and usage / cancellation |
+| `attach_to_pr` | Explicit job/session publication acknowledgment; chosen silent/narrated/no video |
 
-All 34 tools advertise schemas and read/write annotations. Initialization includes a short workflow; `checker://workflow` exposes the same guidance as an MCP resource. Successful tool calls include structured data and a JSON text fallback for clients that only consume text. Operational errors use `isError`, a code, a bounded message and a suggested next action. Standard schema errors are handled by the MCP SDK.
+All 38 public tools advertise schemas and read/write annotations as of 2026-11-01. Use the server's `tools/list` response for the installed revision. Initialization includes a short workflow; `checker://workflow` exposes the same guidance as an MCP resource. Successful tool calls include structured data and a JSON text fallback for clients that only consume text. Operational errors use `isError`, a code, a bounded message and a suggested next action. Standard schema errors are handled by the MCP SDK.
 
 Network pagination is a newest-first offset over retained rows. During a live run, new rows may shift offsets; use returned row IDs for follow-up diagnosis. Logs are the last 80 retained entries, not a complete transcript. Artifacts are resolved by fixed IDs and canonical paths within the selected job's run directory; arbitrary filesystem reads are not exposed. Traces stay local and may contain application data.
 
@@ -97,7 +103,7 @@ v0.4 intentionally changes MCP response defaults: `get_job`/`cancel_job`/`list_j
 
 Measured against seven existing local jobs: full detail responses totaled 63,687 JSON bytes; compact responses totaled 5,113 bytes (92% less). This measures payload size, not tokenizer usage or a reduction in the verification workers' model tokens. No exact token savings are claimed.
 
-Verification: real MCP SDK client against both a controlled HTTP fixture and the actual local app; schema/annotation checks, batch wait timeout/change/completion, network pagination and row lookup, paged evidence, path/symlink boundaries, image suppression and case discovery. Browser regressions cover 12 playback assertions and 26 workspace assertions, including direct selection of older runs. No paid model run or PR publication was required for these checks.
+Verification at `afecea5`: real MCP SDK clients against both controlled HTTP fixtures and the actual local app cover schemas/annotations, batch waits, paged evidence, path/symlink boundaries, image suppression, case discovery, explicit sessions and HTTP/MCP voice-setting parity. The demo UI smoke passes settings persistence, per-demo overrides, summary access and missing-credential handling, followed by 12 playback and 82 workspace assertions. No paid model run or real PR publication was required for these checks. See [test commands and scope](../tests/README.md).
 
 Claude/Codex native worker capability and subscription restrictions are unchanged. Cursor works as an MCP caller; its verification worker remains disabled until isolated tools can be guaranteed. Login itself remains in each provider's native flow. See [runtime status](runtime-milestone.md) and [capture limits](browser-observability.md).
 

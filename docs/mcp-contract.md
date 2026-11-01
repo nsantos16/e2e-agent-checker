@@ -1,8 +1,8 @@
 # Checker MCP contract for selectable runtimes
 
-> Current implementation: [Agent MCP v0.7](agent-mcp.md), including [automatic saved-spec reuse](saved-spec-reuse.md), local case CRUD, Qase refresh, compact responses, waits, evidence and browser frames. Provider preflight is now deferred until authoring is necessary.
+> Current implementation: [Agent MCP v0.7](agent-mcp.md), including [native provider instances](provider-instances.md), [automatic saved-spec reuse](saved-spec-reuse.md), local case CRUD, Qase refresh, compact responses, waits, evidence and browser frames. Queued submissions validate and pin the provider account before acceptance; compatible saved-spec execution requires no model call or further provider probe. Explicit replay does not require a provider.
 >
-> Session summary and optional narration extensions are implemented in [session summaries and voice demos](session-demos.md), using shared HTTP/MCP/UI schemas.
+> Session summary and optional narration extensions shipped in `afecea5`, using shared HTTP/MCP/UI schemas. The [implemented contract](session-demos.md#mcp-and-http) covers exact session membership, summary retrieval, persisted voice settings, per-demo overrides, progress/cancellation and explicit publication. Generation and reads never publish; narration starts only on an explicit generation request. The registered surface has 38 public tools at that revision.
 >
 > Historical design baseline. See [implemented scope and verification](runtime-milestone.md) for current behavior, the T3-style UI, and the Cursor capability gate. Tables below describe the pre-implementation audit or proposed contract.
 

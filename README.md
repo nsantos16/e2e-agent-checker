@@ -68,7 +68,7 @@ codex mcp add e2e-agent-checker -- node /Users/nico/.t3/projects/e2e-agent-check
 claude mcp add e2e-agent-checker --scope user -- node /Users/nico/.t3/projects/e2e-agent-checker/src/mcp-server.ts
 ```
 
-Use your checkout's absolute path. The [agent MCP guide](docs/agent-mcp.md) includes Cursor configuration, all 25 tools, exact inputs, compact defaults and compatibility changes.
+Use your checkout's absolute path. The [agent MCP guide](docs/agent-mcp.md) includes Cursor configuration, the current tool catalog, exact inputs, compact defaults and compatibility changes.
 
 The normal agent workflow is **discover → verify → wait → inspect only relevant evidence**:
 
@@ -80,6 +80,7 @@ The normal agent workflow is **discover → verify → wait → inspect only rel
 - `get_evidence` provides artifact links and bounded pages of logs, reports, specs or comments. `get_network` returns five failures by default; request individual sanitized bodies only when needed.
 - `get_browser_frame` returns the current image on demand and suppresses unchanged frames. The human watches the browser and video at the returned `viewerUrl`.
 - `cancel_job` cancels work; `replay_job` reuses the saved spec without model calls; `attach_to_pr` publishes only on explicit request.
+- `list_sessions` / `get_session_summary` return a report across explicitly recorded runs. `get_voice_settings` / `save_voice_settings` share the UI's default-off narration settings; `generate_demo` explicitly requests narrated or silent output, and `get_demos` reads its progress and artifacts.
 
 The server includes workflow instructions and tool annotations. Normal status polling omits logs, reports, images and response bodies. Across seven saved runs, compact responses were 92% smaller in JSON bytes; this is not an exact token measurement.
 
@@ -139,7 +140,7 @@ Leftover data from interrupted runs: `E2E_SPEC_DIR=$PWD/e2e/sweep ... npx playwr
 - The LLM never sees credentials: login happens in the harness and the agent gets a preloaded session.
 - Claude uses its native restricted CLI; Codex uses App Server with native action tools, inherited MCP servers, apps, and delegation disabled. Both use scoped stage tools: browser actions for explore; allowlisted inputs, one spec file, and bounded test attempts for codify. Generated tests execute locally, so use trusted cases and projects.
 - Agents only create data named `e2e-agent-*` and clean it up; generated specs clean up in a non-failing `cleanup()` step.
-- `trace.zip` files contain typed values and stay local; only the MP4 and the comment are ever published, and only via `attach_to_pr`.
+- `trace.zip` files contain typed values and stay local. Explicit publication through `attach_to_pr` or the UI publishes the comment and chosen silent/narrated MP4s through the same backend service.
 
 ## Checks
 
@@ -158,3 +159,5 @@ Run cost estimates use `tokentally` with per-run LiteLLM pricing snapshots. Toke
 ## Session summaries and optional voice demos
 
 Open **Session PR summary** on a run to review/copy/download one standard report across explicit run membership. Combine batches in the UI or use MCP sessions. **Settings → Voice narration** configures default-off narration using Codex `gpt-6-luna` and a separately credentialed Realtime speech integration; a per-demo override requests narrated or silent output. Generation never publishes, and reads never trigger paid work. See [session and voice demo guide](docs/session-demos.md).
+
+For the requested open-source comparison, see [local Kokoro, Piper and Chatterbox Nano samples](docs/research/local-voice-samples.md). It records actual local synthesis timings and demo locations; these engines are not yet selectable narration providers in the app.
