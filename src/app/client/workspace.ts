@@ -1,10 +1,19 @@
 import { api, errorMessage, preferences, type Api } from './api.ts';
 import { caseKey, terminal } from './format.ts';
-import type { CaseSummary, Environment, JobView, Provider, Target, Worktree } from './types.ts';
+import type { CaseSummary, Environment, JobView, Provider, Target, Worktree, SidebarItem } from './types.ts';
+export type SidebarGrouping = 'project-status' | 'project' | 'status' | 'none';
+export type SettingsTab = 'connections' | 'environments' | 'sidebar' | 'archived' | 'storage';
 export type DialogName = 'models' | 'settings' | 'options' | 'import' | null;
 export type WorkspaceState = {
   cases: CaseSummary[];
   jobs: JobView[];
+  archivedCases: CaseSummary[];
+  archivedJobs: JobView[];
+  sidebarGrouping: SidebarGrouping;
+  collapsedGroups: Set<string>;
+  settingsTab: SettingsTab;
+  confirmDelete: SidebarItem | null;
+  undoArchive: { item: SidebarItem; reopen: boolean } | null;
   providers: Provider[];
   worktrees: Worktree[];
   environments: Environment[];
@@ -31,6 +40,7 @@ export type WorkspaceState = {
 };
 export function createWorkspace(request: Api = api) {
   const savedTargets = preferences.json<unknown>('run-targets', []);
+  const savedGroups = preferences.json<unknown>('collapsed-groups', []);
   const targets = Array.isArray(savedTargets)
     ? savedTargets
         .filter(
@@ -45,6 +55,15 @@ export function createWorkspace(request: Api = api) {
   let state: WorkspaceState = {
     cases: [],
     jobs: [],
+    archivedCases: [],
+    archivedJobs: [],
+    sidebarGrouping: (['project-status', 'project', 'status', 'none'].includes(preferences.get('sidebar-grouping') ?? '')
+      ? preferences.get('sidebar-grouping')
+      : 'project-status') as SidebarGrouping,
+    collapsedGroups: new Set(Array.isArray(savedGroups) ? savedGroups.filter((key): key is string => typeof key === 'string') : []),
+    settingsTab: 'connections',
+    confirmDelete: null,
+    undoArchive: null,
     providers: [],
     worktrees: [],
     environments: [],
@@ -74,6 +93,8 @@ export function createWorkspace(request: Api = api) {
   let controller = new AbortController();
   let started = false;
   let generation = 0;
+  let caseMutation = 0;
+  let jobMutation = 0;
   const pending = new Map<string, Promise<void>>();
   const patch = (changes: Partial<WorkspaceState>) => {
     state = { ...state, ...changes };
@@ -122,7 +143,9 @@ export function createWorkspace(request: Api = api) {
   };
   const refreshCases = () =>
     once('cases', async () => {
+      const version = caseMutation;
       const cases = await call<CaseSummary[]>('/api/cases');
+      if (version !== caseMutation) return;
       patch({
         cases,
         selected: new Set(
@@ -130,20 +153,67 @@ export function createWorkspace(request: Api = api) {
         ),
       });
     });
+  const jobPages = async (path = '/api/jobs') => {
+    let page = await call<JobView[]>(path);
+    const jobs = [...page];
+    let pageSize = path.includes('limit=1000') ? 1000 : 60;
+    let cursor = page.length;
+    while (page.length === pageSize) {
+      pageSize = 1000;
+      const url = new URL(path, 'http://localhost');
+      url.searchParams.set('cursor', String(cursor));
+      url.searchParams.set('limit', '1000');
+      page = await call<JobView[]>(url.pathname + url.search);
+      jobs.push(...page);
+      cursor += page.length;
+    }
+    return [...new Map(jobs.map((job) => [job.id, job])).values()];
+  };
   const refreshJobs = () =>
     once('jobs', async () => {
-      let jobs = await call<JobView[]>('/api/jobs');
+      const version = jobMutation;
+      let jobs = await jobPages();
+      const missing = new Set<string>();
+      const readDetail = async (id: string) => {
+        try {
+          return await call<JobView>(`/api/jobs/${encodeURIComponent(id)}`);
+        } catch (error) {
+          if ((error as { status?: number }).status !== 404) throw error;
+          missing.add(id);
+        }
+      };
       const id = state.activeJob;
       if (id && !jobs.some((j) => j.id === id) && state.details[id]) {
-        const detail = await call<JobView>(`/api/jobs/${encodeURIComponent(id)}`);
-        if (state.activeJob === id) jobs = [detail, ...jobs];
+        const detail = await readDetail(id);
+        if (detail && state.activeJob === id) jobs = [detail, ...jobs];
       }
       const open = jobs.filter((j) => state.expanded.has(j.id) && terminal(j));
-      const details = await Promise.all(open.map((j) => call<JobView>(`/api/jobs/${encodeURIComponent(j.id)}`)));
+      const loaded = await Promise.all(open.map((j) => readDetail(j.id)));
+      // A poll started before removal must not put the item or its evidence back.
+      if (version !== jobMutation) return;
+      const details = { ...state.details };
+      missing.forEach((id) => delete details[id]);
+      for (const detail of loaded) if (detail) details[detail.id] = detail;
+      jobs = jobs.filter((job) => !missing.has(job.id));
+      const activeJob = state.activeJob && !missing.has(state.activeJob) ? state.activeJob : null;
+      if (activeJob !== state.activeJob) {
+        preferences.set('active-job', null);
+        updateUrl(null);
+      }
       // Selection can change while evidence requests are in flight. Keep its already-loaded card.
-      const selected = state.jobs.find((job) => job.id === state.activeJob);
+      const selected = state.jobs.find((job) => job.id === activeJob);
       if (selected && !jobs.some((job) => job.id === selected.id)) jobs = [selected, ...jobs];
-      patch({ jobs, details: { ...state.details, ...Object.fromEntries(details.map((d) => [d.id, d])) } });
+      patch({ jobs, details, activeJob, expanded: new Set([...state.expanded].filter((id) => !missing.has(id))) });
+    });
+  const refreshArchive = () =>
+    once('archive', async () => {
+      const version = `${caseMutation}:${jobMutation}`;
+      const [cases, jobs] = await Promise.all([
+        call<CaseSummary[]>('/api/cases?includeArchived=1'),
+        jobPages('/api/jobs?archived=1&limit=1000'),
+      ]);
+      if (version !== `${caseMutation}:${jobMutation}`) return;
+      patch({ archivedCases: cases.filter((c) => c.status === 'archived'), archivedJobs: jobs });
     });
   const refreshProviders = () =>
     once('providers', async () => {
@@ -192,7 +262,113 @@ export function createWorkspace(request: Api = api) {
     expanded.add(id);
     patch({ expanded });
     const detail = await call<JobView>(`/api/jobs/${encodeURIComponent(id)}`);
+    if (!state.expanded.has(id)) return;
     patch({ details: { ...state.details, [id]: detail } });
+  };
+  const removeCase = (testCase: CaseSummary) =>
+    once('remove-case:' + caseKey(testCase), async () => {
+      patch({ error: '' });
+      const archived = await call<CaseSummary>(`/api/cases/${encodeURIComponent(testCase.project)}/${testCase.id}/delete`, {
+        expectedRevision: testCase.revision,
+      });
+      caseMutation++;
+      const key = caseKey(testCase);
+      patch({
+        cases: state.cases.filter((c) => caseKey(c) !== key),
+        selected: new Set([...state.selected].filter((selected) => selected !== key)),
+        undoArchive: { item: { kind: 'case', value: { ...testCase, ...archived } }, reopen: false },
+      });
+    });
+  const removeJob = (id: string) =>
+    once('remove-job:' + id, async () => {
+      patch({ error: '' });
+      await call(`/api/jobs/${encodeURIComponent(id)}/remove`, {});
+      jobMutation++;
+      const details = { ...state.details };
+      delete details[id];
+      const active = state.activeJob === id;
+      const job = state.jobs.find((j) => j.id === id);
+      if (active) {
+        preferences.set('active-job', null);
+        updateUrl(null);
+      }
+      patch({
+        jobs: state.jobs.filter((job) => job.id !== id),
+        details,
+        expanded: new Set([...state.expanded].filter((expanded) => expanded !== id)),
+        ...(active ? { activeJob: null } : {}),
+        ...(job ? { undoArchive: { item: { kind: 'run' as const, value: job }, reopen: active } } : {}),
+      });
+    });
+  const restoreItem = async (item: SidebarItem, reopen = false) => {
+    if (item.kind === 'case') {
+      const restored = await call<CaseSummary>(`/api/cases/${item.value.project}/${item.value.id}/restore`, {
+        expectedRevision: item.value.revision,
+      });
+      caseMutation++;
+      patch({
+        cases: [...state.cases.filter((c) => caseKey(c) !== caseKey(restored)), restored],
+        archivedCases: state.archivedCases.filter((c) => caseKey(c) !== caseKey(restored)),
+      });
+    } else {
+      await call(`/api/jobs/${encodeURIComponent(item.value.id)}/restore`, {});
+      jobMutation++;
+      const restored = { ...item.value, hiddenAt: undefined };
+      patch({
+        jobs: [...state.jobs.filter((j) => j.id !== restored.id), restored],
+        archivedJobs: state.archivedJobs.filter((j) => j.id !== restored.id),
+      });
+      if (reopen) await selectJob(restored.id);
+    }
+    patch({ undoArchive: null });
+  };
+  const deleteItem = async (item: SidebarItem) => {
+    if (item.kind === 'case') {
+      await call(`/api/cases/${item.value.project}/${item.value.id}/remove`, { expectedRevision: item.value.revision });
+      caseMutation++;
+      const key = caseKey(item.value);
+      patch({
+        cases: state.cases.filter((c) => caseKey(c) !== key),
+        archivedCases: state.archivedCases.filter((c) => caseKey(c) !== key),
+        selected: new Set([...state.selected].filter((k) => k !== key)),
+      });
+    } else {
+      const id = item.value.id;
+      await call(`/api/jobs/${encodeURIComponent(id)}/delete`, {});
+      jobMutation++;
+      if (state.activeJob === id) {
+        preferences.set('active-job', null);
+        updateUrl(null);
+      }
+      const details = { ...state.details };
+      delete details[id];
+      patch({
+        jobs: state.jobs.filter((j) => j.id !== id),
+        archivedJobs: state.archivedJobs.filter((j) => j.id !== id),
+        details,
+        expanded: new Set([...state.expanded].filter((key) => key !== id)),
+        activeJob: state.activeJob === id ? null : state.activeJob,
+      });
+    }
+    patch({ confirmDelete: null, undoArchive: null });
+  };
+  const organize = async (item: SidebarItem, changes: { pinned?: boolean; settled?: boolean; sortOrder?: number }) => {
+    if (item.kind === 'case') {
+      const c = await call<CaseSummary>(`/api/cases/${item.value.project}/${item.value.id}/organize`, {
+        expectedRevision: item.value.revision,
+        changes,
+      });
+      caseMutation++;
+      patch({ cases: state.cases.map((old) => (caseKey(old) === caseKey(c) ? c : old)) });
+    } else {
+      const result = await call<Partial<JobView>>(`/api/jobs/${encodeURIComponent(item.value.id)}/organize`, changes);
+      jobMutation++;
+      patch({
+        jobs: state.jobs.map((j) =>
+          j.id === item.value.id ? { ...j, pinnedAt: result.pinnedAt, settledAt: result.settledAt, sortOrder: result.sortOrder } : j,
+        ),
+      });
+    }
   };
   const run = async (keys = [...state.selected]) => {
     if (state.submitting) return;
@@ -264,12 +440,45 @@ export function createWorkspace(request: Api = api) {
     readyTargets,
     refreshCases,
     refreshJobs,
+    refreshArchive,
     refreshProviders,
     refreshEnvironments,
     setEnvironments,
     beginDraft,
     selectJob,
     toggleExpanded,
+    removeCase,
+    removeJob,
+    restoreItem,
+    deleteItem,
+    organize,
+    async reorderItems(items: SidebarItem[]) {
+      if (!items.length) return;
+      const kind = items[0].kind;
+      const ids = items.map((item) => (item.kind === 'case' ? caseKey(item.value) : item.value.id));
+      if (kind === 'case') {
+        const updated = await call<CaseSummary[]>('/api/sidebar/order', { kind, ids });
+        caseMutation++;
+        const byKey = new Map(updated.map((c) => [caseKey(c), c]));
+        patch({ cases: state.cases.map((c) => byKey.get(caseKey(c)) ?? c) });
+      } else {
+        const updated = await call<{ id: string; sortOrder: number }[]>('/api/sidebar/order', { kind, ids });
+        jobMutation++;
+        const byId = new Map(updated.map((j) => [j.id, j.sortOrder]));
+        patch({ jobs: state.jobs.map((j) => (byId.has(j.id) ? { ...j, sortOrder: byId.get(j.id) } : j)) });
+      }
+    },
+    setSidebarGrouping(sidebarGrouping: SidebarGrouping) {
+      preferences.set('sidebar-grouping', sidebarGrouping);
+      patch({ sidebarGrouping });
+    },
+    toggleGroup(key: string) {
+      const collapsedGroups = new Set(state.collapsedGroups);
+      if (collapsedGroups.has(key)) collapsedGroups.delete(key);
+      else collapsedGroups.add(key);
+      preferences.set('collapsed-groups', JSON.stringify([...collapsedGroups]));
+      patch({ collapsedGroups });
+    },
     run,
     showTab(tab: 'cases' | 'history') {
       patch({ sidebarTab: tab, search: '' });

@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFile
 import { dirname, join } from 'node:path';
 import { z } from 'zod';
 import type { QaseCase } from './qase.ts';
+import { organizeItem, type ItemOrganization } from './organization.ts';
 
 export const projectSchema = z.string().regex(/^[A-Z0-9_]{1,32}$/);
 const text = z.string().max(12000).nullable();
@@ -57,14 +58,18 @@ export const syncCaseSchema = z
     overwriteLocal: z.boolean().default(false),
   })
   .strict();
-export type TestCase = QaseCase & {
-  revision: string;
-  status: 'draft' | 'active' | 'archived';
-  tags: string[];
-  createdAt?: string;
-  updatedAt?: string;
-  source: { kind: 'local' | 'qase'; externalId?: string; syncedAt?: string; contentHash?: string };
-};
+export type TestCase = QaseCase &
+  ItemOrganization & {
+    revision: string;
+    status: 'draft' | 'active' | 'archived';
+    tags: string[];
+    createdAt?: string;
+    updatedAt?: string;
+    archivedAt?: string;
+    archivedFromStatus?: 'draft' | 'active';
+    deletedAt?: string;
+    source: { kind: 'local' | 'qase'; externalId?: string; syncedAt?: string; contentHash?: string };
+  };
 type Catalog = { cases: Record<string, TestCase>; creates: Record<string, { hash: string; key: string }> };
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const fail = (code: string, message: string): never => {
@@ -94,6 +99,11 @@ export const caseSummary = (c: TestCase) => ({
   title: c.title,
   revision: c.revision,
   status: c.status,
+  archivedAt: c.archivedAt,
+  createdAt: c.createdAt,
+  pinnedAt: c.pinnedAt,
+  settledAt: c.settledAt,
+  sortOrder: c.sortOrder,
   tags: c.tags,
   suite: c.suite_path ?? '',
   priority: c.priority,
@@ -138,9 +148,10 @@ export class CaseCatalog {
     };
   }
   get(project: string, id: number): TestCase {
-    return (
-      this.read().cases[keyOf(project, id)] ?? this.legacy(project, id) ?? fail('NOT_FOUND', 'Case not found. Create or import it first.')
-    );
+    const c =
+      this.read().cases[keyOf(project, id)] ?? this.legacy(project, id) ?? fail('NOT_FOUND', 'Case not found. Create or import it first.');
+    if (c.deletedAt) fail('NOT_FOUND', 'This case was deleted.');
+    return c;
   }
   list(includeArchived = false) {
     const cases = new Map<string, TestCase>();
@@ -150,7 +161,7 @@ export class CaseCatalog {
     }
     for (const [key, c] of Object.entries(this.read().cases)) cases.set(key, c);
     return [...cases.values()]
-      .filter((c) => includeArchived || c.status !== 'archived')
+      .filter((c) => !c.deletedAt && (includeArchived || c.status !== 'archived'))
       .sort((a, b) => (a.suite_path ?? '').localeCompare(b.suite_path ?? '') || a.project.localeCompare(b.project) || a.id - b.id);
   }
   create(input: unknown) {
@@ -159,12 +170,16 @@ export class CaseCatalog {
     const prior = idempotencyKey && Object.hasOwn(db.creates, idempotencyKey) ? db.creates[idempotencyKey] : undefined;
     if (prior) {
       if (prior.hash !== hash(fields)) fail('IDEMPOTENCY_CONFLICT', 'Creation key already used with different case data');
+      if (db.cases[prior.key]?.deletedAt) fail('CASE_DELETED', 'This case was deleted. Use a new creation key.');
       return db.cases[prior.key];
     }
     const id =
       Math.max(
         0,
         ...this.list(true)
+          .filter((c) => c.project === fields.project)
+          .map((c) => c.id),
+        ...Object.values(db.cases)
           .filter((c) => c.project === fields.project)
           .map((c) => c.id),
       ) + 1;
@@ -198,6 +213,13 @@ export class CaseCatalog {
       revision: randomUUID(),
       updatedAt: new Date().toISOString(),
     };
+    if (old.status !== 'archived' && c.status === 'archived') {
+      c.archivedFromStatus = old.status;
+      c.archivedAt = c.updatedAt;
+    } else if (c.status !== 'archived') {
+      delete c.archivedAt;
+      delete c.archivedFromStatus;
+    }
     if (c.status === 'active') assertRunnable(c);
     db.cases[keyOf(project, id)] = c;
     this.save(db);
@@ -207,11 +229,55 @@ export class CaseCatalog {
     const { expectedRevision } = deleteCaseSchema.parse(input);
     return this.update(project, id, { expectedRevision, changes: { status: 'archived' } });
   }
+  restore(project: string, id: number, input: unknown) {
+    const { expectedRevision } = deleteCaseSchema.parse(input);
+    const old = this.get(project, id);
+    const previousStatus =
+      old.archivedFromStatus ??
+      (old.steps.length && old.steps.every((step) => step.action?.trim() && step.expected_result?.trim()) ? 'active' : 'draft');
+    return this.update(project, id, {
+      expectedRevision,
+      changes: { status: old.status === 'archived' ? previousStatus : old.status },
+    });
+  }
+  remove(project: string, id: number, input: unknown) {
+    const { expectedRevision } = deleteCaseSchema.parse(input),
+      db = this.read();
+    const old = this.get(project, id);
+    if (old.revision !== expectedRevision) fail('REVISION_CONFLICT', 'Case changed. Refresh before deleting it.');
+    const c = { ...old, deletedAt: new Date().toISOString(), revision: randomUUID() };
+    db.cases[keyOf(project, id)] = c;
+    this.save(db);
+    return { project, id, deleted: true };
+  }
+  organize(project: string, id: number, input: unknown) {
+    const { expectedRevision, changes } = z.object({ expectedRevision: z.string(), changes: z.unknown() }).strict().parse(input);
+    const db = this.read(),
+      old = this.get(project, id);
+    if (old.revision !== expectedRevision) fail('REVISION_CONFLICT', 'Case changed. Refresh before organizing it.');
+    const c = { ...organizeItem(old, changes), revision: randomUUID() };
+    db.cases[keyOf(project, id)] = c;
+    this.save(db);
+    return c;
+  }
+  reorder(keys: string[]) {
+    const db = this.read();
+    const records = keys.map((key) => {
+      const match = /^([A-Z0-9_]+)-(\d+)$/.exec(key);
+      if (!match) return fail('INVALID_INPUT', 'Invalid case ID');
+      return this.get(match[1], Number(match[2]));
+    });
+    const updated = records.map((c, sortOrder) => ({ ...c, sortOrder, revision: randomUUID() }));
+    for (const c of updated) db.cases[keyOf(c.project, c.id)] = c;
+    this.save(db);
+    return updated;
+  }
   syncQase(remote: QaseCase, expectedRevision?: string, overwriteLocal = false) {
     const key = keyOf(remote.project, remote.id),
       db = this.read();
     const old = db.cases[key] ?? this.legacy(remote.project, remote.id);
     if (old) {
+      if (old.deletedAt) fail('CASE_DELETED', 'This case was deleted. Its ID cannot be reused.');
       if (old.source.kind !== 'qase') fail('SOURCE_CONFLICT', 'This ID belongs to a local case; use another project for Qase imports');
       if (old.revision !== expectedRevision) fail('REVISION_CONFLICT', 'Read get_case and pass its current revision before syncing');
       if (!overwriteLocal && (old.status === 'archived' || hash(content(old)) !== old.source.contentHash))
@@ -223,6 +289,9 @@ export class CaseCatalog {
       revision: randomUUID(),
       status: old?.status === 'draft' ? 'draft' : 'active',
       tags: old?.tags ?? [],
+      pinnedAt: old?.pinnedAt,
+      settledAt: old?.settledAt,
+      sortOrder: old?.sortOrder,
       createdAt: old?.createdAt ?? now,
       updatedAt: now,
       source: { kind: 'qase', externalId: key, syncedAt: now, contentHash: hash(content(remote)) },

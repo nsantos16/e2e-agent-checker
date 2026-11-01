@@ -1,5 +1,7 @@
 # Regression checks
 
+Run `npm run check`, `npm test`, `npm run build`, and `npm run test:browser`. The browser runner serves the production UI on a disposable local port and runs the workspace (82 checks), playback (12 checks), and management (26 checks) suites in headless Chromium. Install the repository's Playwright Chromium first if needed (`npx playwright install chromium`). The suites use isolated fixture APIs and do not change your cases, jobs or settings or call models.
+
 ## Saved-spec reuse
 
 `npm test` includes saved-spec manifest decisions and pipeline/queue regressions. `node tests/saved-specs-smoke.ts` adds real Playwright verification against disposable localhost builds, including a preserved regression and fresh video/trace/network evidence. It calls no model providers and writes measured replay durations to its printed `measurements.json`. See [behavior and measurement limits](../docs/saved-spec-reuse.md).
@@ -14,11 +16,19 @@ It exercises the built React components through real controls and fixture API re
 
 ## Workspace regression
 
-Evaluate `app-workspace.browser.js` the same way. Success returns 64 checks covering automatic reuse/fresh authoring, case selection, catalog refresh and draft activation, multi-model batch submission, model search, keyboard focus, unavailable-provider guidance, separate Connections settings, focused run history, polling, new drafts, theme persistence mobile layout, side-panel docking and browser preservation, network search/type/stage filters, sorting, response/raw detail, copy actions, keyboard navigation, pause/resume, bounded loading, retention disclosure, responsive inspection, escaped response text, live frame identity, closed-session labeling and direct selection of older runs. Requests, preferences and polling are mocked inside an isolated frame; this test does not consume subscription allowance or start real jobs.
+Evaluate `app-workspace.browser.js` the same way. Success returns 82 checks covering automatic reuse/fresh authoring, case selection, catalog refresh and draft activation, multi-model batch submission, model search, keyboard focus, unavailable-provider guidance, separate Connections settings, focused run history, polling, new drafts, theme persistence mobile layout, side-panel docking and browser preservation, network search/type/stage filters, sorting, response/raw detail, copy actions, keyboard navigation, pause/resume, bounded loading, retention disclosure, responsive inspection, escaped response text, live frame identity, closed-session labeling and direct selection of older runs. Sidebar removal checks cover case archival and draft removal, revision conflicts and retry, active-run guards, failed run removal, selection cleanup, counts, polling, a fresh workspace and access to hidden historical evidence. Requests, preferences and polling are mocked inside an isolated frame; this test does not consume subscription allowance or start real jobs.
 
 ## Browser/network runtime smoke
 
 Run `node tests/observability-smoke.ts` after browser setup. This uses the real checker Playwright MCP and replay pipeline against a disposable localhost page, with no model calls. It checks live frames, HTTP 503 and transport failures, request IDs, redaction, automatic agent-tool context, and capture through stabilization and replay. Evidence remains in the printed gitignored `runs/observation-smoke-*` directory.
+
+## Sidebar management and retention
+
+`app-management.browser.js` checks combined project/status folders, pins, collapse, right-click menus, saved ordering, settlement, active-run guards, archive Undo and Unarchive, deletion through the archived-row context menu, confirmation/cancellation of deletion, disabled-by-default retention, input validation, saved settings, cleanup reports, refresh persistence and mobile layout. It can also be evaluated in the app's browser context like the other browser scripts.
+
+Store and API tests cover archive/restore of drafts, revision conflicts, deleted-ID tombstones and idempotency, run guards without implicit cancellation, preservation of artifact files, HTTP/MCP compatibility, saved state across server restart, and selection cleanup during stale requests. Workspace checks include pagination beyond the first 1,000 archived runs and deletion from another window.
+
+`run-cache.test.ts` uses disposable directories to check opt-in settings, day limits and revision checks, expiry of visible/archived/deleted runs, deletion of videos/traces/generated specs with result records retained, protection of active jobs and replay dependencies, and refusal of unmanaged roots and symbolic links. The real API test also starts the service with an enabled policy and disposable managed cache, checks startup cleanup, verifies expired evidence and preserved case/result summaries, and restarts to check persistence.
 
 ## Agent MCP contract and API integration
 
@@ -60,7 +70,7 @@ The [component comparison](../docs/sol61-batch-ablation.md) then compared the re
 
 ## React workspace and assets
 
-`npm run check` checks both backend and browser TypeScript. `npm test` includes workspace submission, catalog pruning, late selection responses, parallel startup, request deduplication and cancellation on unmount. API integration tests check the compiled HTML/JavaScript/CSS, asset cache headers and path boundaries. The browser suites above load the production bundle; they use no internal rendering globals.
+`npm run check` checks both backend and browser TypeScript. `npm test` includes workspace submission, catalog pruning, late selection responses, parallel startup, request deduplication and cancellation on unmount. Removal regressions cover in-flight list/detail responses, unrelated selection, failed mutations, URL/preference cleanup, active-job rejection without cancellation, and case archival while work is queued/running. API integration tests check the compiled HTML/JavaScript/CSS, asset cache headers and path boundaries, plus run removal across server restart with HTTP/MCP evidence and wait operations still available. The browser suites above load the production bundle; they use no internal rendering globals.
 
 ## Stabilization evidence reuse
 

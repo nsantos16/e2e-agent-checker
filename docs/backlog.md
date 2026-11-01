@@ -2,16 +2,6 @@
 
 Resume list for another agent. Each item is a request, not current behavior. Read the linked docs and code before changing anything. Leave an item here until it is implemented.
 
-## 1. Remove side-pane items
-
-Recorded 2026-10-19.
-
-The side pane (`src/app/client/components/Sidebar.tsx`) lists cases and runs. Selecting a run opens it in the workspace. There is no control to remove a run from that list. Cases can be archived through MCP `delete_case`; the pane has no remove control for a case either.
-
-**Request:** Remove a run from the side pane. The same remove action applies to every element listed there, including cases and runs.
-
-**Read:** `src/app/client/components/Sidebar.tsx`, `src/app/client/workspace.ts`, `src/jobs.ts`, `src/cases.ts`, [case management](case-management.md).
-
 ## 2. Prove backend changes with request e2e
 
 Recorded 2026-10-19.

@@ -10,7 +10,22 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { extname, join, resolve } from 'node:path';
 import { config, frontendRepo, requireFrontendRepo } from '../config.ts';
 import { runDoctorEffect } from '../doctor.ts';
-import { cancelJob, getJob, listJobs, replayJob, submitBatchEffect, shutdownJobsEffect } from '../jobs.ts';
+import {
+  cancelJob,
+  getJob,
+  listJobs,
+  removeJob,
+  restoreJob,
+  deleteJob,
+  organizeJob,
+  reorderJobs,
+  cleanupRunCache,
+  getCleanupReport,
+  replayJob,
+  submitBatchEffect,
+  shutdownJobsEffect,
+} from '../jobs.ts';
+import { appSettings } from '../settings.ts';
 import { fetchCasesEffect, loadCaseWithRelatedEffect } from '../qase.ts';
 import { environmentSummary, environmentId } from '../environments.ts';
 import { caseCatalog, caseSummary, syncCaseSchema } from '../cases.ts';
@@ -171,6 +186,20 @@ const handleRequest = (req: IncomingMessage, res: ServerResponse) =>
         200,
         url.searchParams.get('detail') === '1' ? yield* environments.list() : (yield* environments.list()).map(environmentSummary),
       );
+    if (req.method === 'GET' && url.pathname === '/api/settings') return json(res, 200, appSettings.get());
+    if (req.method === 'POST' && url.pathname === '/api/sidebar/order') {
+      const { kind, ids } = z
+        .object({ kind: z.enum(['case', 'run']), ids: z.array(z.string().min(1)).min(1).max(1000) })
+        .strict()
+        .parse(yield* sdk(() => readBody(req)));
+      if (new Set(ids).size !== ids.length) return json(res, 400, { error: 'Duplicate item IDs', code: 'INVALID_INPUT' });
+      return json(res, 200, kind === 'case' ? caseCatalog.reorder(ids).map(caseSummary) : reorderJobs(ids));
+    }
+    if (req.method === 'POST' && url.pathname === '/api/settings') return json(res, 200, appSettings.save(yield* sdk(() => readBody(req))));
+    if (url.pathname === '/api/storage/cleanup') {
+      if (req.method === 'GET') return json(res, 200, getCleanupReport());
+      if (req.method === 'POST') return json(res, 200, cleanupRunCache());
+    }
     if (req.method === 'POST' && url.pathname === '/api/environments')
       return json(res, 200, environmentSummary(yield* environments.save(yield* sdk(() => readBody(req)))));
     const environmentMatch = url.pathname.match(/^\/api\/environments\/([a-z0-9_-]+)\/delete$/);
@@ -228,7 +257,7 @@ const handleRequest = (req: IncomingMessage, res: ServerResponse) =>
       const remote = (yield* fetchCasesEffect(input.project, [input.caseId]))[0];
       return json(res, 200, caseSummary(yield* cases.syncQase(remote, input.expectedRevision, input.overwriteLocal)));
     }
-    const caseMatch = url.pathname.match(/^\/api\/cases\/([A-Z0-9_]+)\/(\d+)(?:\/(update|delete))?$/);
+    const caseMatch = url.pathname.match(/^\/api\/cases\/([A-Z0-9_]+)\/(\d+)(?:\/(update|delete|restore|remove|organize))?$/);
     if (caseMatch) {
       const [, project, id, action] = caseMatch;
       if (req.method === 'GET' && !action) return json(res, 200, yield* cases.get(project, Number(id)));
@@ -236,6 +265,12 @@ const handleRequest = (req: IncomingMessage, res: ServerResponse) =>
         return json(res, 200, caseSummary(yield* cases.update(project, Number(id), yield* sdk(() => readBody(req)))));
       if (req.method === 'POST' && action === 'delete')
         return json(res, 200, caseSummary(yield* cases.archive(project, Number(id), yield* sdk(() => readBody(req)))));
+      if (req.method === 'POST' && action === 'restore')
+        return json(res, 200, caseSummary(yield* cases.restore(project, Number(id), yield* sdk(() => readBody(req)))));
+      if (req.method === 'POST' && action === 'organize')
+        return json(res, 200, caseSummary(yield* cases.organize(project, Number(id), yield* sdk(() => readBody(req)))));
+      if (req.method === 'POST' && action === 'remove')
+        return json(res, 200, yield* cases.remove(project, Number(id), yield* sdk(() => readBody(req))));
     }
     if (req.method === 'GET' && url.pathname === '/api/worktrees') {
       const slots = yield* Effect.forEach(
@@ -270,6 +305,7 @@ const handleRequest = (req: IncomingMessage, res: ServerResponse) =>
         listJobs()
           .filter(
             (j) =>
+              (url.searchParams.get('archived') === '1' ? !!j.hiddenAt : !j.hiddenAt || url.searchParams.get('includeHidden') === '1') &&
               (!ids || ids.has(j.id)) &&
               (!url.searchParams.has('status') || j.status === url.searchParams.get('status')) &&
               (!url.searchParams.has('provider') || j.target?.provider === url.searchParams.get('provider')) &&
@@ -373,6 +409,21 @@ const handleRequest = (req: IncomingMessage, res: ServerResponse) =>
         .on('error', () => res.destroy())
         .pipe(res);
     }
+    const removeMatch = url.pathname.match(/^\/api\/jobs\/([\w-]+)\/remove$/);
+    if (req.method === 'POST' && removeMatch) {
+      const job = removeJob(removeMatch[1]);
+      return json(res, 200, { id: job.id, hiddenAt: job.hiddenAt });
+    }
+    const manageMatch = url.pathname.match(/^\/api\/jobs\/([\w-]+)\/(restore|delete|organize)$/);
+    if (req.method === 'POST' && manageMatch) {
+      const [, id, action] = manageMatch;
+      if (action === 'delete') {
+        deleteJob(id);
+        return json(res, 200, { id, deleted: true });
+      }
+      const job = action === 'restore' ? restoreJob(id) : organizeJob(id, yield* sdk(() => readBody(req)));
+      return json(res, 200, { id, hiddenAt: job.hiddenAt, pinnedAt: job.pinnedAt, settledAt: job.settledAt, sortOrder: job.sortOrder });
+    }
     const actionMatch = url.pathname.match(/^\/api\/jobs\/([\w-]+)\/(cancel|replay)$/);
     if (req.method === 'POST' && actionMatch)
       return json(res, 200, actionMatch[2] === 'cancel' ? cancelJob(actionMatch[1]) : replayJob(actionMatch[1]));
@@ -382,19 +433,17 @@ const handleRequest = (req: IncomingMessage, res: ServerResponse) =>
       if (!job) return json(res, 404, { error: 'unknown job', code: 'NOT_FOUND' });
       if (url.searchParams.get('view') === 'summary') return json(res, 200, jobSummary(job, `http://localhost:${PORT}`));
       const comment = job.prComment && existsSync(job.prComment) ? readFileSync(job.prComment, 'utf8') : undefined;
-      const summary =
-        job.runDir && existsSync(join(job.runDir, 'summary.json'))
-          ? JSON.parse(readFileSync(join(job.runDir, 'summary.json'), 'utf8'))
-          : undefined;
       return json(res, 200, {
         ...job,
+        video: job.video && existsSync(job.video) ? job.video : undefined,
+        prComment: job.prComment && existsSync(job.prComment) ? job.prComment : undefined,
         caseSnapshot: undefined,
         environmentSnapshot: undefined,
         identityKey: undefined,
         caseRevision: job.caseSnapshot?.revision,
         network: job.runDir ? readNetwork(job.runDir, { errorsOnly: true, limit: 10 }) : undefined,
         comment,
-        spec: summary?.spec,
+        spec: artifactPath(job, 'spec'),
         notes:
           job.runDir && existsSync(join(job.runDir, 'explore/report.json'))
             ? JSON.parse(readFileSync(join(job.runDir, 'explore/report.json'), 'utf8')).notes
@@ -456,6 +505,22 @@ await runMain(
               resolve();
             });
           }),
+      );
+      // Only the listening service may sweep; a failed second startup must not
+      // remove files owned by the service that already holds this port.
+      yield* Effect.acquireRelease(
+        Effect.sync(() => {
+          const sweep = () => {
+            try {
+              cleanupRunCache();
+            } catch (error) {
+              console.error('Run cache cleanup failed:', error);
+            }
+          };
+          sweep();
+          return setInterval(sweep, 60 * 60 * 1000);
+        }),
+        (timer) => Effect.sync(() => clearInterval(timer)),
       );
       const address = `http://localhost:${PORT}`;
       console.log(`e2e-agent-checker app: ${address}`);

@@ -280,6 +280,16 @@ kbd {
 .case:focus-within .run {
   opacity: 1;
 }
+.remove-item {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  padding: 4px;
+  color: var(--subtle);
+}
+.remove-item:not(:disabled):hover {
+  color: var(--red);
+}
 .status-dot {
   display: inline-block;
   width: 5px;
@@ -304,15 +314,22 @@ kbd {
   background: var(--amber);
 }
 .history-item {
-  display: block;
+  display: flex;
+  align-items: center;
   width: 100%;
-  padding: 10px;
+  padding-right: 6px;
   border-radius: 8px;
-  text-align: left;
   margin: 2px 0;
 }
+.history-item:hover,
 .history-item.active {
   background: var(--hover);
+}
+.history-open {
+  flex: 1;
+  min-width: 0;
+  padding: 10px;
+  text-align: left;
 }
 .history-title {
   display: flex;
@@ -874,7 +891,8 @@ dialog::backdrop {
 .settings-dialog {
   width: 530px;
 }
-#settings-dialog:has(#environments-settings:not([hidden])) {
+#settings-dialog:has(#environments-settings:not([hidden])),
+#settings-dialog:has(#archived-settings) {
   width: 740px;
 }
 #settings-dialog {
@@ -1190,6 +1208,10 @@ dialog::backdrop {
 .field input,
 .field select {
   width: 100%;
+}
+.field-stacked {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
 }
 .import-dialog {
   width: 370px;
@@ -2027,4 +2049,226 @@ dialog::backdrop {
 
 #root {
   height: 100%;
+}
+
+.sidebar-entry {
+  position: relative;
+}
+.sidebar-entry > .case {
+  padding-right: 36px;
+}
+.sidebar-entry > .history-item {
+  padding-right: 36px;
+}
+.item-actions {
+  position: absolute;
+  right: 6px;
+  top: 8px;
+}
+.case-suite {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  color: var(--subtle);
+  margin-top: 4px;
+}
+.group-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  text-align: left;
+  color: var(--subtle);
+  padding: 12px 8px 6px;
+  font-size: 11px;
+}
+.group-header > svg {
+  width: 12px;
+  height: 12px;
+}
+.group-header > svg.collapsed {
+  transform: rotate(-90deg);
+}
+.group-header small {
+  margin-left: auto;
+  font-size: 10px;
+}
+.sidebar-subgroups {
+  margin-left: 8px;
+  border-left: 1px solid var(--line);
+  padding-left: 4px;
+}
+.item-menu {
+  position: fixed;
+  margin: 0;
+  width: 200px;
+  padding: 5px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 8px 25px #0004;
+}
+.item-menu:popover-open {
+  display: grid;
+}
+.item-menu button {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  text-align: left;
+  padding: 8px;
+  font-size: 12px;
+}
+.item-menu svg {
+  width: 15px;
+  height: 15px;
+}
+.danger {
+  color: var(--red);
+}
+.undo-notice {
+  position: fixed;
+  bottom: 16px;
+  left: 16px;
+  z-index: 20;
+  max-width: min(500px, calc(100vw - 32px));
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px;
+  background: var(--surface);
+  box-shadow: 0 6px 24px #0004;
+  font-size: 12px;
+}
+.undo-notice span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.undo-notice button {
+  color: var(--blue);
+}
+.settings-tabs {
+  flex-wrap: wrap;
+}
+.archive-sections {
+  display: grid;
+  gap: 28px;
+}
+.archive-section > h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding: 0 16px;
+  font-size: 16px;
+  font-weight: 600;
+}
+.archive-section > h3 svg {
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+}
+.archive-group {
+  container-type: inline-size;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 40%, transparent);
+}
+.archive-group > * + * {
+  border-top: 1px solid var(--line);
+}
+.archive-item-actions:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: -2px;
+  border-radius: 10px;
+}
+.archived-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+}
+.archived-copy {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.archived-copy h4,
+.archive-empty h4 {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  font-weight: 500;
+}
+.archived-copy p,
+.archive-empty p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.archived-copy p span {
+  display: block;
+}
+.unarchive-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.unarchive-button svg,
+.archive-empty svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+.archive-empty {
+  padding: 14px 16px;
+}
+.archive-empty h4 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.archive-empty svg {
+  color: var(--muted);
+}
+@container (min-width: 512px) {
+  .archived-row {
+    flex-direction: row;
+    align-items: center;
+    gap: 32px;
+  }
+  .archived-copy {
+    flex: 1;
+  }
+}
+.retention-toggle {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 12px 0 20px;
+}
+.cleanup-report,
+.cache-expired {
+  font-size: 12px;
+  color: var(--subtle);
+}
+.cache-expired {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px;
 }

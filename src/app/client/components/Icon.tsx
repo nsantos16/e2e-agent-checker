@@ -9,6 +9,13 @@ const shapes: Record<string, ReactNode> = {
   ),
   play: <path d="m8 5 11 7-11 7Z" />,
   close: <path d="m6 6 12 12M6 18 18 6" />,
+  more: <path d="M5 12h.01M12 12h.01M19 12h.01" strokeWidth="3" />,
+  pin: <path d="m9 3 6 0-1 6 4 4v2H6v-2l4-4-1-6ZM12 15v6" />,
+  archive: <path d="M3 4h18v4H3zM5 8v12h14V8M9 12h6" />,
+  unarchive: <path d="M3 4h18v4H3zM5 8v12h14V8m-9 4 4 4m0-4-4 4" />,
+  folder: <path d="M3 7V5a1 1 0 0 1 1-1h5l2 3h9a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1Z" />,
+  restore: <path d="M4 9a8 8 0 1 1 0 7M4 3v6h6" />,
+  trash: <path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7" />,
   settings: (
     <>
       <path d="M9 3h6l1 3 3 1 2 5-2 5-3 1-1 3H9l-1-3-3-1-2-5 2-5 3-1Z" />

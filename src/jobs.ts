@@ -16,10 +16,13 @@ import { verifyEffect } from './verify.ts';
 import { newRunDir } from './explore.ts';
 import { RunError, targetSchema, type Target } from './providers/index.ts';
 import { claudeUsage, emptyUsage, mergeUsage, noModelUsage, type Usage, type RunMetrics } from './usage.ts';
-import { explorationReportPath, type BuildProvenance, type SpecSelection } from './saved-specs.ts';
+import { explorationReportPath, runsRoot, type BuildProvenance, type SpecSelection } from './saved-specs.ts';
+import { organizeItem, type ItemOrganization } from './organization.ts';
+import { cleanRunCaches, type CleanupReport } from './run-cache.ts';
+import { appSettings } from './settings.ts';
 
 export type JobStatus = 'queued' | 'running' | 'cancelling' | 'done' | 'failed' | 'cancelled' | 'interrupted';
-export type Job = {
+export type Job = ItemOrganization & {
   id: string;
   project: string;
   caseId: number;
@@ -45,6 +48,9 @@ export type Job = {
   createdAt: string;
   startedAt?: string;
   finishedAt?: string;
+  hiddenAt?: string;
+  deletedAt?: string;
+  cacheClearedAt?: string;
   runDir?: string;
   outcome?: string;
   exploreVerdict?: string;
@@ -81,7 +87,7 @@ const jobsPath = process.env.E2E_JOBS_PATH ?? join(root, '.state/jobs.json');
 const jobs = new Map<string, Job>(existsSync(jobsPath) ? JSON.parse(readFileSync(jobsPath, 'utf8')).map((j: Job) => [j.id, j]) : []);
 const persist = () => {
   mkdirSync(resolve(jobsPath, '..'), { recursive: true });
-  writeFileSync(jobsPath + '.tmp', JSON.stringify([...jobs.values()].slice(-1000), null, 2), { mode: 0o600 });
+  writeFileSync(jobsPath + '.tmp', JSON.stringify([...jobs.values()], null, 2), { mode: 0o600 });
   renameSync(jobsPath + '.tmp', jobsPath);
 };
 let recovered = false;
@@ -375,6 +381,8 @@ const submitBatchLockedEffect = (input: unknown) =>
     const existing = b.idempotencyKey ? [...jobs.values()].filter((j) => j.idempotencyKey === b.idempotencyKey) : [];
     if (existing.length) {
       if (existing[0].requestHash !== hash) throw new RunError('IDEMPOTENCY_CONFLICT', 'Key already used with different inputs');
+      if (existing.some((job) => job.deletedAt))
+        throw new RunError('JOB_DELETED', 'A run from this batch was deleted. Use a new submission key.');
       return existing;
     }
     const repository = yield* CaseRepository;
@@ -430,7 +438,7 @@ const submitBatchLockedEffect = (input: unknown) =>
     return created;
   });
 export function cancelJob(id: string) {
-  const j = jobs.get(id);
+  const j = getJob(id);
   if (!j) throw new RunError('NOT_FOUND', 'Unknown job');
   if (j.status === 'queued') {
     queue.splice(queue.indexOf(j), 1);
@@ -445,8 +453,74 @@ export function cancelJob(id: string) {
   }
   return j;
 }
+// Sidebar removal retains the job and its artifacts for evidence, replay and idempotency.
+export function removeJob(id: string) {
+  const job = getJob(id);
+  if (!job) throw new RunError('NOT_FOUND', 'Unknown job');
+  if (['queued', 'running', 'cancelling'].includes(job.status))
+    throw new RunError('JOB_ACTIVE', 'Wait for this run to finish before removing it. Cancel it separately if needed.');
+  if (!job.hiddenAt) {
+    job.hiddenAt = new Date().toISOString();
+    try {
+      persist();
+    } catch (error) {
+      delete job.hiddenAt;
+      throw error;
+    }
+  }
+  return job;
+}
+const changeJob = (id: string, change: (job: Job) => Job) => {
+  const job = getJob(id);
+  if (!job) throw new RunError('NOT_FOUND', 'Unknown job');
+  const previous = { ...job },
+    next = change(job);
+  Object.assign(job, next);
+  try {
+    persist();
+  } catch (error) {
+    for (const key of Object.keys(next)) if (!Object.hasOwn(previous, key)) Reflect.deleteProperty(job, key);
+    Object.assign(job, previous);
+    throw error;
+  }
+  return job;
+};
+export const restoreJob = (id: string) => changeJob(id, (job) => ({ ...job, hiddenAt: undefined }));
+export const deleteJob = (id: string) =>
+  changeJob(id, (job) => {
+    if (['queued', 'running', 'cancelling'].includes(job.status))
+      throw new RunError('JOB_ACTIVE', 'Wait for this run to finish before deleting it. Cancel it separately if needed.');
+    return { ...job, deletedAt: new Date().toISOString() };
+  });
+export const organizeJob = (id: string, input: unknown) =>
+  changeJob(id, (job) => {
+    const next = organizeItem(job, input);
+    if (next.settledAt && ['queued', 'running', 'cancelling'].includes(job.status))
+      throw new RunError('JOB_ACTIVE', 'Wait for this run to finish before settling it.');
+    return next;
+  });
+export function reorderJobs(ids: string[]) {
+  const records = ids.map((id) => {
+    const job = getJob(id);
+    if (!job) throw new RunError('NOT_FOUND', 'Unknown job');
+    return job;
+  });
+  const previous = records.map((job) => job.sortOrder);
+  records.forEach((job, index) => {
+    job.sortOrder = index;
+  });
+  try {
+    persist();
+  } catch (error) {
+    records.forEach((job, index) => {
+      job.sortOrder = previous[index];
+    });
+    throw error;
+  }
+  return records.map(({ id, sortOrder }) => ({ id, sortOrder }));
+}
 export function replayJob(id: string) {
-  const old = jobs.get(id);
+  const old = getJob(id);
   if (!old?.runDir) throw new RunError('ARTIFACT_MISSING', 'Job has no saved run');
   if (['queued', 'running', 'cancelling'].includes(old.status)) throw new RunError('ARTIFACT_MISSING', 'Wait for the source run to finish');
   const file = join(old.runDir, 'codify', `${old.project}-${old.caseId}.spec.ts`);
@@ -480,5 +554,15 @@ export function replayJob(id: string) {
   pump();
   return job;
 }
-export const getJob = (id: string) => jobs.get(id);
-export const listJobs = () => [...jobs.values()].reverse();
+export const getJob = (id: string) => {
+  const job = jobs.get(id);
+  return job?.deletedAt ? undefined : job;
+};
+export const listJobs = (includeDeleted = false) => [...jobs.values()].filter((job) => includeDeleted || !job.deletedAt).reverse();
+let cleanupReport: CleanupReport | null = null;
+export const getCleanupReport = () => cleanupReport;
+export function cleanupRunCache() {
+  cleanupReport = cleanRunCaches(listJobs(true), appSettings.get(), { runs: runsRoot(), generated: join(root, 'e2e/generated') });
+  if (cleanupReport.removed.length) persist();
+  return cleanupReport;
+}

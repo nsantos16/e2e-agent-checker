@@ -3,8 +3,23 @@ import type { Job } from '../../jobs.ts';
 import type { Provider, Target } from '../../providers/index.ts';
 import type { NetworkEntry as NetworkRequest } from '../../network.ts';
 import type { readObservation, readNetwork } from '../../observations.ts';
+import type { ItemOrganization } from '../../organization.ts';
+export type { AppSettings } from '../../settings.ts';
+export type { CleanupReport } from '../../run-cache.ts';
 export type { Provider, Target, NetworkRequest };
-export type CaseSummary = { project: string; id: number; title: string; suite?: string; steps: number; status?: string; tags?: string[] };
+export type CaseSummary = ItemOrganization & {
+  project: string;
+  id: number;
+  revision: string;
+  title: string;
+  suite?: string;
+  steps: number;
+  status?: string;
+  tags?: string[];
+  archivedAt?: string;
+  createdAt?: string;
+};
+export type SidebarItem = { kind: 'case'; value: CaseSummary } | { kind: 'run'; value: JobView };
 export type JobView = Omit<Job, 'steps'> & {
   steps?: ExploreReport['steps'];
   title?: string;

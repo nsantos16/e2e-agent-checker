@@ -24,6 +24,7 @@ export function jobSummary(job: Job, base: string) {
     target: job.target,
     batchId: job.batchId,
     createdAt: job.createdAt,
+    cacheClearedAt: job.cacheClearedAt,
     timing: job.timing,
     usage: job.usage,
     specSelection: job.specSelection,
@@ -151,6 +152,7 @@ export function readEvidence(job: Job, base: string, options: { artifact?: strin
     const failedSteps = (historical ? (report?.steps ?? []) : (job.steps ?? report?.steps ?? [])).filter((s) => s.verdict !== 'pass');
     return {
       jobId: job.id,
+      cacheClearedAt: job.cacheClearedAt,
       verdict: job.outcome ?? (historical ? null : (job.exploreVerdict ?? report?.verdict ?? null)),
       specSelection: job.specSelection,
       historicalExploration: job.historicalExploration,
@@ -169,7 +171,20 @@ export function readEvidence(job: Job, base: string, options: { artifact?: strin
   }
   const id = options.artifact;
   if (
-    !['logs', 'case', 'report', 'historical-report', 'manifest', 'summary', 'attempt', 'results', 'spec', 'comment', 'usage', 'pricing'].includes(id)
+    ![
+      'logs',
+      'case',
+      'report',
+      'historical-report',
+      'manifest',
+      'summary',
+      'attempt',
+      'results',
+      'spec',
+      'comment',
+      'usage',
+      'pricing',
+    ].includes(id)
   )
     throw Object.assign(new Error('Use an artifact URL to read binary evidence'), { code: 'INVALID_INPUT' });
   const path = id === 'logs' ? undefined : artifactPath(job, id as ArtifactId);

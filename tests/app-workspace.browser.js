@@ -9,9 +9,10 @@
   const frame = document.createElement('iframe');
   frame.style.cssText = 'position:fixed;left:-10000px;width:1280px;height:800px;border:0';
   const loaded = new Promise((resolve) => (frame.onload = resolve));
-  const bootstrap = () => {
+  const bootstrap = (saved) => {
     Object.defineProperty(document, 'hidden', { value: false });
-    const preferences = new Map([['active-job', JSON.stringify('workspace-test')]]);
+    const preferences = new Map(saved?.preferences ?? [['active-job', JSON.stringify('workspace-test')]]);
+    window.fixturePreferences = preferences;
     window.hideJobFromList = true;
     Object.defineProperty(window, 'localStorage', {
       value: {
@@ -61,6 +62,7 @@
         estimatedApiCostUsd: 0.0123,
         providerReportedCostUsd: null,
       },
+      ...saved?.job,
     };
     window.fixtureJob = job;
     window.fixtureObservation = {
@@ -123,9 +125,9 @@
         models: [],
       },
     ];
-    window.fixtureCases = [
-      { project: 'DEMO', id: 6003, title: 'Multiline note', steps: 3, suite: 'Notes' },
-      { project: 'DEMO', id: 6004, title: 'Note persistence', steps: 2, suite: 'Notes' },
+    window.fixtureCases = saved?.cases ?? [
+      { project: 'DEMO', id: 6003, revision: 'case-6003', title: 'Multiline note', steps: 3, suite: 'Notes' },
+      { project: 'DEMO', id: 6004, revision: 'case-6004', title: 'Note persistence', steps: 2, suite: 'Notes' },
     ];
     window.fixtureEnvironments = [
       {
@@ -151,6 +153,17 @@
       if (path.startsWith('/api/environments')) return Response.json(window.fixtureEnvironments);
       if (options?.method === 'POST') {
         window.requests.push({ path, body: JSON.parse(options.body) });
+        if (/^\/api\/cases\/[^/]+\/\d+\/delete$/.test(path)) {
+          if (window.rejectRemoval) return Response.json({ error: 'Case changed. Refresh before removing.' }, { status: 409 });
+          const [, , , project, id] = path.split('/');
+          window.fixtureCases = window.fixtureCases.filter((c) => c.project !== project || c.id !== Number(id));
+          return Response.json({ status: 'archived' });
+        }
+        if (path === '/api/jobs/' + job.id + '/remove') {
+          if (window.rejectRemoval) return Response.json({ error: 'Removal failed. Try again.' }, { status: 500 });
+          job.hiddenAt = new Date().toISOString();
+          return Response.json({ id: job.id, hiddenAt: job.hiddenAt });
+        }
         return Response.json([job.id]);
       }
       if (path.startsWith('/api/jobs/' + job.id + '/network')) {
@@ -178,7 +191,7 @@
               : path.startsWith('/api/providers')
                 ? providers
                 : path === '/api/jobs'
-                  ? window.hideJobFromList
+                  ? window.hideJobFromList || job.hiddenAt
                     ? []
                     : [job]
                   : path === '/api/jobs/' + job.id
@@ -610,6 +623,116 @@
     assert(
       rect.left >= 0 && rect.right <= w.innerWidth && rect.top >= 0 && rect.bottom <= w.innerHeight,
       'Mobile model picker stays inside the viewport',
+    );
+    $('#model-dialog [data-close]').click();
+    frame.style.width = '1280px';
+    frame.style.height = '800px';
+    $('#cases-tab').click();
+    await settle();
+    $('[data-select="DEMO-6003"]').click();
+    await settle();
+    const removeCase = () => $('[aria-label="Archive case DEMO-6003"]');
+    $('[aria-label="Actions for case DEMO-6003"]').click();
+    await settle();
+    removeCase().focus();
+    assert(d.activeElement === removeCase(), 'Sidebar remove controls are keyboard focusable');
+    w.rejectRemoval = true;
+    removeCase().click();
+    await settle();
+    assert(
+      removeCase() &&
+        !removeCase().disabled &&
+        $('[data-select="DEMO-6003"]').checked &&
+        $('#run-error').textContent.includes('Case changed'),
+      'Failed case removal reports the conflict and preserves selection for retry',
+    );
+    w.rejectRemoval = false;
+    $('[aria-label="Actions for case DEMO-6003"]').click();
+    await settle();
+    removeCase().click();
+    await settle();
+    assert(
+      !removeCase() && $('#clear-selection').hidden && !$('#selection-preview').textContent,
+      'Removing a selected case clears its draft selection',
+    );
+    assert(w.requests.at(-1).body.expectedRevision === 'case-6003', 'Sidebar archival sends the displayed case revision');
+    await w.tick(5000);
+    assert(
+      !$('[data-select="DEMO-6003"]') && $('#case-count').textContent === '1',
+      'Archived cases stay absent on refresh and update the count',
+    );
+    w.fixtureCases.push({ project: 'LOCAL', id: 2, revision: 'draft-2', status: 'draft', title: 'Removable draft', steps: 0 });
+    await w.tick(5000);
+    assert(!$('[aria-label="Archive case LOCAL-2"]').disabled, 'Draft cases can also be removed');
+    $('[aria-label="Archive case LOCAL-2"]').click();
+    await settle();
+    assert(!$('[data-select="LOCAL-2"]'), 'Removing a draft does not require activating it');
+    $('#history-tab').click();
+    await settle();
+    $('[data-open-job="workspace-test"]').click();
+    await settle();
+    const removeRun = () => $('[aria-label="Archive run workspace-test"]');
+    for (const status of ['queued', 'running', 'cancelling']) {
+      w.fixtureJob.status = status;
+      await w.tick(2000);
+      const count = w.requests.length;
+      removeRun().click();
+      await settle();
+      assert(
+        removeRun().disabled && removeRun().title.includes('finish') && w.requests.length === count,
+        `A ${status} run cannot be removed or implicitly cancelled`,
+      );
+    }
+    $('#cases-tab').click();
+    await settle();
+    $('[aria-label="Archive case DEMO-6004"]').click();
+    await settle();
+    assert(
+      $('#view-title').textContent === 'DEMO-6003' && w.fixtureJob.status === 'cancelling',
+      'Removing another case does not select it or disturb the open run',
+    );
+    w.fixtureJob.status = 'done';
+    await w.tick(2000);
+    $('#history-tab').click();
+    await settle();
+    assert(!removeRun().disabled && !removeRun().closest('button button'), 'Finished run removal is separate from the open-run button');
+    w.rejectRemoval = true;
+    removeRun().click();
+    await settle();
+    assert(
+      $('#view-title').textContent === 'DEMO-6003' && removeRun() && $('#run-error').textContent.includes('Removal failed'),
+      'Failed run removal preserves the workspace and reports an error',
+    );
+    w.rejectRemoval = false;
+    removeRun().click();
+    await settle();
+    assert(!removeRun() && !$('#jobs .job') && !$('#welcome').hidden, 'Removing the selected run clears its workspace card');
+    assert(
+      w.localStorage.getItem('active-job') === null && $('#history-count').textContent === '',
+      'Removing the selected run clears its saved selection and history count',
+    );
+    await w.tick(2000);
+    assert(!$('[data-open-job="workspace-test"]') && !$('#jobs .job'), 'Polling does not restore a removed run');
+    const remount = async () => {
+      const saved = { job: w.fixtureJob, cases: w.fixtureCases, preferences: [...w.fixturePreferences] };
+      const reloaded = new Promise((resolve) => {
+        frame.onload = resolve;
+      });
+      frame.srcdoc = html.replace('</head>', '<script>(' + bootstrap.toString() + ')(' + JSON.stringify(saved) + ');</script></head>');
+      await reloaded;
+      await waitFor(() => [...frame.contentWindow.fixtureTimers.values()].some((t) => t.ms === 5000));
+      return frame.contentDocument;
+    };
+    const refreshed = await remount();
+    assert(
+      !refreshed.querySelector('#cases .case') && !refreshed.querySelector('#jobs .job'),
+      'A fresh workspace keeps archived cases and removed runs absent',
+    );
+    w.fixturePreferences.set('active-job', JSON.stringify('workspace-test'));
+    const historical = await remount();
+    assert(
+      historical.querySelector('#jobs video') && !historical.querySelector('[data-open-job="workspace-test"]'),
+      'Opening retained historical evidence does not restore its sidebar row',
     );
     return { passed: checks.length, checks };
   } catch (error) {

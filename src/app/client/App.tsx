@@ -7,6 +7,7 @@ import { ModelPicker } from './components/ModelPicker.tsx';
 import { Settings } from './components/Settings.tsx';
 import { ImportCase, RunOptions } from './components/RunDialogs.tsx';
 import { Icon } from './components/Icon.tsx';
+import { ItemDialogs } from './components/ItemDialogs.tsx';
 export function App() {
   const { state: s, actions: store } = useWorkspace();
   const scroll = useRef<HTMLDivElement>(null);
@@ -92,6 +93,7 @@ export function App() {
       <Settings open={s.dialog === 'settings'} />
       <RunOptions open={s.dialog === 'options'} />
       <ImportCase open={s.dialog === 'import'} />
+      <ItemDialogs />
     </>
   );
 }

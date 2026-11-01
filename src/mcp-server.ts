@@ -533,7 +533,7 @@ register(
     for (;;) {
       signal.throwIfAborted();
       const jobs: z.infer<typeof summarySchema>[] = await api(
-        `/api/jobs?${new URLSearchParams({ view: 'summary', ids: ids.join(','), limit: String(ids.length) })}`,
+        `/api/jobs?${new URLSearchParams({ view: 'summary', includeHidden: '1', ids: ids.join(','), limit: String(ids.length) })}`,
         undefined,
         signal,
       );
@@ -663,7 +663,7 @@ register(
   },
   async ({ status, provider, batchId, cursor, limit }) => {
     const jobs = await api(
-      `/api/jobs?${new URLSearchParams({ view: 'summary', cursor: String(cursor), limit: String(limit + 1), ...(status ? { status } : {}), ...(provider ? { provider } : {}), ...(batchId ? { batchId } : {}) })}`,
+      `/api/jobs?${new URLSearchParams({ view: 'summary', includeHidden: '1', cursor: String(cursor), limit: String(limit + 1), ...(status ? { status } : {}), ...(provider ? { provider } : {}), ...(batchId ? { batchId } : {}) })}`,
     );
     return { jobs: jobs.slice(0, limit), nextCursor: jobs.length > limit ? cursor + limit : null };
   },

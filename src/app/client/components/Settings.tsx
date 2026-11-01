@@ -4,9 +4,10 @@ import { errorMessage } from '../api.ts';
 import { providerMark, providerMessage } from '../format.ts';
 import type { Check, Environment, TestUser } from '../types.ts';
 import { Dialog, DialogHeader } from './Dialog.tsx';
+import { ArchivedSettings, SidebarSettings, StorageSettings } from './ManagementSettings.tsx';
 export function Settings({ open }: { open: boolean }) {
   const { state: s, actions: store } = useWorkspace();
-  const [tab, setTab] = useState<'connections' | 'environments'>('connections');
+  const tab = s.settingsTab;
   const [checks, setChecks] = useState<Check[]>([]);
   const close = () => store.patch({ dialog: null });
   useEffect(() => {
@@ -31,7 +32,7 @@ export function Settings({ open }: { open: boolean }) {
         Settings
       </DialogHeader>
       <div className="settings-tabs" role="tablist" aria-label="Settings sections">
-        {(['connections', 'environments'] as const).map((name) => (
+        {(['connections', 'environments', 'sidebar', 'archived', 'storage'] as const).map((name) => (
           <button
             key={name}
             role="tab"
@@ -39,9 +40,9 @@ export function Settings({ open }: { open: boolean }) {
             data-settings-tab={name}
             aria-controls={`${name}-settings`}
             aria-selected={tab === name}
-            onClick={() => setTab(name)}
+            onClick={() => store.patch({ settingsTab: name })}
           >
-            {name === 'connections' ? 'Connections' : 'Environments'}
+            {name[0].toUpperCase() + name.slice(1)}
           </button>
         ))}
       </div>
@@ -89,7 +90,10 @@ export function Settings({ open }: { open: boolean }) {
           </button>
         </div>
       </div>
-      {tab === 'environments' && <EnvironmentSettings />}
+      {open && tab === 'environments' && <EnvironmentSettings />}
+      {open && tab === 'sidebar' && <SidebarSettings />}
+      {open && tab === 'archived' && <ArchivedSettings />}
+      {open && tab === 'storage' && <StorageSettings />}
     </Dialog>
   );
 }

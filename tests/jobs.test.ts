@@ -71,7 +71,19 @@ const finish=()=>{
   );
   const { CheckerLive } = await import('../src/runtime/services.ts');
   const { CaseRepository } = await import('../src/runtime/repositories.ts');
-  const { submitBatch, cancelJob, replayJob, listJobs, getJob, shutdownJobs, submitBatchEffect } = await import('../src/jobs.ts');
+  const {
+    submitBatch,
+    cancelJob,
+    removeJob,
+    restoreJob,
+    deleteJob,
+    organizeJob,
+    replayJob,
+    listJobs,
+    getJob,
+    shutdownJobs,
+    submitBatchEffect,
+  } = await import('../src/jobs.ts');
   const { caseCatalog } = await import('../src/cases.ts');
   const { saveEnvironment, environmentSessionPath } = await import('../src/environments.ts');
   const { specLocation } = await import('../src/codify.ts');
@@ -164,6 +176,19 @@ const finish=()=>{
     await until(() => held.stage === 'replay');
     const queued = (await submitBatch({ ...input, idempotencyKey: 'queued' }))[0];
     assert.equal(queued.status, 'queued');
+    for (const job of [held, queued]) {
+      const status = job.status;
+      assert.throws(() => removeJob(job.id), { code: 'JOB_ACTIVE' });
+      assert.throws(() => deleteJob(job.id), { code: 'JOB_ACTIVE' });
+      assert.throws(() => organizeJob(job.id, { settled: true }), { code: 'JOB_ACTIVE' });
+      assert.equal(job.status, status, 'sidebar management must not cancel work');
+      assert.equal(job.hiddenAt, undefined);
+    }
+    const archived = caseCatalog.archive('LOCAL', 1, { expectedRevision: caseCatalog.get('LOCAL', 1).revision });
+    assert.equal(held.status, 'running', 'case archival does not cancel its running job');
+    assert.equal(queued.status, 'queued', 'case archival does not cancel its queued job');
+    assert.equal(queued.caseSnapshot?.status, 'active');
+    caseCatalog.restore('LOCAL', 1, { expectedRevision: archived.revision });
     saveEnvironment({
       environment: {
         id: 'alias',
@@ -176,11 +201,35 @@ const finish=()=>{
     const alias = (await submitBatch({ ...input, environmentId: 'alias', userId: 'alias-user', idempotencyKey: 'alias' }))[0];
     assert.equal(alias.status, 'queued', 'credential aliases retain identity serialization across environments');
     cancelJob(alias.id);
-    caseCatalog.update('LOCAL', 1, { expectedRevision: testCase.revision, changes: { title: 'Edited after queueing' } });
+    caseCatalog.update('LOCAL', 1, { expectedRevision: caseCatalog.get('LOCAL', 1).revision, changes: { title: 'Edited after queueing' } });
     assert.equal(queued.caseSnapshot?.title, 'Queue fixture');
     assert.equal(cancelJob(queued.id).status, 'cancelled');
     assert.equal(cancelJob(queued.id).status, 'cancelled');
+    const removed = removeJob(queued.id);
+    assert.ok(removed.hiddenAt);
+    assert.equal(removeJob(queued.id).hiddenAt, removed.hiddenAt, 'archival is idempotent');
+    assert.equal(getJob(queued.id), removed, 'archived run remains addressable');
+    assert.equal(
+      JSON.parse(readFileSync(join(dir, 'jobs.json'), 'utf8')).find((job: { id: string }) => job.id === queued.id).hiddenAt,
+      removed.hiddenAt,
+    );
+    assert.throws(() => removeJob('missing'), { code: 'NOT_FOUND' });
+    assert.equal(restoreJob(queued.id).hiddenAt, undefined);
+    assert.ok(organizeJob(queued.id, { pinned: true }).pinnedAt);
+    assert.ok(organizeJob(queued.id, { settled: true }).settledAt);
+    assert.equal(getJob(queued.id)?.pinnedAt, undefined);
+    deleteJob(queued.id);
+    assert.equal(getJob(queued.id), undefined);
+    assert.equal(
+      listJobs().some((job) => job.id === queued.id),
+      false,
+    );
+    assert.ok(listJobs(true).find((job) => job.id === queued.id)?.deletedAt);
+    await assert.rejects(submitBatch({ ...input, idempotencyKey: 'queued' }), { code: 'JOB_DELETED' });
     cancelJob(held.id);
+    assert.equal(held.status, 'cancelling');
+    assert.throws(() => removeJob(held.id), { code: 'JOB_ACTIVE' });
+    assert.throws(() => deleteJob(held.id), { code: 'JOB_ACTIVE' });
     await until(() => held.status === 'cancelled');
     assert.equal(held.usage?.totalTokens, 0);
     assert.ok(held.timing?.activeMs);

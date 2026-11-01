@@ -1,13 +1,15 @@
-import { Fragment, useRef } from 'react';
+import { useRef } from 'react';
 import { useWorkspace } from '../context.tsx';
 import { caseKey, modelName, shortTime } from '../format.ts';
 import { Icon } from './Icon.tsx';
+import { SidebarGroups } from './SidebarItems.tsx';
 export function Sidebar() {
   const { state: s, actions: store } = useWorkspace();
   const search = useRef<HTMLInputElement>(null);
   const q = s.search.toLowerCase();
   const cases = s.cases.filter((c) => !q || `${caseKey(c)} ${c.title} ${c.suite} ${(c.tags ?? []).join(' ')}`.toLowerCase().includes(q));
-  const jobs = s.jobs.filter((j) => !q || `${j.project}-${j.caseId} ${j.title} ${j.target?.model}`.toLowerCase().includes(q));
+  const visibleJobs = s.jobs.filter((j) => !j.hiddenAt);
+  const jobs = visibleJobs.filter((j) => !q || `${j.project}-${j.caseId} ${j.title} ${j.target?.model}`.toLowerCase().includes(q));
   return (
     <aside className="sidebar" aria-label="Cases and run history">
       <div className="brand">
@@ -35,7 +37,7 @@ export function Sidebar() {
           data-tab="history"
           onClick={() => store.showTab('history')}
         >
-          Runs <span id="history-count">{s.jobs.length || ''}</span>
+          Runs <span id="history-count">{visibleJobs.length || ''}</span>
         </button>
         <button
           className="icon-btn"
@@ -65,14 +67,16 @@ export function Sidebar() {
         <div id="case-panel" role="tabpanel" aria-labelledby="cases-tab" hidden={s.sidebarTab !== 'cases'}>
           <div id="cases">
             {cases.length ? (
-              cases.map((c, index) => {
-                const key = caseKey(c),
-                  latest = s.jobs.find((j) => j.project === c.project && j.caseId === c.id),
-                  status = latest?.outcome ?? latest?.status;
-                const disabled = !!c.status && c.status !== 'active';
-                return (
-                  <Fragment key={key}>
-                    {(index === 0 || cases[index - 1].suite !== c.suite) && <div className="suite">{c.suite || 'Workspace cases'}</div>}
+              <SidebarGroups
+                items={cases.map((value) => ({ kind: 'case', value }))}
+                render={(item) => {
+                  if (item.kind !== 'case') return null;
+                  const c = item.value,
+                    key = caseKey(c),
+                    latest = s.jobs.find((j) => j.project === c.project && j.caseId === c.id),
+                    status = latest?.outcome ?? latest?.status;
+                  const disabled = !!c.status && c.status !== 'active';
+                  return (
                     <div className={`case ${s.selected.has(key) ? 'selected' : ''}`} data-key={key} onClick={() => store.selectCase(key)}>
                       <input
                         type="checkbox"
@@ -94,6 +98,11 @@ export function Sidebar() {
                           {c.status === 'draft' && <span>· Draft</span>}
                           {latest && <span className={`status-dot ${status}`} title={status} />}
                         </span>
+                        {c.suite && (
+                          <span className="case-suite" title={c.suite}>
+                            {c.suite}
+                          </span>
+                        )}
                       </div>
                       <button
                         className="run"
@@ -109,9 +118,9 @@ export function Sidebar() {
                         <Icon name="play" />
                       </button>
                     </div>
-                  </Fragment>
-                );
-              })
+                  );
+                }}
+              />
             ) : (
               <div className="empty">
                 No matching cases.
@@ -124,26 +133,34 @@ export function Sidebar() {
         <div id="history-panel" role="tabpanel" aria-labelledby="history-tab" hidden={s.sidebarTab !== 'history'}>
           <div id="history">
             {jobs.length ? (
-              jobs.map((j) => (
-                <button
-                  key={j.id}
-                  className={`history-item ${j.id === s.activeJob ? 'active' : ''}`}
-                  data-open-job={j.id}
-                  aria-current={j.id === s.activeJob ? 'page' : false}
-                  onClick={() => void store.selectJob(j.id).catch(store.report)}
-                >
-                  <span className="history-title">
-                    <span className={`status-dot ${j.outcome ?? j.status}`} />
-                    <span>{j.title ?? `${j.project}-${j.caseId}`}</span>
-                  </span>
-                  <span className="history-meta">
-                    <span>
-                      {j.project}-{j.caseId} · {j.target ? modelName(j.target, s.providers) : 'Claude'}
-                    </span>
-                    <span>{shortTime(j.createdAt)}</span>
-                  </span>
-                </button>
-              ))
+              <SidebarGroups
+                items={jobs.map((value) => ({ kind: 'run', value }))}
+                render={(item) => {
+                  if (item.kind !== 'run') return null;
+                  const j = item.value;
+                  return (
+                    <div className={`history-item ${j.id === s.activeJob ? 'active' : ''}`}>
+                      <button
+                        className="history-open"
+                        data-open-job={j.id}
+                        aria-current={j.id === s.activeJob ? 'page' : false}
+                        onClick={() => void store.selectJob(j.id).catch(store.report)}
+                      >
+                        <span className="history-title">
+                          <span className={`status-dot ${j.outcome ?? j.status}`} />
+                          <span>{j.title ?? `${j.project}-${j.caseId}`}</span>
+                        </span>
+                        <span className="history-meta">
+                          <span>
+                            {j.project}-{j.caseId} · {j.target ? modelName(j.target, s.providers) : 'Claude'}
+                          </span>
+                          <span>{shortTime(j.createdAt)}</span>
+                        </span>
+                      </button>
+                    </div>
+                  );
+                }}
+              />
             ) : (
               <div className="empty">Your verification runs will appear here.</div>
             )}
@@ -153,12 +170,20 @@ export function Sidebar() {
       <div className="sidebar-footer">
         <button id="settings-open" className="settings-button" onClick={() => store.patch({ dialog: 'settings' })}>
           <Icon name="settings" />
-          Settings{' '}
+          Settings
           <span
             id="connection-dot"
             className={`status-dot ${s.providers.some((p) => p.ready) ? 'ready' : ''}`}
             style={{ marginLeft: 'auto' }}
           />
+        </button>
+        <button
+          className="icon-btn"
+          aria-label="Archived items"
+          title="Archived items"
+          onClick={() => store.patch({ dialog: 'settings', settingsTab: 'archived' })}
+        >
+          <Icon name="archive" />
         </button>
         <button
           id="theme-toggle"

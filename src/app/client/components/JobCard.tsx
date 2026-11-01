@@ -149,7 +149,13 @@ export function JobCard({ job: j }: { job: JobView }) {
           )}
         </div>
       </div>
-      {(active || open) && <ObservationPanel job={j} active={active} />}
+      {j.cacheClearedAt && (
+        <p className="cache-expired">
+          Run files were deleted by your storage retention policy on {new Date(j.cacheClearedAt).toLocaleDateString()}. The result summary
+          is kept. Start a new run to capture fresh evidence.
+        </p>
+      )}
+      {!j.cacheClearedAt && (active || open) && <ObservationPanel job={j} active={active} />}
       {open && detail && <RunEvidence job={j} detail={detail} active={active} />}
     </div>
   );

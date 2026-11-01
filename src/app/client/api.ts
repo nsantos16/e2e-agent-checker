@@ -5,7 +5,7 @@ export const api: Api = async <T>(path: string, body?: unknown, signal?: AbortSi
     ...(body === undefined ? {} : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
   });
   const data = await response.json();
-  if (!response.ok) throw new Error(data.error ?? response.statusText);
+  if (!response.ok) throw Object.assign(new Error(data.error ?? response.statusText), { status: response.status, code: data.code });
   return data as T;
 };
 export const fileUrl = (path: string) => `/files?path=${encodeURIComponent(path)}`;

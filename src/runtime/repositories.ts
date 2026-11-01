@@ -10,6 +10,9 @@ const cases = {
   create: (...args: Parameters<typeof caseCatalog.create>) => attempt(() => caseCatalog.create(...args)),
   update: (...args: Parameters<typeof caseCatalog.update>) => attempt(() => caseCatalog.update(...args)),
   archive: (...args: Parameters<typeof caseCatalog.archive>) => attempt(() => caseCatalog.archive(...args)),
+  restore: (...args: Parameters<typeof caseCatalog.restore>) => attempt(() => caseCatalog.restore(...args)),
+  remove: (...args: Parameters<typeof caseCatalog.remove>) => attempt(() => caseCatalog.remove(...args)),
+  organize: (...args: Parameters<typeof caseCatalog.organize>) => attempt(() => caseCatalog.organize(...args)),
   syncQase: (...args: Parameters<typeof caseCatalog.syncQase>) => attempt(() => caseCatalog.syncQase(...args)),
 };
 const environments = {

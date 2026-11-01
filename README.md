@@ -43,6 +43,8 @@ npm run app          # opens http://localhost:4100
 
 In the app: pick the **worktree** you want to test (every worktree of your `sample-frontend` checkout is listed, e.g. the one an agent just implemented a ticket in), select one or more **provider models**, then click **Run ▶** or select several cases. Every case × model gets its own run. Open a running job to watch its live browser preview and inspect captured network requests. The agent receives failure summaries and can query detailed diagnostics. Runs show queue/stage timing, input/output/cache tokens, reported cost when available, per-step verdicts, and replay video. Cancel active runs or replay a saved spec without new model calls. Runs sharing a test identity are serialized. Use **+** beside the Cases/Runs tabs to import a Qase case. Subscription login and readiness live in **Settings → Connections**; model selection lives in the bottom composer.
 
+Organize cases and runs through their actions menus: pin, settle, reorder, archive with Undo, or delete with confirmation. **Settings → Sidebar** controls project/status grouping, and **Settings → Archived** restores archived items. **Settings → Storage** optionally removes all saved run files after a configured number of days while keeping case definitions and result summaries. Cleanup starts disabled; active work is protected. See [sidebar management and retention](docs/case-management.md#sidebar-organization-archive-and-deletion).
+
 `npm run doctor` tells you exactly what's missing. You need:
 
 | What                                             | Why                                              | Fix                                                                                                    |

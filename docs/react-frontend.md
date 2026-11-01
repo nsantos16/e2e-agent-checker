@@ -11,6 +11,7 @@ npm run dev:ui    # optional second terminal: Vite with React Fast Refresh
 npm run build    # standalone frontend build into dist/client
 npm run check    # backend and browser TypeScript projects
 npm test
+npm run test:browser # production UI against isolated fixtures in headless Chromium
 ```
 
 Vite prints its development URL, normally `http://127.0.0.1:5173`. Its API and artifact proxy uses the configured backend port, including `E2E_APP_PORT`. Both the app and MCP-triggered app startup build the frontend when needed. Build tools are required for an initial build; a prebuilt `dist/client` can be served without rebuilding when no newer source files are present.

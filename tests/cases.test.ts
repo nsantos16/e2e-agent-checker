@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { CaseCatalog, assertRunnable } from '../src/cases.ts';
@@ -83,6 +83,40 @@ test('Qase fixtures stay compatible; explicit sync protects local edits, archive
     assert.throws(() => catalog.syncQase({ ...remote, id: own.id }, own.revision, true), { code: 'SOURCE_CONFLICT' });
     const added = catalog.syncQase({ ...remote, id: 9 });
     assert.equal(added.source.externalId, 'QA-9');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('archive restores drafts, organization persists, and deleted cases never reappear or reuse IDs', () => {
+  const { dir, legacy, catalog } = setup();
+  try {
+    const draft = catalog.create({ title: 'Draft to restore', idempotencyKey: 'draft' });
+    const pinned = catalog.organize('LOCAL', draft.id, { expectedRevision: draft.revision, changes: { pinned: true } });
+    assert.ok(pinned.pinnedAt);
+    const archived = catalog.archive('LOCAL', draft.id, { expectedRevision: pinned.revision });
+    // Older archives did not retain the previous draft/active state.
+    const saved = JSON.parse(readFileSync(catalog.path, 'utf8'));
+    delete saved.cases['LOCAL-1'].archivedFromStatus;
+    writeFileSync(catalog.path, JSON.stringify(saved));
+    const restored = catalog.restore('LOCAL', draft.id, { expectedRevision: archived.revision });
+    assert.equal(restored.status, 'draft');
+    assert.equal(restored.pinnedAt, pinned.pinnedAt);
+    const next = catalog.create({ title: 'Next' });
+    const ordered = catalog.reorder([`LOCAL-${next.id}`, `LOCAL-${restored.id}`]);
+    assert.equal(ordered[1].sortOrder, 1);
+    assert.throws(() => catalog.reorder(['LOCAL-1', 'LOCAL-999']), { code: 'NOT_FOUND' });
+    const current = catalog.get('LOCAL', next.id);
+    catalog.remove('LOCAL', next.id, { expectedRevision: current.revision });
+    assert.throws(() => new CaseCatalog(catalog.path, legacy).get('LOCAL', next.id), { code: 'NOT_FOUND' });
+    assert.equal(
+      catalog.list(true).some((c) => c.id === next.id),
+      false,
+    );
+    assert.equal(catalog.create({ title: 'New ID' }).id, next.id + 1);
+    const old = catalog.get('LOCAL', draft.id);
+    catalog.remove('LOCAL', old.id, { expectedRevision: old.revision });
+    assert.throws(() => catalog.create({ title: 'Draft to restore', idempotencyKey: 'draft' }), { code: 'CASE_DELETED' });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
