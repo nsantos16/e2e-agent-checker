@@ -4,6 +4,8 @@ Open product requests are listed first, with their original item numbers preserv
 
 ## 4. Track each run by the team member who started it
 
+Foundation in progress: the [team service](team-foundation.md) now maps Clerk identities to internal members and attributes shared case edits. Run attribution and scoped MCP/worker identity remain pending, so this request stays open.
+
 Recorded 2026-10-19.
 
 Jobs record the case, target, environment, and test user. The test user is the account that logs into the app under test. The checker does not record which person started the run. MCP tools do not take a caller identity. There is no organization setting that lists team members.

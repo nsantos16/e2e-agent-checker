@@ -1,6 +1,6 @@
 # Team web architecture
 
-Status: independent checker backend, local-execution/shared-storage split, Clerk authentication, preference for TanStack across the frontend, and TanStack DB for application data state confirmed by the user; implementation remains proposed. These stack choices were selected 2026-11-01 for the initial small-team rollout. The original code audit was prepared 2026-11-01 against `origin/main` at `1c3c5c59225804765cbd7c099caf36064dd5e1a3`; the working checkout was older, so that audit used the main revision explicitly.
+Status: independent checker backend, local-execution/shared-storage split, Clerk authentication, preference for TanStack across the frontend, and TanStack DB for application data state confirmed by the user; the first milestone-1 implementation slice is recorded in [team foundation](../team-foundation.md), with hosted rollout and later milestones still pending. These stack choices were selected 2026-11-01 for the initial small-team rollout. The original code audit was prepared 2026-11-01 against `origin/main` at `1c3c5c59225804765cbd7c099caf36064dd5e1a3`; the working checkout was older, so that audit used the main revision explicitly.
 
 ## Selected architecture
 
@@ -222,4 +222,4 @@ Launch checks must demonstrate denied cross-member execution and cross-organizat
 
 Verify backend independence by running checker sign-in, session/history browsing, and uploaded-artifact playback while a target backend is unavailable. The checker deployment must require neither target-backend database credentials nor imports of its application modules.
 
-This work supplies the foundation for backlog member attribution, concurrent-environment presentation, and environment write permissions. Backend-derived mocking and personas consume these foundations without blocking the initial team pilot. This proposal does not change backlog statuses or start an implementation session.
+This work supplies the foundation for backlog member attribution, concurrent-environment presentation, and environment write permissions. Backend-derived mocking and personas consume these foundations without blocking the initial team pilot. The first foundation slice attributes shared case edits. Run attribution, worker/MCP identity and the other open backlog requests remain pending.

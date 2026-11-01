@@ -1,0 +1,10 @@
+**
+!package.json
+!package-lock.json
+!tsconfig.json
+!tsconfig.client.json
+!tsconfig.team.json
+!vite.team.config.ts
+!src
+!src/team
+!src/team/**

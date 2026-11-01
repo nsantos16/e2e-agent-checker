@@ -34,6 +34,8 @@ Evidence qualification, confirmation replay, provenance and format compatibility
 
 React components, frontend builds and development: [React frontend](docs/react-frontend.md).
 
+Team web implementation: [standalone API, Clerk, PostgreSQL and TanStack DB setup](docs/team-foundation.md). The first milestone-1 slice provides shared cases and login-session controls; local execution and the remaining team roadmap continue separately.
+
 ## Quick start (any dev)
 
 ```sh

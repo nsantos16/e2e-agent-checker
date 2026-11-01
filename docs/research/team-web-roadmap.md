@@ -1,6 +1,6 @@
 # Team web delivery roadmap
 
-Status: proposed delivery plan, 2026-11-01. Confirmed architecture: a standalone checker backend, with worktrees, verification, and demo generation on each developer's machine and shared status, history, and artifacts. Clerk is selected for authentication for the initial small team, TanStack is preferred across the frontend, and TanStack DB is selected for application data state. The checker owns its API, application permissions, database, storage, and deployment; Clerk owns login sessions. It requires no integration into the backend of an application being tested. See [team web architecture](team-web-architecture.md) for the system design.
+Status: milestone 1 in progress, 2026-11-01. Confirmed architecture: a standalone checker backend, with worktrees, verification, and demo generation on each developer's machine and shared status, history, and artifacts. Clerk is selected for authentication for the initial small team, TanStack is preferred across the frontend, and TanStack DB is selected for application data state. The checker owns its API, application permissions, database, storage, and deployment; Clerk owns login sessions. It requires no integration into the backend of an application being tested. See [team web architecture](team-web-architecture.md) for the system design.
 
 Deliver six milestones, with a working flow across two developers by milestone 2 and shared demo playback by milestone 3. Complete reliability, access, migration, and operational checks before the team rollout. Each milestone should be reviewable and usable in staging; application authentication and authorization start in milestone 1.
 
@@ -41,6 +41,8 @@ Clerk is the selected authentication service and TanStack DB is the selected fro
 Clerk documents [invite-only access](https://clerk.com/docs/guides/secure/restricting-access), [React organization management](https://clerk.com/docs/react/guides/organizations/getting-started), and [Fastify authentication](https://clerk.com/docs/fastify/getting-started/quickstart). PostgreSQL documents [`SKIP LOCKED` for queue-like consumers](https://www.postgresql.org/docs/current/sql-select.html). S3 documents [multipart upload recovery](https://docs.aws.amazon.com/AmazonS3/latest/userguide/mpuoverview.html). These capabilities support the design; the integration proofs remain milestone work.
 
 ## Milestone 1 — Independent backend and team identity
+
+Implementation started: the [first foundation slice](../team-foundation.md) adds the independent API, PostgreSQL migrations, Clerk identity boundary and session controls, shared case persistence, and TanStack Router/DB/Form/Table screens. Local database and browser fixtures exercise this slice. Live Clerk/staging, shared verification-session/run and artifact metadata, reconciliation and full import checks remain open; milestone 1 is not complete.
 
 **Outcome:** two invited people can sign in to the independently deployed checker and see shared case/session metadata with correct permissions, even when a target backend is unavailable.
 
