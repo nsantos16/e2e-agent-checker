@@ -91,4 +91,13 @@ export const mergeUsage = (values: Usage[]): Usage => {
   out.pricingSnapshotId = ids.length === 1 ? ids[0]! : null;
   return out;
 };
-export type RunMetrics = { costUsd: number | null; turns: number; toolCalls: number; wallMs: number; models: string[]; usage: Usage };
+export type RunMetrics = {
+  target?: import('./providers/schema.ts').Target;
+  limits?: import('./providers/schema.ts').Limit[];
+  costUsd: number | null;
+  turns: number;
+  toolCalls: number;
+  wallMs: number;
+  models: string[];
+  usage: Usage;
+};

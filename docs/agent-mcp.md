@@ -1,5 +1,7 @@
 # Agent MCP workflow (implemented, v0.7)
 
+Current native account/instance management: [provider instances](provider-instances.md). Provider-only targets remain compatible; explicit `instanceId` selects a separate native profile.
+
 One local stdio MCP server connects Claude Code, Codex and Cursor to the same job service used by the app. The caller and verification worker are independent. Credentials stay in the native provider; no credentials are accepted as tool arguments. The server starts the local app when needed.
 
 For verification driven by a feature diff or acceptance criteria, follow the repo-local [e2e-verify-feature skill](../.agents/skills/e2e-verify-feature/SKILL.md). The [feature walkthrough](../README.md#verify-your-next-feature) shows how to invoke it from a separate application worktree.
@@ -45,7 +47,7 @@ Restart/reconnect the client's MCP server after updating this checkout. Run the 
    ```
 
    `verify_case` returns `jobId`, `viewerUrl`, and `next:"wait_jobs"`. `verify_cases` accepts cases and targets, submits their Cartesian product atomically, and returns all IDs/links. Reuse the original key and inputs after an uncertain submission response. A new key starts new work.
-   Both tools automatically execute a compatible saved spec on the requested target before considering authoring. Set `forceFresh:true` to require exploration/codification; an optional `buildId` labels the tested build without invalidating compatibility. Reuse needs no provider preflight or model call. Provider/model availability is checked only when a job starts authoring. See [manifest, fallback reasons and evidence semantics](saved-spec-reuse.md).
+   Both tools automatically execute a compatible saved spec on the requested target before considering authoring. Set `forceFresh:true` to require exploration/codification; an optional `buildId` labels the tested build without invalidating compatibility. Queued submissions validate and pin the selected account, model, and configuration before acceptance. A compatible saved spec then needs no model call or further provider probe; authoring rechecks the pinned account. See [manifest, fallback reasons and evidence semantics](saved-spec-reuse.md).
 4. `wait_jobs({jobIds:["RETURNED_ID"]})` waits up to 25 seconds within one tool call. It returns compact summaries, `revisions`, and `pendingJobIds`. Subsequent calls can pass those revisions and only pending IDs to receive changed summaries. `timedOut:true` is an ordinary wait expiry, not a run failure or cancellation. Cancellation of the wait also does not cancel jobs; use `cancel_job` explicitly.
 5. Check **outcome**, not just status. `done` means the pipeline finished; `outcome` can still be `fail`, `blocked`, or `codify-failed`. A runner failure has status `failed`. Usage/cost can be partial or unavailable; null cost is not zero.
 6. On failure, `get_evidence({jobId})` returns failing steps and the available artifact manifest. `get_network({jobId})` returns up to five captured failures without response bodies. Request one row with `{jobId,requestId:"ROW_ID",detail:true}` to inspect its sanitized error body and correlation IDs. Captured network requests are never reissued.

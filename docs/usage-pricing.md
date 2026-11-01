@@ -29,3 +29,5 @@ Pass this to `get_evidence`; `artifact:"usage"` returns the per-stage accounting
 - [tokentally](https://github.com/steipete/tokentally)
 - [T3 Code pricing implementation](https://github.com/pingdotgg/t3code/blob/main/apps/server/src/usage/usagePricing.ts)
 - [T3 Code usage semantics](https://github.com/pingdotgg/t3code/blob/main/docs/user/usage.md)
+
+Each new run and stage records its selected instance, account fingerprint, model and supported options. The provider account/plan snapshot is identity metadata, not a quota or billed-cost estimate. Native usage-limit events retain reset times only when reported; see [provider instances](provider-instances.md).

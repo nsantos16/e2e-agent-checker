@@ -4,15 +4,25 @@ import { appendFileSync, writeFileSync } from 'node:fs';
 import { codexConnectionEffect } from './rpc.ts';
 import { codexUsage, emptyUsage, type RunMetrics } from '../usage.ts';
 import type { ClaudeOutcome, ClaudeRun } from '../claude.ts';
+import { accountFingerprint, codexAccount, codexLimits, redactProviderEvent } from './telemetry.ts';
+import { RunError, nativeFailure } from './errors.ts';
 export type StageTool = { name: string; description: string; inputSchema: Record<string, unknown> };
 export type ToolService = { tools: StageTool[]; call: (name: string, args: any, signal?: AbortSignal) => Promise<any>; close: () => Promise<void> };
 export const runCodexEffect = (run: ClaudeRun, service: ToolService) =>
   Effect.scoped(
     Effect.gen(function* () {
-      const rpc = yield* codexConnectionEffect(run.cwd),
+      const rpc = yield* codexConnectionEffect(run.cwd, run.instance),
         started = Date.now(),
         events: Record<string, any>[] = [];
-      const metrics: RunMetrics = { costUsd: null, turns: 0, toolCalls: 0, wallMs: 0, models: [run.model], usage: emptyUsage('codex') };
+      const metrics: RunMetrics = {
+        target: run.target,
+        costUsd: null,
+        turns: 0,
+        toolCalls: 0,
+        wallMs: 0,
+        models: [run.model],
+        usage: emptyUsage('codex'),
+      };
       writeFileSync(run.transcriptPath, '', { mode: 0o600 });
       const update = () => {
         metrics.wallMs = Date.now() - started;
@@ -32,14 +42,20 @@ export const runCodexEffect = (run: ClaudeRun, service: ToolService) =>
         }),
       );
       const account = yield* rpc.requestEffect('account/read', { refreshToken: false });
-      if (account.account?.type !== 'chatgpt') throw new Error('AUTH_MODE_MISMATCH: Codex requires ChatGPT login');
+      if (account.account?.type !== 'chatgpt') throw new RunError('AUTH_MODE_MISMATCH', 'Codex requires ChatGPT login for this instance.');
+      if (run.target?.accountFingerprint && run.target.accountFingerprint !== accountFingerprint(codexAccount(account.account)))
+        throw new RunError('ACCOUNT_CHANGED', 'Native Codex account changed before execution.');
       const { config: inherited } = yield* rpc.requestEffect('config/read', { includeLayers: false });
       const disabled = Object.fromEntries(Object.keys(inherited.mcp_servers ?? {}).map((name) => [name, { enabled: false }]));
       const completion = yield* Deferred.make<any>();
       const messages = new Map<string, string>();
       rpc.onEvent = (method, p) => {
+        if (method === 'account/rateLimits/updated') {
+          metrics.limits = codexLimits(p);
+          update();
+        }
         if (method.startsWith('account/')) return;
-        appendFileSync(run.transcriptPath, JSON.stringify({ method, params: p }) + '\n');
+        appendFileSync(run.transcriptPath, redactProviderEvent({ method, params: p }) + '\n');
         if (method === 'thread/tokenUsage/updated') {
           const usage = codexUsage(p.tokenUsage.total);
           metrics.usage = run.pricing ? run.pricing.price(usage, metrics.models[0]!) : usage;
@@ -133,15 +149,21 @@ export const runCodexEffect = (run: ClaudeRun, service: ToolService) =>
         },
       });
       threadId = thread.thread.id;
+      if (thread.model && thread.model !== run.model)
+        throw new RunError('MODEL_CHANGED', 'Codex substituted a different model; the turn was not started.');
       metrics.models = [thread.model ?? run.model];
-      const turn = yield* rpc.requestEffect('turn/start', { threadId, input: [{ type: 'text', text: run.prompt }] });
+      const turn = yield* rpc.requestEffect('turn/start', {
+        threadId,
+        input: [{ type: 'text', text: run.prompt }],
+        ...(run.target?.options?.effort ? { effort: run.target.options.effort } : {}),
+      });
       turnId = turn.turn.id;
       const final = yield* Effect.raceFirst(
         Deferred.await(completion),
         sdk(() => rpc.closed).pipe(Effect.andThen(Effect.fail(new Error('Codex disconnected before completing the turn')))),
       );
       run.signal?.throwIfAborted();
-      if (final.status !== 'completed') throw new Error(`Codex ${final.status}: ${final.error?.message ?? 'Run did not complete'}`);
+      if (final.status !== 'completed') throw nativeFailure(JSON.stringify(final.error ?? final.status));
       metrics.turns = 1;
       if (metrics.usage.status === 'partial') metrics.usage.status = 'complete';
       update();

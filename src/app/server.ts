@@ -31,7 +31,8 @@ import { environmentSummary, environmentId } from '../environments.ts';
 import { caseCatalog, caseSummary, syncCaseSchema } from '../cases.ts';
 import { baseUrl, isHealthyEffect, listSlots } from '../slots.ts';
 
-import { listProvidersEffect } from '../providers/index.ts';
+import { listProvidersEffect, targetInstanceId, instanceActionSchema, saveInstanceSchema, RunError } from '../providers/index.ts';
+import { saveInstance, deleteInstance, selectInstance, getInstance, loginCommand } from '../providers/instances.ts';
 import { z, ZodError } from 'zod';
 import { artifactPath, jobSummary, readEvidence, type ArtifactId } from '../agent-view.ts';
 import { liveFrame, readNetwork, readObservation } from '../observations.ts';
@@ -218,7 +219,45 @@ const handleRequest = (req: IncomingMessage, res: ServerResponse) =>
       return json(res, 200, { id, deleted: true });
     }
     if (req.method === 'GET' && url.pathname === '/api/providers')
-      return json(res, 200, yield* listProvidersEffect(url.searchParams.get('fresh') === '1'));
+      return json(
+        res,
+        200,
+        yield* listProvidersEffect(url.searchParams.get('fresh') === '1', url.searchParams.get('instanceId') ?? undefined),
+      );
+    if (req.method === 'POST' && url.pathname.startsWith('/api/provider-instances')) {
+      const body = yield* sdk(() => readBody(req));
+      const inUse = (id: string) => {
+        if (listJobs().some((j) => j.target && targetInstanceId(j.target) === id && ['running', 'cancelling'].includes(j.status)))
+          throw new RunError(
+            'PROVIDER_IN_USE',
+            'Wait for or cancel this instance’s active runs before changing it. Queued runs retain their original identity.',
+          );
+      };
+      if (url.pathname === '/api/provider-instances') {
+        const input = saveInstanceSchema.parse(body);
+        inUse(input.instance.id);
+        return json(res, 200, saveInstance(input));
+      }
+      const input = instanceActionSchema.parse(body),
+        instance = getInstance(input.instanceId);
+      if (instance.revision !== input.expectedRevision) throw new RunError('REVISION_CONFLICT', 'Instance changed. Reload Settings.');
+      if (url.pathname === '/api/provider-instances/select')
+        return json(res, 200, selectInstance(input.instanceId, input.expectedRevision));
+      if (url.pathname === '/api/provider-instances/delete') {
+        inUse(input.instanceId);
+        return json(res, 200, deleteInstance(input.instanceId, input.expectedRevision));
+      }
+      if (url.pathname === '/api/provider-instances/auth') {
+        inUse(input.instanceId);
+        return json(res, 200, {
+          instanceId: instance.id,
+          method: 'native-command',
+          loginCommand: loginCommand(instance),
+          message:
+            'Run this command in your terminal on this machine, finish native sign-in, then refresh this instance. No credentials are collected by the checker.',
+        });
+      }
+    }
     if (req.method === 'GET' && url.pathname === '/api/doctor')
       return json(
         res,

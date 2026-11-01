@@ -1,5 +1,7 @@
 # Selectable runtimes and workspace UI
 
+Current native account/instance management: [provider instances](provider-instances.md). Provider-only targets remain compatible; explicit `instanceId` selects a separate native profile.
+
 Implemented and checked on 2026-10-12. This document describes the shipped scope; [next-milestone.md](next-milestone.md) and [mcp-contract.md](mcp-contract.md) retain the broader design baseline.
 
 Live browser/network capture is described in [browser-observability.md](browser-observability.md).

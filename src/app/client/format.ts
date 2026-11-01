@@ -1,3 +1,4 @@
+import { providerInstanceId, targetInstanceId } from '../../providers/schema.ts';
 import type { JobView, Provider, Target } from './types.ts';
 export const STAGES = ['prepare', 'explore', 'codify', 'replay', 'package'];
 export const outcomeLabel: Record<string, string> = { pass: 'Passed', fail: 'Failed', blocked: 'Blocked', 'codify-failed': 'Not codified' };
@@ -15,14 +16,15 @@ export const shortTime = (date: string) => {
   return mins < 1 ? 'now' : mins < 60 ? `${mins}m` : mins < 1440 ? `${Math.floor(mins / 60)}h` : `${Math.floor(mins / 1440)}d`;
 };
 export const modelName = (target: Target, providers: Provider[]) =>
-  providers.find((p) => p.id === target.provider)?.models.find((m) => m.id === target.model)?.name ?? target.model;
+  providers.find((p) => providerInstanceId(p) === targetInstanceId(target))?.models.find((m) => m.id === target.model)?.name ??
+  target.model;
 export const caseKey = (c: { project: string; id: number }) => `${c.project}-${c.id}`;
 export const providerMark = { codex: 'Cx', 'claude-code': 'Cl', cursor: 'Cu' };
 export function providerMessage(p: Provider) {
+  if (p.reason?.startsWith('INSTANCE_DISABLED')) return 'Enable this account to use it for new runs. Its native sign-in is unchanged.';
   if (p.ready) return 'Connected. Runs use your existing subscription.';
   if (p.id === 'cursor' && p.auth === 'subscription' && p.reason?.startsWith('CAPABILITY_UNSUPPORTED'))
-    return 'Cursor is connected, but its runtime does not yet support the tool restrictions required for verification. You can use the checker MCP from Cursor with Codex as the worker.';
-  if (p.auth === 'api-key')
-    return 'An API key is active. Sign in with your subscription, then restart the checker without the provider API-key environment variable.';
+    return 'Signed in to Cursor. Runs are unavailable until the checker can verify Cursor’s tool restrictions. Use a Claude Code or Codex account for now.';
+  if (p.auth === 'api-key') return 'This profile uses API billing. Reconnect and sign in with your subscription to run checks.';
   return p.reason?.replace(/^[A-Z_]+:\s*/, '') ?? 'Sign in through the native app to connect.';
 }

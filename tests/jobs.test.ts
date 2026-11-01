@@ -12,17 +12,34 @@ const until = async (predicate: () => boolean) => {
 };
 test('jobs preserve recovery, idempotency, identity serialization, cancellation and execution-time reuse', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'e2e-jobs-'));
-  const names = ['PATH', 'E2E_JOBS_PATH', 'E2E_CASES_PATH', 'E2E_ENVIRONMENTS_PATH', 'E2E_RUNS_DIR'] as const;
+  const names = ['PATH', 'E2E_JOBS_PATH', 'E2E_CASES_PATH', 'E2E_ENVIRONMENTS_PATH', 'E2E_RUNS_DIR', 'E2E_PROVIDERS_PATH'] as const;
   const old = Object.fromEntries(names.map((name) => [name, process.env[name]]));
   process.env.E2E_JOBS_PATH = join(dir, 'jobs.json');
   process.env.E2E_CASES_PATH = join(dir, 'cases.json');
   process.env.E2E_ENVIRONMENTS_PATH = join(dir, 'environments.json');
   process.env.E2E_RUNS_DIR = join(dir, 'runs');
+  process.env.E2E_PROVIDERS_PATH = join(dir, 'providers.json');
   process.env.PATH = dir + ':' + old.PATH;
   writeFileSync(
     join(dir, 'jobs.json'),
     JSON.stringify([
-      { id: 'interrupted', status: 'running', createdAt: '', project: 'LOCAL', caseId: 1, worktree: '', role: 'qa', log: [] },
+      {
+        id: 'interrupted',
+        status: 'running',
+        createdAt: '',
+        project: 'LOCAL',
+        caseId: 1,
+        worktree: '',
+        role: 'qa',
+        log: [],
+        target: {
+          provider: 'claude-code',
+          instanceId: 'previous-account',
+          instanceRevision: 'previous-revision',
+          model: 'previous-model',
+          authMode: 'subscription',
+        },
+      },
     ]),
   );
   const eventsPath = join(dir, 'events.jsonl');
@@ -37,7 +54,9 @@ const json=(p,v)=>fs.writeFileSync(p,JSON.stringify(v));\n`;
     '#!/usr/bin/env node\n' +
       common +
       `
-if(process.argv.includes('auth')) {event({kind:'preflight'}); console.log(JSON.stringify({loggedIn:true,authMethod:'claude.ai'}));}
+if(process.argv.includes('--version')) console.log('2.1.316');
+else if(process.argv.includes('auth')) {event({kind:'preflight'}); console.log(JSON.stringify({loggedIn:true,authMethod:'claude.ai',email:'fixture@test'}));}
+else if(process.argv.includes('--input-format')) console.log(JSON.stringify({type:'control_response',response:{subtype:'success',request_id:'catalog',response:{models:[{value:'sonnet',displayName:'Sonnet'}]}}}));
 else {
   const c=JSON.parse(fs.readFileSync('stage-config.json','utf8'));
   event({kind:'model',stage:c.specPath?'codify':'explore',run:c.runDir});
@@ -98,6 +117,8 @@ const finish=()=>{
       : [];
   try {
     assert.equal(getJob('interrupted')?.status, 'interrupted');
+    assert.equal(getJob('interrupted')?.target?.instanceId, 'previous-account');
+    assert.equal(getJob('interrupted')?.target?.instanceRevision, 'previous-revision');
     assert.ok(JSON.parse(readFileSync(join(dir, 'jobs.json'), 'utf8'))[0].finishedAt);
     const testCase = caseCatalog.create({
       title: 'Queue fixture',
@@ -128,6 +149,13 @@ const finish=()=>{
       submitBatch({ ...input, idempotencyKey: 'second', buildId: 'new-build' }),
     ]);
     assert.equal(first[0].id, duplicate[0].id);
+    assert.equal(first[0].target!.instanceId, 'claude-code-default');
+    assert.equal(first[0].target!.instanceRevision, first[0].providerSnapshot!.revision);
+    assert.ok(first[0].target!.accountFingerprint);
+    assert.equal(
+      JSON.parse(readFileSync(join(dir, 'jobs.json'), 'utf8')).find((j: any) => j.id === first[0].id).target.instanceId,
+      'claude-code-default',
+    );
     assert.notEqual(first[0].id, second[0].id);
     assert.equal(second[0].status, 'queued', 'same test identity serializes');
     assert.throws(() => replayJob('interrupted'), /no saved run/);
@@ -140,7 +168,11 @@ const finish=()=>{
     assert.equal(second[0].exploreVerdict, undefined);
     assert.ok(second[0].historicalExploration);
     assert.equal(events().filter((e) => e.kind === 'model').length, 2);
-    assert.equal(events().filter((e) => e.kind === 'preflight').length, 2, 'only the original two authoring stages preflight');
+    assert.equal(
+      events().filter((e) => e.kind === 'preflight').length,
+      4,
+      'each new submission pins its account; only authoring stages probe again',
+    );
     assert.deepEqual(
       events()
         .filter((e) => e.kind.startsWith('replay'))

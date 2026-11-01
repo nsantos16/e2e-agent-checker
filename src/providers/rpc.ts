@@ -3,6 +3,8 @@ import { attempt, deadline, runEffect, sdk } from '../runtime/effect.ts';
 import { childEnvironment } from '../environments.ts';
 import { spawn } from 'node:child_process';
 import { killTree } from '../process.ts';
+import { expandPath, instanceEnvironment } from './instances.ts';
+import type { ProviderInstance } from './schema.ts';
 
 export class Rpc {
   child: ReturnType<typeof spawn>;
@@ -14,8 +16,8 @@ export class Rpc {
   };
   closed: Promise<void>;
   failure?: Error;
-  constructor(command: string, args: string[], cwd?: string) {
-    this.child = spawn(command, args, { cwd, env: childEnvironment(), detached: true, stdio: ['pipe', 'pipe', 'pipe'] });
+  constructor(command: string, args: string[], cwd?: string, env?: NodeJS.ProcessEnv) {
+    this.child = spawn(command, args, { cwd, env: childEnvironment(env), detached: true, stdio: ['pipe', 'pipe', 'pipe'] });
     let buf = '';
     this.child.stderr!.resume();
     this.child.stdin!.on('error', () => {});
@@ -108,10 +110,18 @@ export class Rpc {
     return runEffect(this.closeEffect());
   }
 }
-export const codexConnectionEffect = (cwd?: string) =>
+export const codexConnectionEffect = (cwd?: string, instance?: ProviderInstance) =>
   Effect.gen(function* () {
     const rpc = yield* Effect.acquireRelease(
-      attempt(() => new Rpc('codex', ['app-server'], cwd)),
+      attempt(
+        () =>
+          new Rpc(
+            instance ? expandPath(instance.binaryPath) : 'codex',
+            ['app-server'],
+            cwd,
+            instance ? instanceEnvironment(instance) : undefined,
+          ),
+      ),
       (rpc) => rpc.closeEffect(),
     );
     yield* rpc.requestEffect('initialize', {

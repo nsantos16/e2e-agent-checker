@@ -5,7 +5,14 @@ import { priceClaudeResult, type RunPricing } from './pricing.ts';
 import { commandEffect, ProcessRunnerLive } from './process.ts';
 import { claudeUsage, emptyUsage, mergeUsage, type RunMetrics } from './usage.ts';
 
+import type { ProviderInstance, Target } from './providers/schema.ts';
+import { expandPath, instanceEnvironment } from './providers/instances.ts';
+import { redactProviderEvent } from './providers/telemetry.ts';
+import { RunError, nativeFailure } from './providers/errors.ts';
+
 export type ClaudeRun = {
+  instance?: ProviderInstance;
+  target?: Target;
   prompt: string;
   cwd: string;
   model: string;
@@ -31,6 +38,11 @@ export const runClaudeEffect = (run: ClaudeRun) =>
         '--model',
         run.model,
         '--restricted',
+        '--disable-slash-commands',
+        '--no-session-persistence',
+        '--settings',
+        '{"disableAllHooks":true,"forceLoginMethod":"claudeai"}',
+        ...(run.target?.options?.effort ? ['--effort', run.target.options.effort] : []),
         '--permission-mode',
         'dontAsk',
         '--tools',
@@ -44,7 +56,15 @@ export const runClaudeEffect = (run: ClaudeRun) =>
       const started = Date.now(),
         events: Record<string, any>[] = [],
         messages = new Map<string, ReturnType<typeof claudeUsage>>();
-      const metrics: RunMetrics = { costUsd: null, turns: 0, toolCalls: 0, wallMs: 0, models: [], usage: emptyUsage('claude') };
+      const metrics: RunMetrics = {
+        target: run.target,
+        costUsd: null,
+        turns: 0,
+        toolCalls: 0,
+        wallMs: 0,
+        models: [],
+        usage: emptyUsage('claude'),
+      };
       writeFileSync(run.transcriptPath, '', { mode: 0o600 });
       const update = () => {
         metrics.wallMs = Date.now() - started;
@@ -57,7 +77,8 @@ export const runClaudeEffect = (run: ClaudeRun) =>
           update();
         }),
       );
-      const result = yield* commandEffect('claude', args, {
+      const result = yield* commandEffect(run.instance ? expandPath(run.instance.binaryPath) : 'claude', args, {
+        env: run.instance ? instanceEnvironment(run.instance) : undefined,
         cwd: run.cwd,
         signal: run.signal,
         input: run.prompt,
@@ -68,8 +89,18 @@ export const runClaudeEffect = (run: ClaudeRun) =>
           } catch {
             return;
           }
+          if (e.type === 'rate_limit_event' && e.rate_limit_info?.status === 'rejected') {
+            const reset = e.rate_limit_info.resetsAt;
+            metrics.limits = [{ name: 'Claude subscription', exhausted: true, ...(typeof reset === 'number' ? { resetsAt: reset } : {}) }];
+            update();
+            throw new RunError(
+              'USAGE_EXHAUSTED',
+              'Claude reported an exhausted subscription limit. Retry after the native reset.',
+              typeof reset === 'number' ? reset : undefined,
+            );
+          }
           events.push(e);
-          appendFileSync(run.transcriptPath, JSON.stringify(e) + '\n');
+          appendFileSync(run.transcriptPath, redactProviderEvent(e) + '\n');
           if (e.type === 'assistant') {
             if (e.message?.id && e.message.usage) {
               const usage = claudeUsage(e.message.usage);
@@ -99,9 +130,7 @@ export const runClaudeEffect = (run: ClaudeRun) =>
       });
       const final = events.findLast((e) => e.type === 'result');
       if (result.code !== 0 || !final || final.is_error)
-        throw new Error(
-          `Claude run failed (${result.code}): ${final?.errors?.join('; ') ?? 'No successful result. See local transcript.'}`,
-        );
+        throw nativeFailure(final?.errors?.join('; ') ?? result.stderr ?? 'Claude run failed');
       return { exitCode: result.code, resultText: final.result ?? '', events, metrics };
     }),
   );

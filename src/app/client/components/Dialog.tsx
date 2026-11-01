@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
 export function Dialog({
   id,
   className,
@@ -6,6 +6,7 @@ export function Dialog({
   open,
   onClose,
   children,
+  style,
 }: {
   id: string;
   className: string;
@@ -13,6 +14,7 @@ export function Dialog({
   open: boolean;
   onClose: () => void;
   children: ReactNode;
+  style?: CSSProperties;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -28,6 +30,7 @@ export function Dialog({
       ref={ref}
       id={id}
       className={className}
+      style={style}
       aria-label={title}
       onCancel={(e) => {
         e.preventDefault();

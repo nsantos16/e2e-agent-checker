@@ -63,7 +63,11 @@ export function JobCard({ job: j }: { job: JobView }) {
             {wt?.branch ?? j.worktree.split('/').pop()}
             {j.slot ? ` · slot ${j.slot}` : ''}
           </span>
-          <span>{j.target ? `${j.target.provider} / ${modelName(j.target, s.providers)}` : 'Historical run'}</span>
+          <span>
+            {j.target
+              ? `${j.providerSnapshot?.name ?? j.target.instanceId ?? j.target.provider} / ${modelName(j.target, s.providers)}`
+              : 'Historical run'}
+          </span>
         </div>
         <div className="run-metrics">
           <div className="metric">
@@ -130,7 +134,12 @@ export function JobCard({ job: j }: { job: JobView }) {
             ))}
           </div>
         )}
-        {j.error && <div className="error">{j.error}</div>}
+        {j.error && (
+          <div className="error">
+            {j.error}
+            {j.retryAt && <div>Provider reset: {new Date(j.retryAt * 1000).toLocaleString()}</div>}
+          </div>
+        )}
         <div className="job-actions">
           {!terminal(j) ? (
             <button data-cancel={j.id} disabled={busy || j.status === 'cancelling'} onClick={() => void action('cancel')}>

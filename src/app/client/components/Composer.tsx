@@ -1,3 +1,4 @@
+import { providerInstanceId, targetInstanceId } from '../../../providers/schema.ts';
 import { useWorkspace } from '../context.tsx';
 import { caseKey, modelName } from '../format.ts';
 import { Icon } from './Icon.tsx';
@@ -104,7 +105,14 @@ export function Composer() {
             className="control"
             aria-haspopup="dialog"
             aria-controls="model-dialog"
-            title={s.targets.map((t) => `${t.provider} · ${modelName(t, s.providers)}`).join('\n') || 'Choose models'}
+            title={
+              s.targets
+                .map(
+                  (t) =>
+                    `${s.providers.find((p) => providerInstanceId(p) === targetInstanceId(t))?.name ?? targetInstanceId(t)} · ${modelName(t, s.providers)}`,
+                )
+                .join('\n') || 'Choose models'
+            }
             onClick={() => store.patch({ dialog: 'models' })}
           >
             <Icon name="model" />

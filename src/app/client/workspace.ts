@@ -1,3 +1,4 @@
+import { providerInstanceId, targetInstanceId, sameTarget, targetSchema } from '../../providers/schema.ts';
 import { api, errorMessage, preferences, type Api } from './api.ts';
 import { caseKey, terminal } from './format.ts';
 import type { CaseSummary, Environment, JobView, Provider, Target, Worktree, SidebarItem } from './types.ts';
@@ -43,13 +44,10 @@ export function createWorkspace(request: Api = api) {
   const savedGroups = preferences.json<unknown>('collapsed-groups', []);
   const targets = Array.isArray(savedTargets)
     ? savedTargets
-        .filter(
-          (target): target is Target =>
-            target &&
-            ['codex', 'claude-code', 'cursor'].includes(target.provider) &&
-            typeof target.model === 'string' &&
-            target.authMode === 'subscription',
-        )
+        .flatMap((target) => {
+          const parsed = targetSchema.safeParse(target);
+          return parsed.success ? [parsed.data] : [];
+        })
         .slice(0, 8)
     : [];
   let state: WorkspaceState = {
@@ -128,7 +126,16 @@ export function createWorkspace(request: Api = api) {
   };
   const environment = () => state.environments.find((e) => e.id === state.environmentId);
   const readyTargets = () =>
-    state.targets.filter((t) => state.providers.some((p) => p.id === t.provider && p.ready && p.models.some((m) => m.id === t.model)));
+    state.targets.filter((t) =>
+      state.providers.some(
+        (p) =>
+          providerInstanceId(p) === targetInstanceId(t) &&
+          p.ready &&
+          (!t.instanceRevision || t.instanceRevision === p.revision) &&
+          (!t.accountFingerprint || t.accountFingerprint === p.accountFingerprint) &&
+          p.models.some((m) => m.id === t.model),
+      ),
+    );
   const setEnvironments = (environments: Environment[]) => {
     const selected = environments.find((e) => e.id === state.environmentId) ?? environments[0];
     const remembered =
@@ -215,15 +222,25 @@ export function createWorkspace(request: Api = api) {
       if (version !== `${caseMutation}:${jobMutation}`) return;
       patch({ archivedCases: cases.filter((c) => c.status === 'archived'), archivedJobs: jobs });
     });
-  const refreshProviders = () =>
+  const refreshProviders = (fresh = true) =>
     once('providers', async () => {
       patch({ refreshingProviders: true });
       try {
-        const providers = await call<Provider[]>('/api/providers?fresh=1');
+        const providers = await call<Provider[]>('/api/providers' + (fresh ? '?fresh=1' : ''));
         let targets = state.targets;
         if (!targets.length) {
-          const p = providers.find((p) => p.ready && p.models.length);
-          if (p) targets = [{ provider: p.id, model: p.models[0].id, authMode: 'subscription' }];
+          const p = providers.find((p) => p.selected && p.ready && p.models.length) ?? providers.find((p) => p.ready && p.models.length);
+          if (p)
+            targets = [
+              {
+                provider: p.id,
+                instanceId: providerInstanceId(p),
+                instanceRevision: p.revision,
+                accountFingerprint: p.accountFingerprint,
+                model: p.models[0].id,
+                authMode: 'subscription',
+              },
+            ];
         }
         patch({ providers, targets });
       } finally {
@@ -506,10 +523,34 @@ export function createWorkspace(request: Api = api) {
       preferences.set('worktree', path);
       patch({ worktree: path });
     },
+    setTargetOptions(target: Target, effort: string) {
+      const targets = state.targets.map((t) => (sameTarget(t, target) ? { ...t, options: effort ? { effort } : {} } : t));
+      preferences.set('run-targets', JSON.stringify(targets));
+      patch({ targets });
+    },
+    async chooseProvider(p: Provider) {
+      await call('/api/provider-instances/select', { instanceId: providerInstanceId(p), expectedRevision: p.revision });
+      const model = p.models[0];
+      const targets: Target[] = model
+        ? [
+            {
+              provider: p.id,
+              instanceId: providerInstanceId(p),
+              instanceRevision: p.revision,
+              accountFingerprint: p.accountFingerprint,
+              model: model.id,
+              authMode: 'subscription',
+            },
+          ]
+        : [];
+      preferences.set('run-targets', JSON.stringify(targets));
+      patch({ targets, dialog: 'models' });
+      await refreshProviders(false);
+    },
     toggleTarget(target: Target) {
-      const exists = state.targets.some((t) => t.provider === target.provider && t.model === target.model);
+      const exists = state.targets.some((t) => sameTarget(t, target));
       const targets = exists
-        ? state.targets.filter((t) => t.provider !== target.provider || t.model !== target.model)
+        ? state.targets.filter((t) => !sameTarget(t, target))
         : state.targets.length < 8
           ? [...state.targets, target]
           : state.targets;

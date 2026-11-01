@@ -14,12 +14,13 @@ import { config } from './config.ts';
 import { ensureSlotForWorktreeEffect, baseUrl } from './slots.ts';
 import { verifyEffect } from './verify.ts';
 import { newRunDir } from './explore.ts';
-import { RunError, targetSchema, type Target } from './providers/index.ts';
+import { preflightEffect, RunError, targetSchema, type Target } from './providers/index.ts';
 import { claudeUsage, emptyUsage, mergeUsage, noModelUsage, type Usage, type RunMetrics } from './usage.ts';
 import { explorationReportPath, runsRoot, type BuildProvenance, type SpecSelection } from './saved-specs.ts';
 import { organizeItem, type ItemOrganization } from './organization.ts';
 import { cleanRunCaches, type CleanupReport } from './run-cache.ts';
 import { appSettings } from './settings.ts';
+import { profilePath } from './providers/instances.ts';
 
 export type JobStatus = 'queued' | 'running' | 'cancelling' | 'done' | 'failed' | 'cancelled' | 'interrupted';
 export type Job = ItemOrganization & {
@@ -63,6 +64,16 @@ export type Job = ItemOrganization & {
   errorCode?: string;
   log: string[];
   target?: Target;
+  providerSnapshot?: {
+    instanceId: string;
+    name: string;
+    revision: string;
+    version?: string;
+    account?: import('./providers/schema.ts').Account;
+    config?: import('./providers/schema.ts').ProviderInstance;
+    nativeProfile?: string;
+  };
+  retryAt?: number;
   batchId?: string;
   replayOf?: string;
   confirmationReplay?: boolean;
@@ -283,6 +294,7 @@ const executeEffect = (job: Job) =>
             e?.code === 'TIMEOUT' ? 'failed' : e?.code === 'INTERRUPTED' ? 'interrupted' : signal.aborted ? 'cancelled' : 'failed';
           job.error = String(e);
           job.errorCode = e?.code ?? 'RUN_FAILED';
+          job.retryAt = e?.retryAt;
         }),
       ),
       Effect.ensuring(
@@ -389,13 +401,12 @@ const submitBatchLockedEffect = (input: unknown) =>
     const snapshots = yield* Effect.forEach(b.cases, (c) =>
       repository.get(c.project, c.id).pipe(Effect.tap((record) => Effect.sync(() => assertRunnable(record)))),
     );
-    // Provider readiness belongs to authoring, after reuse selection at execution
-    // time. Queued work may reuse a spec published by an earlier serialized job.
+    const selections = yield* Effect.forEach(targets, (t) => preflightEffect(t));
     if (stopping) return yield* Effect.fail(new RunError('APP_UNAVAILABLE', 'Server is stopping'));
     const batchId = randomUUID();
     const created: Job[] = b.cases.flatMap((c, index) =>
-      targets.map(
-        (target) =>
+      selections.map(
+        (selection) =>
           ({
             id: `job-${randomUUID()}`,
             project: c.project,
@@ -417,7 +428,16 @@ const submitBatchLockedEffect = (input: unknown) =>
               userName: user.name,
             },
             identityKey: testIdentityKey(user),
-            target,
+            target: selection.target,
+            providerSnapshot: {
+              instanceId: selection.instance.id,
+              name: selection.instance.name,
+              revision: selection.instance.revision,
+              version: selection.version,
+              account: selection.account,
+              config: selection.instance,
+              nativeProfile: profilePath(selection.instance),
+            },
             batchId,
             limits: b.limits,
             forceFresh: b.forceFresh,
@@ -541,6 +561,7 @@ export function replayJob(id: string) {
     environment: old.environment,
     identityKey: old.identityKey,
     target: old.target,
+    providerSnapshot: old.providerSnapshot,
     limits: old.limits,
     replayOf: id,
     status: 'queued',

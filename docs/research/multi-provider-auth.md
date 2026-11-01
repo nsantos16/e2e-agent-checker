@@ -1,5 +1,7 @@
 # Multi-provider runners, authentication, and MCP
 
+Current native account/instance management: [provider instances](../provider-instances.md). Provider-only targets remain compatible; explicit `instanceId` selects a separate native profile.
+
 > Historical design baseline. See [implemented scope and verification](../runtime-milestone.md) for current behavior, the T3-style UI, and the Cursor capability gate. Tables below describe the pre-implementation audit or proposed contract.
 
 Research date: 2026-10-12. Status: proposed architecture; documentation and package metadata verified, no paid agent runs or authentication changes performed.

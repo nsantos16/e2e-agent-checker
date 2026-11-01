@@ -62,7 +62,7 @@ test('MCP schemas, structured responses, operational errors, and batch forwardin
   );
   try {
     const { tools } = await client.listTools();
-    assert.equal(tools.length, 25);
+    assert.equal(tools.length, 29);
     assert.ok(tools.every((t) => t.outputSchema));
     assert.equal(tools.find((t) => t.name === 'get_job')?.annotations?.readOnlyHint, true);
     assert.equal(tools.find((t) => t.name === 'verify_case')?.annotations?.readOnlyHint, false);
@@ -97,7 +97,8 @@ test('MCP schemas, structured responses, operational errors, and batch forwardin
     assert.equal(nativeRun.isError, undefined);
     assert.deepEqual(requests.at(-1).body.cases, [{ project: 'LOCAL', id: 8 }]);
     assert.equal(requests.at(-1).body.forceFresh, false);
-    assert.match(client.getInstructions() ?? '', /no model calls or provider preflight/);
+    assert.match(client.getInstructions() ?? '', /no model calls/);
+    assert.match(client.getInstructions() ?? '', /selected native account before acceptance/);
     const forced = await client.callTool({ name: 'verify_case', arguments: { project: 'LOCAL', caseId: 8, forceFresh: true } });
     assert.equal(forced.isError, undefined);
     assert.equal(requests.at(-1).body.forceFresh, true);

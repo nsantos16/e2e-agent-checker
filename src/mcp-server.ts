@@ -8,7 +8,14 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { config } from './config.ts';
-import { targetSchema, providerId } from './providers/index.ts';
+import {
+  targetSchema,
+  providerId,
+  defaultInstanceId,
+  instanceIdSchema,
+  saveInstanceSchema,
+  instanceActionSchema,
+} from './providers/schema.ts';
 import { saveEnvironmentSchema, environmentId } from './environments.ts';
 import { clip, viewerUrl } from './agent-view.ts';
 import { createCaseSchema, updateCaseSchema, deleteCaseSchema, syncCaseSchema, projectSchema } from './cases.ts';
@@ -57,8 +64,8 @@ const api = (path: string, body?: unknown, signal?: AbortSignal): Promise<any> =
 const instructions = `Manage and verify local test cases against worktrees using existing subscriptions.
 Use create_case for local drafts, get_case then update_case(expectedRevision) to edit or activate; delete_case archives, and update_case restores. sync_case refreshes Qase explicitly and rejects local-edit conflicts. list_cases returns compact summaries. Use caseId for local or imported cases; qaseCaseId is a legacy alias.
 Use list_environments to select environmentId and userId; hosted environments do not need a worktreePath. Credential references are configured in Settings; never request secret values.
-Start with get_setup only when setup is unknown; list_cases(query) and list_worktrees(query), then list_models(provider).
-Submit verify_case or verify_cases with an explicit target and stable idempotencyKey. Compatible saved specs execute first with fresh evidence and no model calls or provider preflight. forceFresh:true requests new exploration/codification. Reuse the idempotency key after an uncertain submission; never blindly resubmit.
+Start with get_setup only when setup is unknown; list_cases(query) and list_worktrees(query), then list_models(provider, instanceId). Targets without instanceId resolve to provider-default; use explicit instanceId for separate accounts.
+Submit verify_case or verify_cases with an explicit target and stable idempotencyKey. Compatible saved specs execute first with fresh evidence and no model calls. Queued submissions validate the selected native account before acceptance. forceFresh:true requests new exploration/codification. Reuse the idempotency key after an uncertain submission; never blindly resubmit.
 Use wait_jobs for all pending IDs together (up to 25 seconds), passing returned revisions to receive only changed summaries. A wait timeout does not cancel a run.
 status=done means the pipeline ended; check outcome for pass/fail/blocked. Never equate done with pass.
 Status is compact. Use get_evidence for artifacts/failing steps, then bounded text pages only as needed. get_network defaults to five failures without bodies; requestId selects one captured row, detail=true includes its sanitized error body.
@@ -126,6 +133,10 @@ const outputs: Record<string, z.ZodType> = {
   sync_case: caseAck,
   list_providers: z.object({ providers: z.array(providerSchema) }),
   list_models: providerSchema,
+  save_provider_instance: loose,
+  select_provider_instance: loose,
+  delete_provider_instance: z.object({ id: z.string(), deleted: z.boolean() }),
+  provider_login: loose,
   list_cases: z.object({
     cases: z.array(z.object({ project: z.string(), id: z.number(), title: z.string() }).passthrough()),
     total: z.number(),
@@ -207,6 +218,10 @@ const outputs: Record<string, z.ZodType> = {
   }),
 };
 const fixes: Record<string, string> = {
+  INSTANCE_CHANGED: 'Refresh providers and explicitly reselect the instance for new work.',
+  ACCOUNT_CHANGED: 'Verify the native account, then reselect it. Existing work will not switch accounts.',
+  AUTH_EXPIRED: 'Use provider_login for this instance, complete native sign-in, then refresh.',
+  USAGE_EXHAUSTED: 'Wait for the reported native reset. No API billing or other-account fallback is used.',
   AUTH_REQUIRED: 'Run the provider loginCommand from list_providers in your terminal.',
   AUTH_MODE_MISMATCH: 'Sign into the native provider with a subscription; API-key fallback is disabled.',
   CAPABILITY_UNSUPPORTED: 'Select a ready provider from list_providers.',
@@ -239,6 +254,9 @@ const mutations = new Set([
   'update_case',
   'delete_case',
   'sync_case',
+  'save_provider_instance',
+  'select_provider_instance',
+  'delete_provider_instance',
   'save_environment',
   'delete_environment',
 ]);
@@ -275,6 +293,9 @@ function register(name: string, description: string, inputSchema: any, fn: (args
           'update_case',
           'delete_case',
           'sync_case',
+          'save_provider_instance',
+          'select_provider_instance',
+          'delete_provider_instance',
           'save_environment',
           'delete_environment',
         ].includes(name),
@@ -371,14 +392,59 @@ register(
     };
   },
 );
-register('list_providers', 'Inspect native subscription readiness. Model catalogs are opt-in via list_models.', {}, async () => ({
-  providers: (await api('/api/providers')).map(({ models, ...p }: any) => p),
-}));
+register(
+  'list_providers',
+  'List native account instances, readiness and login guidance. Refresh after native login; never includes credential values.',
+  { fresh: z.boolean().optional(), instanceId: instanceIdSchema.optional() },
+  async ({ fresh, instanceId }) => ({
+    providers: (
+      await api(
+        '/api/providers' +
+          (fresh || instanceId
+            ? '?' + new URLSearchParams({ ...(fresh ? { fresh: '1' } : {}), ...(instanceId ? { instanceId } : {}) })
+            : ''),
+      )
+    ).map(({ models, ...p }: any) => p),
+  }),
+);
 register(
   'list_models',
-  'Get valid model IDs for one native runtime. Rechecked at submission.',
-  { provider: providerId },
-  async ({ provider }) => (await api('/api/providers')).find((p: any) => p.id === provider),
+  'Get a specific native account’s models/options. Omitting instanceId uses the fixed provider-default instance, never another account.',
+  { provider: providerId, instanceId: instanceIdSchema.optional(), fresh: z.boolean().optional() },
+  async ({ provider, instanceId, fresh }) => {
+    const providers = await api(
+      '/api/providers?' + new URLSearchParams({ instanceId: instanceId ?? defaultInstanceId(provider), ...(fresh ? { fresh: '1' } : {}) }),
+    );
+    const p = providers.find(
+      (p: any) => p.id === provider && (p.instanceId ?? defaultInstanceId(p.id)) === (instanceId ?? defaultInstanceId(provider)),
+    );
+    if (!p) throw Object.assign(new Error('Unknown instance for this provider'), { code: 'INSTANCE_NOT_FOUND' });
+    return p;
+  },
+);
+register(
+  'save_provider_instance',
+  'Create or edit a native account instance. Set a separate configDir for another account. Revision required for edits; credentials stay native.',
+  saveInstanceSchema.shape,
+  async (input) => api('/api/provider-instances', input),
+);
+register(
+  'select_provider_instance',
+  'Set the preferred instance for new UI drafts. Existing and legacy targets keep their explicit/default instance.',
+  instanceActionSchema.shape,
+  async (input) => api('/api/provider-instances/select', input),
+);
+register(
+  'delete_provider_instance',
+  'Remove a custom instance from the checker without deleting native credentials. Disable default instances using save_provider_instance.',
+  instanceActionSchema.shape,
+  async (input) => api('/api/provider-instances/delete', input),
+);
+register(
+  'provider_login',
+  'Get the exact native terminal sign-in/reconnect command for this instance. Does not start login, exchange credentials, or sign out.',
+  instanceActionSchema.shape,
+  async (input) => api('/api/provider-instances/auth', input),
 );
 register(
   'list_cases',
@@ -471,7 +537,7 @@ register(
 );
 register(
   'verify_case',
-  'Run a compatible saved spec on the requested target, or author with qualified stabilization/final replay evidence. confirmationReplay requires an independent final execution. forceFresh requests new authoring. Provider readiness is checked only for authoring. Then wait_jobs.',
+  'Pin the selected native account and model, then run a compatible saved spec or author with qualified stabilization/final replay evidence. confirmationReplay requires an independent final execution. forceFresh requests new authoring. Then wait_jobs.',
   { ...common, ...caseRef, target: targetSchema.optional() },
   async ({ worktreePath, caseId, qaseCaseId, project, target, ...rest }) =>
     submitted(
@@ -487,7 +553,7 @@ register(
 );
 register(
   'verify_cases',
-  'Validate and queue every case × target atomically. Reuse compatible specs unless forceFresh; provider preflight happens only for authoring. Identities serialize.',
+  'Validate and queue every case × target atomically. Reuse compatible specs unless forceFresh; the selected native account is pinned at submission and rechecked before authoring. Identities serialize.',
   {
     ...common,
     cases: z
@@ -558,7 +624,20 @@ register(
   {
     ...jobIdInput,
     artifact: z
-      .enum(['logs', 'case', 'report', 'historical-report', 'manifest', 'summary', 'attempt', 'results', 'spec', 'comment', 'usage', 'pricing'])
+      .enum([
+        'logs',
+        'case',
+        'report',
+        'historical-report',
+        'manifest',
+        'summary',
+        'attempt',
+        'results',
+        'spec',
+        'comment',
+        'usage',
+        'pricing',
+      ])
       .optional(),
     offset: z.number().int().min(0).default(0),
     limit: z.number().int().min(1).max(16000).default(4000),

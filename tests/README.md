@@ -16,7 +16,7 @@ It exercises the built React components through real controls and fixture API re
 
 ## Workspace regression
 
-Evaluate `app-workspace.browser.js` the same way. Success returns 82 checks covering automatic reuse/fresh authoring, case selection, catalog refresh and draft activation, multi-model batch submission, model search, keyboard focus, unavailable-provider guidance, separate Connections settings, focused run history, polling, new drafts, theme persistence mobile layout, side-panel docking and browser preservation, network search/type/stage filters, sorting, response/raw detail, copy actions, keyboard navigation, pause/resume, bounded loading, retention disclosure, responsive inspection, escaped response text, live frame identity, closed-session labeling and direct selection of older runs. Sidebar removal checks cover case archival and draft removal, revision conflicts and retry, active-run guards, failed run removal, selection cleanup, counts, polling, a fresh workspace and access to hidden historical evidence. Requests, preferences and polling are mocked inside an isolated frame; this test does not consume subscription allowance or start real jobs.
+Evaluate `app-workspace.browser.js` the same way. Success returns 82 checks covering automatic reuse/fresh authoring, case selection, catalog refresh and draft activation, multi-model batch submission, model search, keyboard focus, unavailable-provider guidance, separate Providers settings, focused run history, polling, new drafts, theme persistence mobile layout, side-panel docking and browser preservation, network search/type/stage filters, sorting, response/raw detail, copy actions, keyboard navigation, pause/resume, bounded loading, retention disclosure, responsive inspection, escaped response text, live frame identity, closed-session labeling and direct selection of older runs. Sidebar removal checks cover case archival and draft removal, revision conflicts and retry, active-run guards, failed run removal, selection cleanup, counts, polling, a fresh workspace and access to hidden historical evidence. Requests, preferences and polling are mocked inside an isolated frame; this test does not consume subscription allowance or start real jobs.
 
 ## Browser/network runtime smoke
 
@@ -32,7 +32,7 @@ Store and API tests cover archive/restore of drafts, revision conflicts, deleted
 
 ## Agent MCP contract and API integration
 
-`npm test` includes real stdio MCP client tests against a controlled HTTP fixture and a separate local app with disposable job/artifact state. They cover all 25 tool schemas, tool annotations, batch waiting and revisions, failure summaries, case search/read, bounded network and artifact pages, canonical artifact boundaries, and on-demand image delivery with unchanged-frame suppression. They do not launch model calls or publish evidence.
+`npm test` includes real stdio MCP client tests against a controlled HTTP fixture and a separate local app with disposable job/artifact state. They cover all 29 tool schemas, tool annotations, batch waiting and revisions, failure summaries, case search/read, bounded network and artifact pages, canonical artifact boundaries, and on-demand image delivery with unchanged-frame suppression. They do not launch model calls or publish evidence.
 
 ## Environment login smoke
 
@@ -75,3 +75,7 @@ The [component comparison](../docs/sol61-batch-ablation.md) then compared the re
 ## Stabilization evidence reuse
 
 `npm test` checks manifest eligibility, identity changes, malformed/partial reports, missing recordings, product assertion failures, cancellation, and fallback. Run `node tests/stabilization-smoke.ts` for the real local Playwright/ffmpeg pipeline regression. It injects provider responses (no paid model calls), counts actual test-page requests, retains recordings, and prints measured execution/package times. See [qualification and compatibility](../docs/stabilization-evidence.md).
+
+## Provider instances
+
+`providers.test.ts` uses real child processes implementing fake Claude and Codex native protocols, with isolated temporary profiles for two accounts each. `provider-api.test.ts` drives the built Settings/composer in headless Playwright against the real HTTP API and stdio MCP, with fake native accounts. No native credentials are read or changed. `provider-smoke.ts --provider claude-code --model sonnet` (or `--provider codex --model gpt-6.1-sol`, optionally `--instance ID`) is the separate opt-in live subscription fixture. See [native provider validation](../docs/provider-instances.md#verification) for recorded live results.

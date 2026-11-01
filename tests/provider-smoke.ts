@@ -1,7 +1,7 @@
 // Explicit opt-in live test: consumes the selected native subscription's allowance.
 import { createServer } from 'node:http';
-import { readFileSync, writeFileSync, rmSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, writeFileSync, rmSync, existsSync, mkdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { explore, newRunDir } from '../src/explore.ts';
 import { codify } from '../src/codify.ts';
@@ -12,11 +12,17 @@ const { values } = parseArgs({
   options: {
     provider: { type: 'string', default: 'codex' },
     model: { type: 'string', default: 'gpt-6.1-sol' },
+    instance: { type: 'string' },
     broken: { type: 'boolean', default: false },
   },
 });
 const root = new URL('..', import.meta.url).pathname;
-const target = targetSchema.parse({ provider: values.provider, model: values.model, authMode: 'subscription' });
+const target = targetSchema.parse({
+  provider: values.provider,
+  model: values.model,
+  instanceId: values.instance,
+  authMode: 'subscription',
+});
 const fixture = join(root, 'fixtures/qase/SMOKE-999999.json'),
   state = statePath('999', 'smoke');
 if (existsSync(fixture) || existsSync(state)) throw new Error('Smoke fixture already exists; another test may be running');
@@ -53,6 +59,7 @@ const testCase = {
     { position: 3, action: 'Click Clear.', expected_result: 'Note is empty and status says Cleared.', data: null },
   ],
 };
+mkdirSync(dirname(state), { recursive: true });
 writeFileSync(fixture, JSON.stringify(testCase));
 writeFileSync(state, JSON.stringify({ cookies: [], origins: [] }));
 const runDir = newRunDir('SMOKE', 999999, '999', values.broken ? 'broken' : 'good');

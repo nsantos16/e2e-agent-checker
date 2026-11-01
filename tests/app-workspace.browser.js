@@ -262,7 +262,9 @@
     $('[data-picker-provider="claude-code"]').click();
     await settle();
     assert(
-      $('.model-unavailable').textContent.includes('API key is active') && !$('#model-list [data-model]'),
+      $('.model-unavailable').textContent.includes('API billing') &&
+        $('.model-unavailable').textContent.includes('Reconnect') &&
+        !$('#model-list [data-model]'),
       'Unavailable providers explain how to connect',
     );
     $('#picker-setup').click();

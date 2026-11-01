@@ -116,6 +116,8 @@ test('failed Codex initialization closes the scoped RPC subprocess', async () =>
 
 test('verification composes injected provider, process and pricing services without real model calls', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'checker-effect-verify-'));
+  const oldProviders = process.env.E2E_PROVIDERS_PATH;
+  process.env.E2E_PROVIDERS_PATH = join(dir, 'providers.json');
   const state = join(dir, 'state.json');
   writeFileSync(state, '{}');
   mkdirSync(join(dir, 'fixtures'));
@@ -233,6 +235,8 @@ test('verification composes injected provider, process and pricing services with
     assert.ok(Math.abs(metrics.usage.estimatedApiCostUsd - 0.00012) < 1e-12);
     assert.equal(metrics.usage.pricingSnapshotId, JSON.parse(readFileSync(join(dir, 'pricing.json'), 'utf8')).id);
   } finally {
+    if (oldProviders === undefined) delete process.env.E2E_PROVIDERS_PATH;
+    else process.env.E2E_PROVIDERS_PATH = oldProviders;
     rmSync(dir, { recursive: true, force: true });
   }
 });

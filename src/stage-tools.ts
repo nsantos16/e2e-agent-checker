@@ -81,6 +81,12 @@ const makeStageToolsEffect = (config: StageConfig, signal: AbortSignal) =>
           Object.entries(childEnvironment()).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
         ),
       });
+      // SDK connect failures may start close() concurrently with scope release. Join that
+      // same cleanup so cancellation cannot return while the native tool process is alive.
+      const closeTransport = transport.close.bind(transport);
+      let closing: Promise<void> | undefined;
+      transport.close = () => (closing ??= closeTransport());
+      yield* Effect.addFinalizer(() => sdk(() => transport.close()).pipe(Effect.orDie));
       yield* sdk((cancel) =>
         client.connect(transport, {
           signal: AbortSignal.any([signal, cancel]),

@@ -40,7 +40,7 @@ Missing manifests/artifacts, invalid JSON/schema, unsupported versions, integrit
 
 `npm test` covers compatibility decisions, changed cases/content, new commits/worktrees, corrupt/missing artifacts, force-fresh, concurrent/idempotent submissions, identity aliases, deletion while queued, cancellation, legacy replay, fresh failure evidence and zero model/preflight/pricing calls on reuse. `npm run check` checks backend and frontend types.
 
-Measured with controlled provider/process fixtures: fresh verification invokes **2 model stages, 2 provider preflights and 1 pricing load**; compatible reuse invokes **0 of each** and still executes one replay. These are invocation counts, not a benchmark of a live provider's latency or subscription charges.
+Measured with controlled provider/process fixtures: fresh verification invokes **2 model stages, 2 provider preflights and 1 pricing load**; compatible reuse invokes **0 of each** and still executes one replay. These are pipeline invocation counts, not a benchmark of a live provider's latency or subscription charges. API/MCP queued submissions additionally perform a read-only native account/model preflight before acceptance to pin their exact account identity and configuration; this check makes no model call. Explicit replay and direct pipeline reuse remain independent of provider readiness.
 
 `node tests/saved-specs-smoke.ts` runs real Playwright against two disposable localhost targets using an explicitly seeded saved-spec fixture. It verifies a fixed build passes, a regressed build fails, only the requested target is visited, and both runs create fresh MP4/trace/network evidence with zero provider calls. It writes actual elapsed times and artifact paths to `runs/saved-spec-smoke-*/measurements.json`.
 

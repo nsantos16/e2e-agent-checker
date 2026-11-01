@@ -1,5 +1,7 @@
 <img src="assets/icon.svg" width="64" height="64" alt="">
 
+Manage native Claude Code and Codex subscription accounts in Settings → Providers. See [provider instances](docs/provider-instances.md) for separate profiles, MCP operations and billing boundaries.
+
 # e2e-agent-checker
 
 Proof of concept: an agent verifies **local or Qase test cases** against **any git worktree** of the Sample frontend, turns what it did into a **Playwright spec**, and packages qualified stabilization evidence or a deterministic replay with **video**. It runs in parallel across worktrees and is exposed over **MCP**.
@@ -41,7 +43,7 @@ npm run setup        # installs deps + browsers, then runs the readiness check
 npm run app          # opens http://localhost:4100
 ```
 
-In the app: pick the **worktree** you want to test (every worktree of your `sample-frontend` checkout is listed, e.g. the one an agent just implemented a ticket in), select one or more **provider models**, then click **Run ▶** or select several cases. Every case × model gets its own run. Open a running job to watch its live browser preview and inspect captured network requests. The agent receives failure summaries and can query detailed diagnostics. Runs show queue/stage timing, input/output/cache tokens, reported cost when available, per-step verdicts, and replay video. Cancel active runs or replay a saved spec without new model calls. Runs sharing a test identity are serialized. Use **+** beside the Cases/Runs tabs to import a Qase case. Subscription login and readiness live in **Settings → Connections**; model selection lives in the bottom composer.
+In the app: pick the **worktree** you want to test (every worktree of your `sample-frontend` checkout is listed, e.g. the one an agent just implemented a ticket in), select one or more **provider models**, then click **Run ▶** or select several cases. Every case × model gets its own run. Open a running job to watch its live browser preview and inspect captured network requests. The agent receives failure summaries and can query detailed diagnostics. Runs show queue/stage timing, input/output/cache tokens, reported cost when available, per-step verdicts, and replay video. Cancel active runs or replay a saved spec without new model calls. Runs sharing a test identity are serialized. Use **+** beside the Cases/Runs tabs to import a Qase case. Subscription login and readiness live in **Settings → Providers**; model selection lives in the bottom composer.
 
 Organize cases and runs through their actions menus: pin, settle, reorder, archive with Undo, or delete with confirmation. **Settings → Sidebar** controls project/status grouping, and **Settings → Archived** restores archived items. **Settings → Storage** optionally removes all saved run files after a configured number of days while keeping case definitions and result summaries. Cleanup starts disabled; active work is protected. See [sidebar management and retention](docs/case-management.md#sidebar-organization-archive-and-deletion).
 
@@ -93,7 +95,7 @@ npm run doctor
 npm run app
 ```
 
-Open **http://localhost:4100**. In **Settings → Connections**, check your Codex or Claude subscription login. In **Settings → Environments**, select or configure a local/hosted target and test users using 1Password or environment-variable references. Environment variables must be available to the checker process when it starts. The current login adapter supports Sample's email/password/MFA flow; arbitrary apps and SSO-only flows need a different adapter.
+Open **http://localhost:4100**. In **Settings → Providers**, check your Codex or Claude subscription login. In **Settings → Environments**, select or configure a local/hosted target and test users using 1Password or environment-variable references. Environment variables must be available to the checker process when it starts. The current login adapter supports Sample's email/password/MFA flow; arbitrary apps and SSO-only flows need a different adapter.
 
 Register the MCP using the commands above, then reconnect your coding agent. The MCP can also start the app automatically; keeping `npm run app` in a terminal makes startup errors visible. In another checkout, replace the absolute paths in these examples with yours.
 

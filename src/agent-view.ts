@@ -22,6 +22,8 @@ export function jobSummary(job: Job, base: string) {
     outcome: job.outcome,
     terminal: terminal(job),
     target: job.target,
+    providerSnapshot: job.providerSnapshot,
+    retryAt: job.retryAt,
     batchId: job.batchId,
     createdAt: job.createdAt,
     cacheClearedAt: job.cacheClearedAt,

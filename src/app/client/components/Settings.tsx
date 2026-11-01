@@ -1,10 +1,18 @@
+import { ProviderSettings } from './ProviderSettings.tsx';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useWorkspace } from '../context.tsx';
 import { errorMessage } from '../api.ts';
-import { providerMark, providerMessage } from '../format.ts';
 import type { Check, Environment, TestUser } from '../types.ts';
 import { Dialog, DialogHeader } from './Dialog.tsx';
 import { ArchivedSettings, SidebarSettings, StorageSettings } from './ManagementSettings.tsx';
+import { Icon } from './Icon.tsx';
+const sections = [
+  { id: 'connections', name: 'Providers', icon: 'model' },
+  { id: 'environments', name: 'Environments', icon: 'browser' },
+  { id: 'sidebar', name: 'Sidebar', icon: 'sidebar' },
+  { id: 'archived', name: 'Archived', icon: 'archive' },
+  { id: 'storage', name: 'Storage', icon: 'options' },
+] as const;
 export function Settings({ open }: { open: boolean }) {
   const { state: s, actions: store } = useWorkspace();
   const tab = s.settingsTab;
@@ -15,7 +23,11 @@ export function Settings({ open }: { open: boolean }) {
     const controller = new AbortController();
     void store
       .api<Check[]>(
-        '/api/doctor?' + new URLSearchParams({ environmentId: s.environmentId || 'local', ...(s.userId ? { userId: s.userId } : {}) }),
+        '/api/doctor?' +
+          new URLSearchParams({
+            environmentId: s.environmentId || 'local',
+            ...(s.userId ? { userId: s.userId } : {}),
+          }),
         undefined,
         controller.signal,
       )
@@ -31,73 +43,73 @@ export function Settings({ open }: { open: boolean }) {
       <DialogHeader id="settings-dialog" onClose={close}>
         Settings
       </DialogHeader>
-      <div className="settings-tabs" role="tablist" aria-label="Settings sections">
-        {(['connections', 'environments', 'sidebar', 'archived', 'storage'] as const).map((name) => (
-          <button
-            key={name}
-            role="tab"
-            id={`${name}-tab`}
-            data-settings-tab={name}
-            aria-controls={`${name}-settings`}
-            aria-selected={tab === name}
-            onClick={() => store.patch({ settingsTab: name })}
-          >
-            {name[0].toUpperCase() + name.slice(1)}
-          </button>
-        ))}
-      </div>
-      <div id="connections-settings" role="tabpanel" aria-labelledby="connections-tab" hidden={tab !== 'connections'}>
-        <div className="dialog-body">
-          <p className="muted" style={{ fontSize: 12, margin: '0 0 20px' }}>
-            Use your existing developer subscriptions. Each runtime keeps its own sign-in.
-          </p>
-          <div id="providers">
-            {s.providers.map((p) => (
-              <div key={p.id} className="provider-setting">
-                <div className="provider-setting-head">
-                  <span className="brand-mark">{providerMark[p.id]}</span>
-                  <strong>{p.name}</strong>
-                  <span className={`chip ${p.ready ? 'pass' : p.auth === 'api-key' ? 'blocked' : ''}`}>
-                    {p.ready ? 'Connected' : p.auth === 'api-key' ? 'API key active' : p.installed ? 'Unavailable' : 'Not installed'}
-                  </span>
-                </div>
-                <p>{providerMessage(p)}</p>
-                {!p.ready && (p.id !== 'cursor' || p.auth !== 'subscription') && <code>{p.loginCommand}</code>}
-              </div>
+      <div className="settings-layout">
+        <div className="settings-navigation">
+          <div className="settings-tabs" role="tablist" aria-label="Settings sections">
+            {sections.map(({ id: name, name: label, icon }, index) => (
+              <button
+                key={name}
+                role="tab"
+                id={`${name}-tab`}
+                data-settings-tab={name}
+                aria-controls={`${name}-settings`}
+                aria-selected={tab === name}
+                tabIndex={tab === name ? 0 : -1}
+                onClick={() => store.patch({ settingsTab: name })}
+                onKeyDown={(event) => {
+                  if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return;
+                  event.preventDefault();
+                  const next =
+                    sections[
+                      event.key === 'Home'
+                        ? 0
+                        : event.key === 'End'
+                          ? sections.length - 1
+                          : (index + (event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 1) + sections.length) % sections.length
+                    ].id;
+                  store.patch({ settingsTab: next });
+                  document.getElementById(`${next}-tab`)?.focus();
+                }}
+              >
+                <Icon name={icon} />
+                {label}
+              </button>
             ))}
           </div>
-          <div id="doctor">
-            {!!missing.length && (
-              <>
-                <h3>Workspace setup</h3>
-                <ul>
-                  {missing.map((c) => (
-                    <li key={c.name}>
-                      {c.name}: {c.detail}
-                      <br />
-                      <code>{c.fix}</code>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            )}
-          </div>
+          <span className="settings-local-note">On this machine</span>
         </div>
-        <div className="dialog-actions">
-          <span>Credentials stay with their provider.</span>
-          <button id="refresh-providers" disabled={s.refreshingProviders} onClick={() => void store.refreshProviders().catch(store.report)}>
-            Refresh connections
-          </button>
+        <div className="settings-content">
+          <div
+            id="connections-settings"
+            className="settings-panel"
+            role="tabpanel"
+            aria-labelledby="connections-tab"
+            hidden={tab !== 'connections'}
+          >
+            <div className="dialog-body">
+              <ProviderSettings />
+            </div>
+            <div className="dialog-actions">
+              <span>Credentials stay with their provider.</span>
+              <button
+                id="refresh-providers"
+                disabled={s.refreshingProviders}
+                onClick={() => void store.refreshProviders().catch(store.report)}
+              >
+                {s.refreshingProviders ? 'Refreshing…' : 'Refresh all'}
+              </button>
+            </div>
+          </div>
+          {open && tab === 'environments' && <EnvironmentSettings missing={missing} />}
+          {open && tab === 'sidebar' && <SidebarSettings />}
+          {open && tab === 'archived' && <ArchivedSettings />}
+          {open && tab === 'storage' && <StorageSettings />}
         </div>
       </div>
-      {open && tab === 'environments' && <EnvironmentSettings />}
-      {open && tab === 'sidebar' && <SidebarSettings />}
-      {open && tab === 'archived' && <ArchivedSettings />}
-      {open && tab === 'storage' && <StorageSettings />}
     </Dialog>
   );
 }
-function EnvironmentSettings() {
+function EnvironmentSettings({ missing }: { missing: Check[] }) {
   const { actions: store } = useWorkspace();
   const [environments, setEnvironments] = useState<Environment[]>([]);
   const [editing, setEditing] = useState<Environment | null | undefined>(undefined);
@@ -129,7 +141,10 @@ function EnvironmentSettings() {
     try {
       await store.api(
         '/api/environments',
-        { environment, ...(editing ? { expectedRevision: editing.revision } : {}) },
+        {
+          environment,
+          ...(editing ? { expectedRevision: editing.revision } : {}),
+        },
         controller.current?.signal,
       );
       await load(environment.id);
@@ -158,13 +173,17 @@ function EnvironmentSettings() {
     }
   };
   return (
-    <div id="environments-settings" role="tabpanel" aria-labelledby="environments-tab">
+    <div id="environments-settings" className="settings-panel" role="tabpanel" aria-labelledby="environments-tab">
       <div className="dialog-body">
-        <div className="environment-heading">
-          <p>Choose where tests run and which accounts they use.</p>
+        <div className="settings-page-heading">
+          <div>
+            <h2>Environments</h2>
+            <p>Choose where checks run and which test accounts they use.</p>
+          </div>
           <button
             type="button"
             id="new-environment"
+            className="settings-button"
             disabled={busy}
             onClick={() => {
               setEditing(null);
@@ -172,7 +191,8 @@ function EnvironmentSettings() {
               setMessage('');
             }}
           >
-            + Environment
+            <Icon name="plus" />
+            Add environment
           </button>
         </div>
         <div id="environment-list" className="environment-list">
@@ -200,6 +220,28 @@ function EnvironmentSettings() {
         <div id="environment-message" role="status">
           {message}
         </div>
+        {!!missing.length && (
+          <details id="doctor" className="settings-disclosure workspace-checks">
+            <summary>
+              <span>
+                <strong>Workspace checks</strong>
+                <small>
+                  {missing.length} {missing.length === 1 ? 'item needs' : 'items need'} attention in the selected run environment.
+                </small>
+              </span>
+              <Icon name="chevron" />
+            </summary>
+            <ul className="settings-disclosure-body">
+              {missing.map((check) => (
+                <li key={check.name}>
+                  <strong>{check.name}</strong>
+                  <p>{check.detail}</p>
+                  {check.fix && <code>{check.fix}</code>}
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
       </div>
     </div>
   );
@@ -217,7 +259,10 @@ function EnvironmentForm({
 }) {
   const [kind, setKind] = useState(environment?.kind ?? 'hosted');
   const [users, setUsers] = useState(() =>
-    (environment?.users ?? [{ id: '', name: '' }]).map((user) => ({ key: crypto.randomUUID(), user })),
+    (environment?.users ?? [{ id: '', name: '' }]).map((user) => ({
+      key: crypto.randomUUID(),
+      user,
+    })),
   );
   // Uncontrolled form fields preserve in-progress edits until this editor's revision changes.
   return (
@@ -258,7 +303,7 @@ function EnvironmentForm({
             />
           </label>
           <label>
-            ID
+            Environment ID
             <input
               id="environment-id"
               name="id"
@@ -270,7 +315,7 @@ function EnvironmentForm({
             />
           </label>
           <label>
-            Target
+            Run against
             <select id="environment-kind" value={kind} onChange={(e) => setKind(e.target.value as Environment['kind'])}>
               <option value="hosted">Hosted URL</option>
               <option value="worktree">Local worktree</option>
@@ -306,13 +351,19 @@ function EnvironmentForm({
             id="add-test-user"
             onClick={() => setUsers((rows) => [...rows, { key: crypto.randomUUID(), user: { id: '', name: '' } }])}
           >
-            + User
+            + Add test user
           </button>
         </div>
         <p className="environment-help">
-          Use 1Password references such as <code>op://vault/item/password</code>, or <code>env://STAGING_PASSWORD</code> for variables
-          available to the checker. Secret values are never shown here.
+          Link saved credentials using a 1Password reference or an environment variable. Enter references, not passwords.
         </p>
+        <details className="environment-reference-help">
+          <summary>How to reference credentials</summary>
+          <p className="environment-help">
+            For 1Password, use <code>op://vault/item/password</code>. For a variable available to the checker, use{' '}
+            <code>env://STAGING_PASSWORD</code>. The checker reads the value when a run needs it.
+          </p>
+        </details>
         <div id="test-user-list">
           {users.map(({ key, user }) => (
             <TestUserFields key={key} fieldKey={key} user={user} remove={() => setUsers((rows) => rows.filter((row) => row.key !== key))} />
