@@ -12,7 +12,8 @@ export default defineConfig({
   reporter: [['list'], ['json', { outputFile: `${process.env.E2E_OUTPUT_DIR ?? '../runs/_replay'}/results.json` }]],
   use: {
     baseURL: process.env.E2E_BASE_URL ?? 'http://localhost:4001',
-    storageState: process.env.E2E_STORAGE_STATE,
+    storageState: process.env.E2E_MOCK_SCENARIO ? { cookies: [], origins: [] } : process.env.E2E_STORAGE_STATE,
+    serviceWorkers: process.env.E2E_MOCK_SCENARIO ? 'block' : 'allow',
     testIdAttribute: 'data-testid',
     viewport: { width: 1280, height: 800 },
     video: { mode: 'on', size: { width: 1280, height: 800 } },

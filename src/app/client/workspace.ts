@@ -32,6 +32,12 @@ export type WorkspaceState = {
   timeout: number;
   attempts: number;
   forceFresh: boolean;
+  mockEnabled: boolean;
+  mockBackendRoot: string;
+  mockSourceFiles: string;
+  mockSchemaFiles: string;
+  mockFrontendFiles: string;
+  mockAllowedLive: string;
   dialog: DialogName;
   error: string;
   submitting: boolean;
@@ -80,6 +86,12 @@ export function createWorkspace(request: Api = api) {
     timeout: 20,
     attempts: 8,
     forceFresh: false,
+    mockEnabled: false,
+    mockBackendRoot: '',
+    mockSourceFiles: '',
+    mockSchemaFiles: '',
+    mockFrontendFiles: '',
+    mockAllowedLive: '[{"method":"GET","url":"/","resourceTypes":["document"],"reason":"Frontend entry page"}]',
     dialog: null,
     error: '',
     submitting: false,
@@ -93,6 +105,7 @@ export function createWorkspace(request: Api = api) {
   let generation = 0;
   let caseMutation = 0;
   let jobMutation = 0;
+  let environmentVersion = 0;
   const pending = new Map<string, Promise<void>>();
   const patch = (changes: Partial<WorkspaceState>) => {
     state = { ...state, ...changes };
@@ -137,6 +150,7 @@ export function createWorkspace(request: Api = api) {
       ),
     );
   const setEnvironments = (environments: Environment[]) => {
+    environmentVersion++;
     const selected = environments.find((e) => e.id === state.environmentId) ?? environments[0];
     const remembered =
       selected?.id === state.environmentId
@@ -247,7 +261,13 @@ export function createWorkspace(request: Api = api) {
         patch({ refreshingProviders: false });
       }
     });
-  const refreshEnvironments = () => once('environments', async () => setEnvironments(await call<Environment[]>('/api/environments')));
+  const refreshEnvironments = () =>
+    once('environments', async () => {
+      const version = environmentVersion;
+      const environments = await call<Environment[]>('/api/environments');
+      // Settings may have installed a newer catalog while this poll was in flight.
+      if (version === environmentVersion) setEnvironments(environments);
+    });
   const refreshWorktrees = () =>
     once('worktrees', async () => {
       const worktrees = await call<Worktree[]>('/api/worktrees');
@@ -420,7 +440,22 @@ export function createWorkspace(request: Api = api) {
     }
     patch({ submitting: true, error: '' });
     try {
+      const files = (text: string) =>
+        text
+          .split('\n')
+          .map((s) => s.trim())
+          .filter(Boolean);
+      const mockSuite = state.mockEnabled
+        ? {
+            backendRoot: state.mockBackendRoot,
+            sourceFiles: files(state.mockSourceFiles),
+            schemaFiles: files(state.mockSchemaFiles),
+            frontendFiles: files(state.mockFrontendFiles),
+            allowedLiveRequests: JSON.parse(state.mockAllowedLive),
+          }
+        : undefined;
       const ids = await call<string[]>('/api/jobs', {
+        mockSuite,
         cases: keys.map((key) => {
           const [project, id] = key.split(/-(?=\d+$)/);
           return { project, id: Number(id) };
@@ -575,6 +610,16 @@ export function createWorkspace(request: Api = api) {
           targets: job.target ? [job.target] : state.targets,
           worktree: job.worktree,
           userId: job.userId ?? state.userId,
+          mockEnabled: !!job.mockSuite,
+          ...(job.mockSuite
+            ? {
+                mockBackendRoot: job.mockSuite.backendRoot,
+                mockSourceFiles: job.mockSuite.sourceFiles.join('\n'),
+                mockSchemaFiles: job.mockSuite.schemaFiles.join('\n'),
+                mockFrontendFiles: job.mockSuite.frontendFiles.join('\n'),
+                mockAllowedLive: JSON.stringify(job.mockSuite.allowedLiveRequests, null, 2),
+              }
+            : {}),
         });
         return;
       }
@@ -597,8 +642,12 @@ export function createWorkspace(request: Api = api) {
       void (async () => {
         await Promise.all([
           (async () => {
-            const config = await call<{ environments?: Environment[]; roles: string[] }>('/api/config');
-            if (generation === epoch)
+            const version = environmentVersion;
+            const config = await call<{
+              environments?: Environment[];
+              roles: string[];
+            }>('/api/config');
+            if (generation === epoch && version === environmentVersion)
               setEnvironments(
                 config.environments ?? [
                   { id: 'local', name: 'Local development', kind: 'worktree', users: config.roles.map((id) => ({ id, name: id })) },

@@ -69,6 +69,7 @@ export type ReplayOptions = {
   role: string;
   storageState?: string;
   slowMo?: number;
+  mockScenario?: string;
   signal?: AbortSignal;
   reuseAttempt?: VerifiedAttempt;
   evidenceContext?: EvidenceContext;
@@ -153,6 +154,7 @@ export const replayEffect = (opts: ReplayOptions) =>
         E2E_STORAGE_STATE: opts.storageState ?? join(root, '.state', `slot${opts.slot}-${opts.role}.json`),
         E2E_SLOWMO: String(opts.slowMo ?? 250),
         E2E_CAPTIONS: '1',
+        E2E_MOCK_SCENARIO: opts.mockScenario ?? '',
       },
       signal: opts.signal,
     });

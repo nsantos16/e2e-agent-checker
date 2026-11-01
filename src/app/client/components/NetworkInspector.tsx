@@ -1,3 +1,4 @@
+import { SelectPicker } from './Picker.tsx';
 import { Fragment, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useWorkspace } from '../context.tsx';
 import { useObservation } from '../useObservation.ts';
@@ -227,13 +228,12 @@ export function ObservationPanel({ job, active }: { job: JobView; active: boolea
               onChange={(e) => updateFilters({ query: e.target.value })}
             />
           </label>
-          <select
+          <SelectPicker
             data-network-type
-            aria-label="Request type"
+            label="Request type"
             value={filters.type}
-            onChange={(e) => updateFilters({ type: e.target.value })}
-          >
-            {[
+            onChange={(value) => updateFilters({ type: value })}
+            options={[
               ['all', 'All types'],
               ['api', 'Fetch / XHR'],
               ['document', 'Document'],
@@ -242,35 +242,26 @@ export function ObservationPanel({ job, active }: { job: JobView; active: boolea
               ['image', 'Image'],
               ['font', 'Font'],
               ['other', 'Other'],
-            ].map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-          <select
+            ].map(([value, label]) => ({ value, label }))}
+          />
+          <SelectPicker
             data-network-stage
-            aria-label="Capture stage"
+            label="Capture stage"
             value={filters.stage}
-            onChange={(e) => updateFilters({ stage: e.target.value })}
-          >
-            <option value="all">All stages</option>
-            {stages.map((stage) => (
-              <option key={stage} value={stage}>
-                {stageLabel(stage)}
-              </option>
-            ))}
-          </select>
-          <select
+            onChange={(value) => updateFilters({ stage: value })}
+            options={[{ value: 'all', label: 'All stages' }, ...stages.map((stage) => ({ value: stage, label: stageLabel(stage) }))]}
+          />
+          <SelectPicker
             data-network-sort
-            aria-label="Sort requests"
+            label="Sort requests"
             value={filters.sort}
-            onChange={(e) => updateFilters({ sort: e.target.value })}
-          >
-            <option value="newest">Newest first</option>
-            <option value="oldest">Oldest first</option>
-            <option value="slowest">Slowest first</option>
-          </select>
+            onChange={(value) => updateFilters({ sort: value })}
+            options={[
+              { value: 'newest', label: 'Newest first' },
+              { value: 'oldest', label: 'Oldest first' },
+              { value: 'slowest', label: 'Slowest first' },
+            ]}
+          />
         </div>
         <div className={`network-split ${request ? 'has-selection' : ''}`}>
           <div className="network-table-scroll">

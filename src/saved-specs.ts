@@ -8,6 +8,8 @@ import { caseCompatibility, type TestCase } from './cases.ts';
 import { environmentRequirements, type Environment, type TestUser } from './environments.ts';
 import type { ExploreReport } from './explore.ts';
 import { atomicJson } from './network.ts';
+import { compileMockSpec, validateMockSuite, type SourceSnapshot } from './mock-sources.ts';
+import type { MockSuite } from './mock-contract.ts';
 
 const root = new URL('..', import.meta.url).pathname;
 const require = createRequire(import.meta.url);
@@ -54,8 +56,17 @@ export const savedSpecManifestSchema = z
     version: z.literal(1),
     createdAt: z.string(),
     case: caseSchema,
-    specContract: z.literal('relative-url-single-file-v1'),
-    artifacts: z.object({ specSha256: digest, caseSha256: digest, reportSha256: digest }).strict(),
+    specContract: z.enum(['relative-url-single-file-v1', 'backend-mock-suite-v1']),
+    mock: z.object({ fingerprint: digest }).strict().optional(),
+    artifacts: z
+      .object({
+        specSha256: digest,
+        caseSha256: digest,
+        reportSha256: digest,
+        mockSha256: digest.optional(),
+        sourcesSha256: digest.optional(),
+      })
+      .strict(),
     runtime: runtimeSchema,
     requirements: requirementsSchema,
     // Deliberately excluded from compatibility comparisons.
@@ -73,6 +84,7 @@ export type CompatibilityContext = {
   case: ReturnType<typeof caseCompatibility>;
   runtime: SavedSpecManifest['runtime'];
   requirements: SavedSpecManifest['requirements'];
+  mock?: { fingerprint: string };
 };
 export type SavedSpec = {
   runDir: string;
@@ -80,6 +92,7 @@ export type SavedSpec = {
   spec: Buffer;
   caseBytes: Buffer;
   report: ExploreReport;
+  mockArtifacts?: { suite: MockSuite; sources: SourceSnapshot };
 };
 const git = (worktree: string, args: string[]) =>
   execFileSync('git', ['-C', worktree, ...args], {
@@ -121,6 +134,11 @@ export function specRuntime(): SavedSpecManifest['runtime'] {
     files: Object.fromEntries(
       [
         'e2e/qase-step.ts',
+        'e2e/mock-suite.ts',
+        'src/mock-contract.ts',
+        'src/mock-network.ts',
+        'src/mock-sources.ts',
+        'src/mock-replay.ts',
         'e2e/playwright.config.ts',
         'src/browser-observer.ts',
         'src/network.ts',
@@ -155,6 +173,7 @@ export function specPortabilityReason(source: string): string | undefined {
     return 'spec-dependency-unsupported';
 }
 export function compatibilityReason(manifest: SavedSpecManifest, context: CompatibilityContext): string | undefined {
+  if (!equal(manifest.mock, context.mock)) return 'mock-contracts-changed';
   if (!equal(manifest.case, context.case)) return 'case-changed';
   if (!equal(manifest.runtime, context.runtime)) return 'runtime-changed';
   if (!equal(manifest.requirements, context.requirements)) return 'requirements-changed';
@@ -182,15 +201,39 @@ export function readSavedSpec(runDir: string, context: CompatibilityContext): Sa
     const spec = readFileSync(join(runDir, 'codify', `${context.case.project}-${context.case.id}.spec.ts`));
     const caseBytes = readFileSync(join(runDir, 'explore/case.json'));
     const reportBytes = readFileSync(join(runDir, 'explore/report.json'));
-    if (!equal(manifest.artifacts, { specSha256: hash(spec), caseSha256: hash(caseBytes), reportSha256: hash(reportBytes) }))
+    let mockArtifacts: SavedSpec['mockArtifacts'];
+    let mockDigests = {};
+    if (manifest.mock) {
+      const suiteBytes = readFileSync(join(runDir, 'mock/suite.json'));
+      const sourceBytes = readFileSync(join(runDir, 'mock/sources.json'));
+      const sources: SourceSnapshot = JSON.parse(sourceBytes.toString());
+      const suite = validateMockSuite(JSON.parse(suiteBytes.toString()), sources, JSON.parse(caseBytes.toString()));
+      if (sources.fingerprint !== context.mock?.fingerprint || spec.toString() !== compileMockSpec(suite, sources.input))
+        return 'mock-integrity-mismatch';
+      mockArtifacts = { suite, sources };
+      mockDigests = {
+        mockSha256: hash(suiteBytes),
+        sourcesSha256: hash(sourceBytes),
+      };
+    }
+    if (
+      !equal(manifest.artifacts, {
+        specSha256: hash(spec),
+        caseSha256: hash(caseBytes),
+        reportSha256: hash(reportBytes),
+        ...mockDigests,
+      })
+    )
       return 'artifact-integrity-mismatch';
-    const portability = specPortabilityReason(spec.toString());
+    if (manifest.specContract !== (manifest.mock ? 'backend-mock-suite-v1' : 'relative-url-single-file-v1'))
+      return 'spec-contract-mismatch';
+    const portability = manifest.mock ? undefined : specPortabilityReason(spec.toString());
     if (portability) return portability;
     if (!equal(caseCompatibility(JSON.parse(caseBytes.toString())), context.case)) return 'case-changed';
     const report: ExploreReport = JSON.parse(reportBytes.toString());
     if (report.caseId !== context.case.id || !Array.isArray(report.steps) || !['pass', 'fail', 'blocked'].includes(report.verdict))
       return 'artifact-corrupt';
-    return { runDir, manifest, spec, caseBytes, report };
+    return { runDir, manifest, spec, caseBytes, report, mockArtifacts };
   } catch (error) {
     return (error as NodeJS.ErrnoException).code === 'ENOENT' ? 'artifact-missing' : 'artifact-corrupt';
   }
@@ -249,8 +292,14 @@ export function publishSavedSpec(runDir: string, context: CompatibilityContext, 
     createdAt: new Date().toISOString(),
     ...context,
     testedBuild,
-    specContract: 'relative-url-single-file-v1',
+    specContract: context.mock ? 'backend-mock-suite-v1' : 'relative-url-single-file-v1',
     artifacts: {
+      ...(context.mock
+        ? {
+            mockSha256: hash(readFileSync(join(runDir, 'mock/suite.json'))),
+            sourcesSha256: hash(readFileSync(join(runDir, 'mock/sources.json'))),
+          }
+        : {}),
       specSha256: hash(readFileSync(join(runDir, 'codify', `${context.case.project}-${context.case.id}.spec.ts`))),
       caseSha256: hash(readFileSync(join(runDir, 'explore/case.json'))),
       reportSha256: hash(readFileSync(join(runDir, 'explore/report.json'))),

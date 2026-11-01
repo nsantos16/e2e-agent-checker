@@ -1,3 +1,5 @@
+import { mockInputSchema, type MockInput } from './mock-contract.ts';
+import { captureMockSources } from './mock-sources.ts';
 import { CaseRepository, EnvironmentRepository } from './runtime/repositories.ts';
 import { Cause, Effect, Exit, Fiber, Semaphore } from 'effect';
 import { deadline, runEffect } from './runtime/effect.ts';
@@ -31,6 +33,13 @@ export type Job = ItemOrganization & {
   project: string;
   caseId: number;
   caseSnapshot?: TestCase;
+  mockSuite?: MockInput;
+  mockSourceFingerprint?: string;
+  coverage?: 'mocked';
+  mockSummary?: {
+    assumptions: string[];
+    unavailableContracts: { scenario: string; mock: string; reason: string }[];
+  };
   environmentId?: string;
   userId?: string;
   environmentSnapshot?: Environment;
@@ -223,7 +232,7 @@ const executeEffect = (job: Job) =>
         base = environment.baseUrl!;
         slotId = `env-${environment.id}`;
         storageState = environmentSessionPath(environment, user, base);
-        if (!existsSync(storageState) || Date.now() - statSync(storageState).mtimeMs > 6 * 60 * 60 * 1000) {
+        if (!job.mockSuite && (!existsSync(storageState) || Date.now() - statSync(storageState).mtimeMs > 6 * 60 * 60 * 1000)) {
           log(`Preparing ${environment.name} / ${user.name}`);
           yield* loginSlotEffect({
             base,
@@ -235,7 +244,7 @@ const executeEffect = (job: Job) =>
           });
         }
       } else {
-        const slot = yield* ensureSlotForWorktreeEffect(job.worktree, user.id, log, environment);
+        const slot = yield* ensureSlotForWorktreeEffect(job.worktree, user.id, log, environment, !!job.mockSuite);
         base = baseUrl(slot);
         slotId = slot.slot;
         storageState = environmentSessionPath(environment, user, base);
@@ -247,6 +256,8 @@ const executeEffect = (job: Job) =>
       const summary = yield* verifyEffect({
         project: job.project,
         caseId: job.caseId,
+        mockSuite: job.mockSuite,
+        mockSourceFingerprint: job.mockSourceFingerprint,
         caseSnapshot: job.caseSnapshot,
         environment,
         worktree: job.worktree || undefined,
@@ -292,6 +303,8 @@ const executeEffect = (job: Job) =>
       Object.assign(job, {
         status: 'done',
         outcome: summary.outcome,
+        coverage: summary.coverage,
+        mockSummary: summary.mock,
         exploreVerdict: summary.historicalExploration ? undefined : summary.explore?.verdict,
         historicalExploration: summary.historicalExploration,
         steps: report.steps,
@@ -366,6 +379,7 @@ export const batchSchema = z
     role: z.string().optional(),
     confirmationReplay: z.boolean().optional(),
     forceFresh: z.boolean().default(false),
+    mockSuite: mockInputSchema.optional(),
     buildId: z.string().min(1).max(300).optional(),
     targets: z.array(targetSchema).min(1).max(8).optional(),
     limits: limitsSchema.default({ timeoutMs: 20 * 60_000, maxAttempts: 8 }),
@@ -419,6 +433,7 @@ const submitBatchLockedEffect = (input: unknown) =>
     const snapshots = yield* Effect.forEach(b.cases, (c) =>
       repository.get(c.project, c.id).pipe(Effect.tap((record) => Effect.sync(() => assertRunnable(record)))),
     );
+    const mockSources = b.mockSuite ? captureMockSources(b.mockSuite, worktree || undefined) : undefined;
     const selections = yield* Effect.forEach(targets, (t) => preflightEffect(t));
     if (stopping) return yield* Effect.fail(new RunError('APP_UNAVAILABLE', 'Server is stopping'));
     const batchId = randomUUID();
@@ -432,6 +447,9 @@ const submitBatchLockedEffect = (input: unknown) =>
             caseSnapshot: snapshots[index],
             worktree,
             role,
+            mockSuite: mockSources?.input,
+            mockSourceFingerprint: mockSources?.fingerprint,
+            coverage: b.mockSuite ? 'mocked' : undefined,
             confirmationReplay: b.confirmationReplay,
             environmentId: environment.id,
             userId: user.id,
@@ -566,6 +584,8 @@ export function replayJob(id: string) {
   const file = join(old.runDir, 'codify', `${old.project}-${old.caseId}.spec.ts`);
   if (!existsSync(file) || !existsSync(explorationReportPath(old.runDir)))
     throw new RunError('ARTIFACT_MISSING', 'Saved spec or report missing');
+  if (old.mockSuite && !existsSync(join(old.runDir, 'codify/manifest.json')))
+    throw new RunError('ARTIFACT_MISSING', 'Mock suite has no completed, integrity-checked execution');
   const currentEnvironment = getEnvironment(old.environmentId);
   getTestUser(currentEnvironment, old.userId ?? old.role);
   const job: Job = {
@@ -573,6 +593,8 @@ export function replayJob(id: string) {
     project: old.project,
     caseId: old.caseId,
     caseSnapshot: old.caseSnapshot,
+    mockSuite: old.mockSuite,
+    coverage: old.coverage,
     worktree: old.worktree,
     role: old.role,
     environmentId: old.environmentId,

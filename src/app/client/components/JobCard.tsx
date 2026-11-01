@@ -24,7 +24,12 @@ export function JobCard({ job: j }: { job: JobView }) {
     : null;
   const estimated = j.usage?.estimatedApiCostUsd != null;
   const cost = j.usage?.estimatedApiCostUsd ?? j.usage?.providerReportedCostUsd ?? j.costUsd;
-  const index = j.status === 'done' ? STAGES.length : j.status === 'queued' ? -1 : Math.max(0, STAGES.indexOf(j.stage ?? 'prepare'));
+  const index =
+    j.status === 'done'
+      ? STAGES.length
+      : j.status === 'queued'
+        ? -1
+        : Math.max(0, STAGES.indexOf(j.stage === 'mock-author' ? 'codify' : (j.stage ?? 'prepare')));
   const action = async (action: 'cancel' | 'replay' | 'rerun') => {
     setBusy(true);
     try {
@@ -70,6 +75,32 @@ export function JobCard({ job: j }: { job: JobView }) {
               : 'Historical run'}
           </span>
         </div>
+        {j.coverage === 'mocked' && (
+          <div className="metrics">
+            <strong>Mocked frontend coverage</strong>
+            <p>Backend responses are mocked. The real backend was not executed or proved.</p>
+            {j.replay?.scenarios?.map((scenario: { id: string; title: string; status: string }) => (
+              <div key={scenario.id}>
+                {scenario.title}: <strong>{scenario.status}</strong>
+              </div>
+            ))}
+            {j.mockSummary?.assumptions?.map((text, i) => (
+              <p key={i}>{text}</p>
+            ))}
+            {j.mockSummary?.unavailableContracts?.map((item, i) => (
+              <p key={i}>
+                Unavailable contract ({item.scenario}/{item.mock}): {item.reason}
+              </p>
+            ))}
+            <a href={`/api/jobs/${j.id}/artifacts/mock-suite`} target="_blank" rel="noreferrer">
+              Suite and fixtures
+            </a>
+            {' · '}
+            <a href={`/api/jobs/${j.id}/artifacts/mock-sources`} target="_blank" rel="noreferrer">
+              Source provenance
+            </a>
+          </div>
+        )}
         <div className="run-metrics">
           <div className="metric">
             <span>{j.timing ? 'Active time' : 'Elapsed time'}</span>
@@ -111,7 +142,7 @@ export function JobCard({ job: j }: { job: JobView }) {
             <div className="pipeline">
               {STAGES.map((stage, i) => (
                 <div key={stage} className={i < index ? 'done' : i === index ? 'active' : ''}>
-                  {stage}
+                  {j.coverage === 'mocked' && stage === 'codify' ? 'mock-author' : stage}
                 </div>
               ))}
             </div>

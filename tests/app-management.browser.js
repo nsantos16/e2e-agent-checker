@@ -199,7 +199,9 @@
       'Project folders collapse and retain a count',
     );
     await settings('sidebar');
-    setValue($('#sidebar-grouping'), 'status');
+    $('#sidebar-grouping').click();
+    await settle();
+    $('#sidebar-grouping-picker [data-value="status"]').click();
     await settle();
     await closeSettings();
     $('#history-tab').click();

@@ -1,3 +1,4 @@
+import { mockedCoverage } from './mock-contract.ts';
 import { existsSync, readFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import type { Job } from './jobs.ts';
@@ -44,6 +45,20 @@ function runEvidence(id: string, job: Job | undefined, base: string) {
     title: job.caseSnapshot?.title ?? `${job.project}-${job.caseId}`,
     caseRevision: job.caseSnapshot?.revision,
     result: resultOf(job),
+    coverage: job.coverage ?? 'live',
+    mockSummary:
+      job.coverage === 'mocked'
+        ? {
+            assumptionCount: job.mockSummary?.assumptions?.length ?? 0,
+            unavailableContractCount: job.mockSummary?.unavailableContracts?.length ?? 0,
+          }
+        : undefined,
+    scenarios: job.replay?.scenarios?.map((s: any) => ({
+      id: s.id,
+      title: s.title,
+      status: s.status,
+      failedStep: s.failedStep,
+    })),
     status: job.status,
     exploreVerdict: historical ? undefined : (job.exploreVerdict ?? (currentReport ? undefined : report?.verdict)),
     historicalExploration: job.historicalExploration ?? null,
@@ -87,6 +102,16 @@ function runEvidence(id: string, job: Job | undefined, base: string) {
       usageMayBeIncomplete: d.usageMayBeIncomplete,
     })),
     limitations: [
+      ...(job.coverage === 'mocked'
+        ? [
+            mockedCoverage,
+            'Full mock assumptions and unavailable contracts are retained in the suite and source artifacts.',
+            ...(job.mockSummary?.assumptions ?? []).slice(0, 10).map((s) => bounded(s)),
+            ...(job.mockSummary?.unavailableContracts ?? [])
+              .slice(0, 10)
+              .map((c) => `Unavailable contract (${c.scenario}/${c.mock}): ${bounded(c.reason)}`),
+          ]
+        : []),
       ...(!build?.commit && !build?.buildId
         ? ['Build commit was not recorded.']
         : build?.dirty
@@ -175,6 +200,12 @@ export function renderSessionSummary(
         `Verification: ${markdown(r.target.provider)} / ${markdown(r.target.model)}. Case revision: ${markdown(r.caseRevision ?? 'unknown')}.`,
         '',
       );
+    if (r.coverage === 'mocked') {
+      lines.push('**Mocked frontend coverage.** ' + mockedCoverage, '');
+      for (const s of r.scenarios ?? [])
+        lines.push(`- ${markdown(s.id)}: **${markdown(s.status)}**${s.failedStep ? ' · ' + markdown(s.failedStep) : ''}`);
+      lines.push('');
+    }
     if (r.replayOf) lines.push(`Saved-spec replay of ${markdown(r.replayOf)}.`, '');
     if (r.historicalExploration)
       lines.push(`Historical exploration: ${markdown(r.historicalExploration.verdict)}. It is not a current verification result.`, '');

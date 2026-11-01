@@ -56,3 +56,7 @@ Reconnect the MCP client after updating the checker to load its current tool sch
 ## Verification
 
 `npm test` covers profile validation, revision conflicts, reference-only storage, session keys, credential resolution, HTTP/MCP configuration, hosted submissions without worktrees, and queued configuration snapshots. Browser tests cover environment/user Settings, saving multiple users, target-dependent controls, per-environment selection, deletion and mobile layout. `node tests/environment-login-smoke.ts` exercises the real login harness against two disposable localhost applications and checks distinct cookie/IndexedDB states and file permissions. No real test-account login or paid model execution is required by these checks.
+
+## Mocked frontend coverage
+
+Run options can select **Backend-derived mocks** for the same hosted/worktree targets. This mode starts every scenario with empty browser storage and skips preparatory login; configured test users still provide normal job identity/serialization. Authentication flows must be mocked as part of the case. Backend source/schema paths and live-request allowances belong to the submission and are retained by Run again. See [backend-derived mock suites](backend-mock-suites.md) for inputs and coverage limits.

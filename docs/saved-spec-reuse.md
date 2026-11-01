@@ -45,3 +45,7 @@ Measured with controlled provider/process fixtures: fresh verification invokes *
 `node tests/saved-specs-smoke.ts` runs real Playwright against two disposable localhost targets using an explicitly seeded saved-spec fixture. It verifies a fixed build passes, a regressed build fails, only the requested target is visited, and both runs create fresh MP4/trace/network evidence with zero provider calls. It writes actual elapsed times and artifact paths to `runs/saved-spec-smoke-*/measurements.json`.
 
 No live authoring baseline or dollar savings estimate is claimed. Skipping the two model stages removes their work, but total time saved depends on the case, provider, application setup and replay duration.
+
+## Backend-derived mock suites
+
+Optional `mockSuite` submissions use `backend-mock-suite-v1`. The manifest also fingerprints scoped backend/schema inputs and caller live allowances, and hashes `mock/suite.json` and `mock/sources.json`. The compiled spec must exactly match those validated artifacts. Changed relevant contracts, case revisions, fixture bytes or runtime invalidate reuse. Mocked and ordinary live specs cannot be reused across modes. Explicit mock replay preserves historical source/fixtures and still requires integrity/runtime compatibility; it never contacts a real backend unless a caller live allowance explicitly permits that request. See [mock suites](backend-mock-suites.md).

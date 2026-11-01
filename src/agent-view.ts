@@ -11,6 +11,16 @@ import { demoView } from './demos.ts';
 export const terminal = (job: { status: string }) => !['queued', 'running', 'cancelling'].includes(job.status);
 export const clip = (value: string | undefined, length = 500) => (value && value.length > length ? value.slice(0, length) + '…' : value);
 export const viewerUrl = (base: string, id: string) => `${base}/?job=${encodeURIComponent(id)}`;
+const compactMockSummary = (job: Job) =>
+  job.mockSummary
+    ? {
+        assumptionCount: job.mockSummary.assumptions?.length ?? 0,
+        unavailableContractCount: job.mockSummary.unavailableContracts?.length ?? 0,
+        assumptions: job.mockSummary.assumptions?.slice(0, 3).map((s) => clip(s, 300)),
+        unavailableContracts: job.mockSummary.unavailableContracts?.slice(0, 3).map((c) => ({ ...c, reason: clip(c.reason, 300) })),
+        detailArtifact: 'summary',
+      }
+    : undefined;
 export function jobSummary(job: Job, base: string) {
   const network = job.runDir ? readNetwork(job.runDir, { errorsOnly: true, limit: 3 }) : undefined;
   const result = {
@@ -18,6 +28,8 @@ export function jobSummary(job: Job, base: string) {
     project: job.project,
     caseId: job.caseId,
     caseRevision: job.caseSnapshot?.revision,
+    coverage: job.coverage ?? 'live',
+    mockSummary: compactMockSummary(job),
     environment: job.environment,
     status: job.status,
     stage: job.stage,
@@ -40,6 +52,7 @@ export function jobSummary(job: Job, base: string) {
     replay: job.replay
       ? {
           status: job.replay.status,
+          scenarios: job.replay.scenarios?.map((s: any) => ({ id: s.id, status: s.status, failedStep: clip(s.failedStep) })),
           failedStep: clip(job.replay.failedStep),
           error: clip(job.replay.error),
           provenance: job.replay.provenance,
@@ -63,7 +76,10 @@ export function jobSummary(job: Job, base: string) {
           })),
         }
       : undefined,
-    canReplay: !!job.runDir && existsSync(join(job.runDir, 'codify', `${job.project}-${job.caseId}.spec.ts`)),
+    canReplay:
+      !!job.runDir &&
+      (!job.mockSuite || existsSync(join(job.runDir, 'codify/manifest.json'))) &&
+      existsSync(join(job.runDir, 'codify', `${job.project}-${job.caseId}.spec.ts`)),
     viewerUrl: viewerUrl(base, job.id),
     next: !terminal(job) ? 'wait_jobs' : job.status !== 'done' || job.outcome !== 'pass' ? 'get_evidence' : 'complete',
   };
@@ -82,6 +98,8 @@ export type ArtifactId =
   | 'historical-report'
   | 'manifest'
   | 'summary'
+  | 'mock-suite'
+  | 'mock-sources'
   | 'attempt'
   | 'results'
   | 'spec'
@@ -107,6 +125,8 @@ export function artifactPath(job: Job, id: ArtifactId): string | undefined {
       ? join(job.runDir, 'historical/manifest.json')
       : join(job.runDir, 'codify/manifest.json'),
     summary: join(job.runDir, 'summary.json'),
+    'mock-suite': join(job.runDir, 'mock/suite.json'),
+    'mock-sources': join(job.runDir, 'mock/sources.json'),
     results: job.replay?.results as string | undefined,
     spec: join(job.runDir, 'codify', `${job.project}-${job.caseId}.spec.ts`),
     comment: join(job.runDir, 'pr-comment.md'),
@@ -127,6 +147,8 @@ export function readEvidence(job: Job, base: string, options: { artifact?: strin
     'historical-report',
     'manifest',
     'summary',
+    'mock-suite',
+    'mock-sources',
     'attempt',
     'results',
     'spec',
@@ -159,6 +181,8 @@ export function readEvidence(job: Job, base: string, options: { artifact?: strin
     return {
       jobId: job.id,
       cacheClearedAt: job.cacheClearedAt,
+      coverage: job.coverage ?? 'live',
+      mockSummary: compactMockSummary(job),
       verdict: job.outcome ?? (historical ? null : (job.exploreVerdict ?? report?.verdict ?? null)),
       specSelection: job.specSelection,
       historicalExploration: job.historicalExploration,
@@ -193,6 +217,8 @@ export function readEvidence(job: Job, base: string, options: { artifact?: strin
       'historical-report',
       'manifest',
       'summary',
+      'mock-suite',
+      'mock-sources',
       'attempt',
       'results',
       'spec',

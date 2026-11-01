@@ -1,3 +1,4 @@
+import { SelectPicker } from './Picker.tsx';
 import { useState, type ReactNode } from 'react';
 import {
   defaultInstanceId,
@@ -550,20 +551,20 @@ function InstanceForm({
         {!instance && (
           <label>
             Provider
-            <select
+            <SelectPicker
+              label="Provider"
               value={kind}
-              onChange={(e) => {
-                const k = e.target.value as typeof kind;
+              onChange={(value) => {
+                const k = value as typeof kind;
                 setKind(k);
                 setBinary(kinds[k].binary);
               }}
-            >
-              <option value="claude-code">Claude Code</option>
-              <option value="codex">Codex / ChatGPT</option>
-              <option value="cursor" disabled>
-                Cursor · separate accounts unavailable
-              </option>
-            </select>
+              options={[
+                { value: 'claude-code', label: 'Claude Code' },
+                { value: 'codex', label: 'Codex / ChatGPT' },
+                { value: 'cursor', label: 'Cursor', description: 'Separate accounts unavailable', disabled: true },
+              ]}
+            />
           </label>
         )}
         <label>

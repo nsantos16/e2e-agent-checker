@@ -1,4 +1,6 @@
 import { Effect } from 'effect';
+import type { MockInput } from './mock-contract.ts';
+import { verifyMockSuiteEffect } from './mock-verify.ts';
 import { runEffect } from './runtime/effect.ts';
 import { CheckerLive } from './runtime/services.ts';
 import { createRunPricingEffect } from './pricing.ts';
@@ -27,6 +29,8 @@ import {
   type SpecSelection,
 } from './saved-specs.ts';
 export type VerifyOptions = {
+  mockSuite?: MockInput;
+  mockSourceFingerprint?: string;
   project: string;
   caseId: number;
   caseSnapshot?: TestCase;
@@ -67,6 +71,16 @@ export const verifyEffect = (opts: VerifyOptions) =>
     if (existsSync(join(runDir, 'summary.json'))) throw new Error('RUN_DIR_EXISTS: verification requires a new run directory');
     if (opts.replayOnly && opts.forceFresh) throw new Error('INVALID_INPUT: forceFresh cannot be combined with replayOnly');
     const worktree = opts.worktree ?? slot?.worktree;
+    if (opts.mockSuite || (opts.replayOnly && opts.fromRun && existsSync(join(opts.fromRun, 'mock/suite.json')))) {
+      if (opts.replaySlots?.length) throw new Error('INVALID_INPUT: submit separate mock runs for separate targets');
+      return yield* verifyMockSuiteEffect({
+        ...opts,
+        base,
+        role,
+        runDir,
+        worktree,
+      });
+    }
     const testedBuild = captureBuild(base, worktree, opts.buildId);
     const log = (s: string) => opts.log?.(s);
     const stage = (s: string) => {
@@ -284,10 +298,14 @@ export const prComment = (summary: Record<string, unknown>, report: ExploreRepor
       failedStep?: string;
       video?: string;
       provenance?: { kind: string; attemptId?: string };
+      scenarios?: { id: string; status: string }[];
     }[]) ?? [];
+  const mock = summary.mock as
+    { assumptions?: string[]; unavailableContracts?: { scenario: string; mock: string; reason: string }[] } | undefined;
   const lines = [
     `### ${icon(String(summary.outcome))} ${summary.project}-${summary.caseId} (verification)`,
     '',
+    ...(summary.coverage === 'mocked' ? ['**Mocked frontend coverage.** ' + String(summary.coverageExplanation), ''] : []),
     '| Step | Result | Evidence |',
     '|---|---|---|',
     ...report.steps.map(
@@ -308,8 +326,21 @@ export const prComment = (summary: Record<string, unknown>, report: ExploreRepor
     ),
     '',
     ...replays.filter((r) => r.video).map((r) => r.video!),
+    ...(summary.coverage === 'mocked'
+      ? [
+          '',
+          ...replays.flatMap((r) => (r.scenarios ?? []).map((s) => `- Scenario ${s.id}: **${s.status}**`)),
+          '',
+          ...(mock?.assumptions ?? []).slice(0, 10).map((a) => `- Assumption: ${a.replace(/\n/g, ' ').slice(0, 600)}`),
+          ...(mock?.unavailableContracts ?? [])
+            .slice(0, 10)
+            .map((c) => `- Unavailable contract (${c.scenario}/${c.mock}): ${c.reason.replace(/\n/g, ' ').slice(0, 600)}`),
+          'Full assumptions and contract provenance are retained in the suite and source artifacts.',
+        ]
+      : []),
   ];
-  if (report.notes) lines.splice(5 + report.steps.length, 0, '', `> ${report.notes.replace(/\n/g, ' ').slice(0, 600)}`);
+  if (report.notes && summary.coverage !== 'mocked')
+    lines.splice(5 + report.steps.length, 0, '', `> ${report.notes.replace(/\n/g, ' ').slice(0, 600)}`);
   return lines.join('\n') + '\n';
 };
 

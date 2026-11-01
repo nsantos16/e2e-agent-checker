@@ -8,7 +8,13 @@ import { config, frontendRepo, qaseToken } from './config.ts';
 
 // Checks everything a dev needs on their machine, with the command that fixes each gap. Never prompts or reads secrets.
 
-export type Check = { name: string; ok: boolean; required: boolean; detail: string; fix?: string };
+export type Check = {
+  name: string;
+  ok: boolean;
+  required: boolean;
+  detail: string;
+  fix?: string;
+};
 
 const run = (cmd: string, args: string[]) =>
   commandEffect(cmd, args, { timeoutMs: 15_000 }).pipe(
@@ -26,11 +32,11 @@ const versionAtLeast = (v: string | undefined, min: number[]) => {
   return true;
 };
 
-export const runDoctorEffect = (environmentId = 'local', userId?: string) =>
+export const runDoctorEffect = (environmentId = 'local', userId?: string, mocked = false) =>
   Effect.gen(function* () {
     const environment = getEnvironment(environmentId),
       user = getTestUser(environment, userId);
-    const refs = [user.usernameRef, user.passwordRef, user.totpRef].filter(Boolean) as string[];
+    const refs = mocked ? [] : ([user.usernameRef, user.passwordRef, user.totpRef].filter(Boolean) as string[]);
     const needsOp = refs.some((ref) => ref.startsWith('op://')) && !process.env.OP_SERVICE_ACCOUNT_TOKEN;
     const [claude, op, opAccounts, ffmpeg, gh] = yield* Effect.all(
       [
@@ -125,7 +131,7 @@ export const runDoctorEffect = (environmentId = 'local', userId?: string) =>
       },
     ];
   });
-export const runDoctor = (environmentId = 'local', userId?: string): Promise<Check[]> =>
+export const runDoctor = (environmentId = 'local', userId?: string, mocked = false): Promise<Check[]> =>
   runEffect(runDoctorEffect(environmentId, userId).pipe(Effect.provide(ProcessRunnerLive)));
 
 if (import.meta.url === `file://${process.argv[1]}`) {

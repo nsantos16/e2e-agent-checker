@@ -40,3 +40,7 @@ The smoke test uses a disposable localhost page and makes **zero model calls**. 
 ## Narrated replay derivatives
 
 The shared `qaseStep` helper also records actual step timing/results in `timeline.json`. Optional voice demos reuse the saved replay and preserve silent evidence and on-page captions. They align narration to recording boundaries and may hold a final step frame while speech finishes. Timings are approximate at capture precision, and historical/custom recordings without the helper cannot be retroactively aligned. Synthetic voice is labeled in the UI and media. Generation is explicit, default-off, separately cancellable and does not change test results. See [session summaries and voice demos](session-demos.md).
+
+## Mock-suite evidence
+
+[Backend-derived mock suites](backend-mock-suites.md) capture separate scenario/attempt network evidence through the same observer. Each scenario also records `mock-network.json`, labeling mocked, explicitly allowed live, and unexpected requests. Unexpected/unconsumed mock traffic fails the scenario. Aggregated results retain all scenario statuses; the final video concatenates all scenarios and the trace artifact bundles their separate traces. Job and session summaries label this as frontend behavior under mocked responses, not real backend coverage.

@@ -2,18 +2,6 @@
 
 Open product requests are listed first, with their original item numbers preserved. Move implemented requests to the completed section with links to the shipped behavior and validation. Read the linked docs and current code before starting work; historical design proposals are not implementation contracts.
 
-## 2. Prove backend changes with request e2e
-
-Recorded 2026-10-19.
-
-A verification drives the frontend in a browser. A local run serves a frontend worktree, and that frontend's mode file chooses the API, often the shared development backend. A hosted run uses a deployed URL. Captured network traffic is diagnostic evidence beside the browser replay. The checker does not run backend-request e2e that passes or fails a backend change on its own.
-
-[ADR-0003](adr/0003-frontend-worktrees-against-shared-dev-backend.md) and [target app](target-app.md) describe `yarn local-workspace` for worktrees that change the backend. [PoC results](poc-results.md) record that path as unfinished, so the backend regression pair DEMO-6915 was not run against a local backend.
-
-**Request:** Run e2e checks of backend requests so a backend change can be proved, alongside the frontend checks that exist today.
-
-**Read:** `src/slots.ts`, [environments](environments.md), [browser and network evidence](browser-observability.md), [ADR-0003](adr/0003-frontend-worktrees-against-shared-dev-backend.md), [PoC results](poc-results.md).
-
 ## 4. Track each run by the team member who started it
 
 Recorded 2026-10-19.
@@ -45,6 +33,16 @@ An environment is a hosted URL or a local worktree. Settings store its name, tar
 **Read:** [environments](environments.md), `src/environments.ts`, `src/app/client/components/Settings.tsx`, `src/mcp-server.ts`, `src/jobs.ts`.
 
 ## Completed requests
+
+### 2. Browser suites with backend-derived mocks
+
+Implemented 2026-11-01 using the clarified scope: for a specific case and frontend target, inspect explicitly supplied backend implementation and schemas, derive realistic response fixtures, and generate and execute a reusable browser test suite with API interception.
+
+The normal MCP/API/UI workflow accepts scoped backend/schema inputs and explicit live-request allowances. Suites retain source/revision provenance, contract validation or unavailable-contract explanations, isolated scenario fixtures, observable case assertions, deterministic replay and video/network evidence. Saved-spec reuse checks case, relevant source/schema, fixtures and runtime compatibility. Results and session summaries explicitly identify mocked frontend coverage; passing does not execute or prove the real backend. Ordinary live-backend verification and historical evidence remain available.
+
+See [backend-derived mock suites](backend-mock-suites.md) for configuration, supported contracts, limits and verification. Disposable frontend/backend-source fixtures prove successful and failing scenarios, request matching/isolation, invalidation and replay through a controlled provider protocol peer. No live model or real backend execution is claimed.
+
+The original direct-request backend-e2e wording is superseded by this clarified browser mock-suite workflow.
 
 ### 3. Session summary for a pull request and optional voice demos
 

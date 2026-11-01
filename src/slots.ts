@@ -135,7 +135,8 @@ export const ensureSlotForWorktreeEffect = (
   role = 'eugene',
   log: (l: string) => void = () => {},
   environment?: Environment,
-) => allocation.withPermits(1)(allocateSlotEffect(worktreePath, role, log, environment));
+  skipLogin = false,
+) => allocation.withPermits(1)(allocateSlotEffect(worktreePath, role, log, environment, skipLogin));
 export const ensureSlotForWorktree = (
   worktreePath: string,
   role = 'eugene',
@@ -145,7 +146,7 @@ export const ensureSlotForWorktree = (
 ) => runEffect(ensureSlotForWorktreeEffect(worktreePath, role, log, environment).pipe(Effect.provide(CredentialStoreLive)), signal);
 
 // Finds the slot already serving this worktree, or allocates the next free one; starts it and logs the role in when needed.
-const allocateSlotEffect = (worktreePath: string, role: string, log: (l: string) => void, environment?: Environment) =>
+const allocateSlotEffect = (worktreePath: string, role: string, log: (l: string) => void, environment?: Environment, skipLogin = false) =>
   Effect.gen(function* () {
     const worktree = resolve(worktreePath);
     if (!existsSync(join(worktree, 'package.json'))) throw new Error(`${worktree} is not a frontend checkout (no package.json)`);
@@ -163,7 +164,7 @@ const allocateSlotEffect = (worktreePath: string, role: string, log: (l: string)
     const entry = yield* startSlotEffect(slot, worktree, role, environment);
     const user = environment && getTestUser(environment, role);
     const state = environment && user ? environmentSessionPath(environment, user, baseUrl(entry)) : statePath(slot, role);
-    if (!existsSync(state) || Date.now() - statSync(state).mtimeMs > SESSION_MAX_AGE_MS) {
+    if (!skipLogin && (!existsSync(state) || Date.now() - statSync(state).mtimeMs > SESSION_MAX_AGE_MS)) {
       log(`slot ${slot}: logging in as ${role}`);
       yield* loginSlotEffect({ base: baseUrl(entry), role, slot, user, storageState: state });
     }

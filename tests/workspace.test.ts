@@ -92,6 +92,54 @@ test('late run-detail responses cannot replace a newer selected run', async () =
   assert.equal(workspace.getSnapshot().details.first, undefined);
 });
 
+const localEnvironment = { id: 'local', name: 'Local development', kind: 'worktree' as const, users: [{ id: 'qa', name: 'QA' }] };
+const stagingEnvironment = {
+  id: 'staging',
+  name: 'Staging',
+  kind: 'hosted' as const,
+  baseUrl: 'https://fixture.test',
+  users: [{ id: 'viewer', name: 'Viewer' }],
+};
+
+test('an older environment refresh cannot undo a newly saved environment selection', async () => {
+  const catalog = deferred<typeof localEnvironment[]>();
+  let first = true;
+  const workspace = createWorkspace(async <T>() => {
+    if (!first) return [localEnvironment] as T;
+    first = false;
+    return (await catalog.promise) as T;
+  });
+  workspace.setEnvironments([localEnvironment]);
+  const polling = workspace.refreshEnvironments();
+  workspace.setEnvironments([localEnvironment, stagingEnvironment]);
+  workspace.chooseEnvironment('staging');
+  catalog.resolve([localEnvironment]);
+  await polling;
+  assert.equal(workspace.getSnapshot().environmentId, 'staging');
+  assert.equal(workspace.getSnapshot().userId, 'viewer');
+  assert.equal(workspace.getSnapshot().environments.length, 2);
+  await workspace.refreshEnvironments();
+  assert.equal(workspace.getSnapshot().environmentId, 'local', 'a later catalog can still remove an unavailable selection');
+  assert.equal(workspace.getSnapshot().userId, 'qa');
+});
+
+test('delayed startup configuration cannot replace a newer environment selection', async () => {
+  const config = deferred<{ roles: string[]; environments: typeof localEnvironment[] }>();
+  const workspace = createWorkspace(async <T>(path: string) => (path === '/api/config' ? await config.promise : []) as T);
+  const stop = workspace.start();
+  try {
+    workspace.setEnvironments([localEnvironment, stagingEnvironment]);
+    workspace.chooseEnvironment('staging');
+    config.resolve({ roles: ['qa'], environments: [localEnvironment] });
+    await turn();
+    assert.equal(workspace.getSnapshot().ready, true);
+    assert.equal(workspace.getSnapshot().environmentId, 'staging');
+    assert.equal(workspace.getSnapshot().userId, 'viewer');
+  } finally {
+    stop();
+  }
+});
+
 test('workspace startup deduplicates requests and unmount aborts pending work without publishing stale data', async () => {
   const requests: { path: string; signal?: AbortSignal }[] = [];
   let release!: () => void;

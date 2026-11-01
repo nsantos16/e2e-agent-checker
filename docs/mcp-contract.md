@@ -115,3 +115,7 @@ Return an allowlisted artifact manifest with stable IDs, type, size and local re
 The same tool schemas must work from Claude Code, Codex and Cursor as callers. Run a contract test using a real MCP SDK client, followed by one smoke invocation from each installed client. Separately test each selected worker runtime; a compatible caller does not prove the selected worker adapter works.
 
 Acceptance cases: successful run, known product failure, blocked fixture, partial usage on crash, cancellation, malformed output, missing token telemetry, invalid target, duplicate group submission, reused-spec replay, expired login, API-key mismatch in subscription-only mode, and a callback/tool request outside the configured permission policy. Add a targeted regression for playback during live metric updates.
+
+## Backend-derived browser mocks
+
+`verify_case` and `verify_cases` accept optional `mockSuite`: `backendRoot`, `sourceFiles`, `schemaFiles`, optional `frontendFiles`/`expectedRevision`, and `allowedLiveRequests` (method, URL, resourceTypes, reason). `get_setup` accepts `coverage:"mocked"` to omit live-login credential requirements. Jobs expose `coverage:"mocked"` and mock limitations. `get_evidence` adds `mock-suite` and `mock-sources` text artifacts; `results` contains per-scenario results. Replay/session APIs retain their normal contracts. See [mock-suite configuration and guarantees](backend-mock-suites.md).

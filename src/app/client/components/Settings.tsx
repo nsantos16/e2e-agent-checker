@@ -1,3 +1,4 @@
+import { SelectPicker } from './Picker.tsx';
 import { ProviderSettings } from './ProviderSettings.tsx';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useWorkspace } from '../context.tsx';
@@ -319,10 +320,16 @@ function EnvironmentForm({
           </label>
           <label>
             Run against
-            <select id="environment-kind" value={kind} onChange={(e) => setKind(e.target.value as Environment['kind'])}>
-              <option value="hosted">Hosted URL</option>
-              <option value="worktree">Local worktree</option>
-            </select>
+            <SelectPicker
+              id="environment-kind"
+              label="Run against"
+              value={kind}
+              onChange={(value) => setKind(value as Environment['kind'])}
+              options={[
+                { value: 'hosted', label: 'Hosted URL' },
+                { value: 'worktree', label: 'Local worktree' },
+              ]}
+            />
           </label>
           <label id="environment-url-field" hidden={kind !== 'hosted'}>
             Base URL

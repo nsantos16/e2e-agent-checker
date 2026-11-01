@@ -334,7 +334,11 @@ const handleRequest = (req: IncomingMessage, res: ServerResponse) =>
       return json(
         res,
         200,
-        yield* runDoctorEffect(url.searchParams.get('environmentId') ?? 'local', url.searchParams.get('userId') ?? undefined),
+        yield* runDoctorEffect(
+          url.searchParams.get('environmentId') ?? 'local',
+          url.searchParams.get('userId') ?? undefined,
+          url.searchParams.get('coverage') === 'mocked',
+        ),
       );
     if (req.method === 'GET' && url.pathname === '/api/cases')
       return json(res, 200, yield* listCasesEffect(url.searchParams.get('includeArchived') === '1'));
@@ -443,7 +447,7 @@ const handleRequest = (req: IncomingMessage, res: ServerResponse) =>
       );
     }
     const artifactMatch = url.pathname.match(
-      /^\/api\/jobs\/([\w-]+)\/artifacts\/(case|report|historical-report|manifest|summary|attempt|results|spec|comment|video|trace|usage|pricing)$/,
+      /^\/api\/jobs\/([\w-]+)\/artifacts\/(case|report|historical-report|manifest|summary|mock-suite|mock-sources|attempt|results|spec|comment|video|trace|usage|pricing)$/,
     );
     if (req.method === 'GET' && artifactMatch) {
       const job = getJob(artifactMatch[1]);

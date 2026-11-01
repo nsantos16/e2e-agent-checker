@@ -1,3 +1,4 @@
+import { SelectPicker } from './Picker.tsx';
 import { useEffect, useRef, useState } from 'react';
 import { useWorkspace } from '../context.tsx';
 import { errorMessage } from '../api.ts';
@@ -76,22 +77,15 @@ export function VoiceSettings() {
               </div>
               <label className="narration-field">
                 Script model
-                <select
-                  aria-label="Narration script model"
+                <SelectPicker
+                  label="Narration script model"
                   value={settings.textModel}
-                  onChange={(e) =>
-                    setValue({
-                      ...value,
-                      settings: {
-                        ...settings,
-                        textModel: e.target.value as typeof settings.textModel,
-                      },
-                    })
-                  }
-                >
-                  <option value="gpt-6-luna">Codex · gpt-6-luna · low effort</option>
-                  <option value="haiku">Claude Code · haiku</option>
-                </select>
+                  onChange={(next) => setValue({ ...value, settings: { ...settings, textModel: next as typeof settings.textModel } })}
+                  options={[
+                    { value: 'gpt-6-luna', label: 'Codex · gpt-6-luna · low effort' },
+                    { value: 'haiku', label: 'Claude Code · haiku' },
+                  ]}
+                />
               </label>
             </section>
             <section className="voice-section" aria-labelledby="speech-settings-heading">
@@ -106,23 +100,12 @@ export function VoiceSettings() {
                 </label>
                 <label className="narration-field">
                   Voice
-                  <select
-                    aria-label="Narration voice"
+                  <SelectPicker
+                    label="Narration voice"
                     value={settings.voice}
-                    onChange={(e) =>
-                      setValue({
-                        ...value,
-                        settings: {
-                          ...settings,
-                          voice: e.target.value as typeof settings.voice,
-                        },
-                      })
-                    }
-                  >
-                    {speechVoices.map((v) => (
-                      <option key={v}>{v}</option>
-                    ))}
-                  </select>
+                    onChange={(next) => setValue({ ...value, settings: { ...settings, voice: next as typeof settings.voice } })}
+                    options={speechVoices.map((voice) => ({ value: voice, label: voice }))}
+                  />
                 </label>
               </div>
               <label className="narration-field">
@@ -262,28 +245,41 @@ export function DemoPanel({ job, active }: { job: JobView; active: boolean }) {
       <div className="demo-controls">
         <label className="narration-field">
           Voice narration
-          <select aria-label="Demo voice narration" value={override} onChange={(e) => setOverride(e.target.value)}>
-            <option value="default">Use setting ({settings?.settings.enabled ? 'on' : 'off'})</option>
-            <option value="on">On for this demo</option>
-            <option value="off">Off — silent replay</option>
-          </select>
+          <SelectPicker
+            label="Demo voice narration"
+            value={override}
+            onChange={setOverride}
+            options={[
+              { value: 'default', label: `Use setting (${settings?.settings.enabled ? 'on' : 'off'})` },
+              { value: 'on', label: 'On for this demo' },
+              { value: 'off', label: 'Off — silent replay' },
+            ]}
+          />
         </label>
         <label className="narration-field">
           Script model
-          <select value={model} onChange={(e) => setModel(e.target.value)}>
-            <option value="">Use setting ({settings?.settings.textModel ?? 'loading'})</option>
-            <option value="gpt-6-luna">Codex · gpt-6-luna</option>
-            <option value="haiku">Claude Code · haiku</option>
-          </select>
+          <SelectPicker
+            label="Script model"
+            value={model}
+            onChange={setModel}
+            options={[
+              { value: '', label: `Use setting (${settings?.settings.textModel ?? 'loading'})` },
+              { value: 'gpt-6-luna', label: 'Codex · gpt-6-luna' },
+              { value: 'haiku', label: 'Claude Code · haiku' },
+            ]}
+          />
         </label>
         <label className="narration-field">
           Voice
-          <select value={voice} onChange={(e) => setVoice(e.target.value)}>
-            <option value="">Use setting ({settings?.settings.voice ?? 'loading'})</option>
-            {speechVoices.map((v) => (
-              <option key={v}>{v}</option>
-            ))}
-          </select>
+          <SelectPicker
+            label="Voice"
+            value={voice}
+            onChange={setVoice}
+            options={[
+              { value: '', label: `Use setting (${settings?.settings.voice ?? 'loading'})` },
+              ...speechVoices.map((voice) => ({ value: voice, label: voice })),
+            ]}
+          />
         </label>
       </div>
       <div className="narration-actions demo-actions">
@@ -435,13 +431,12 @@ export function SessionPanel({ job }: { job: JobView }) {
         <div className="session-content">
           <label className="narration-field">
             Session
-            <select value={sessionId} onChange={(e) => void load(e.target.value)}>
-              {sessions.map((s) => (
-                <option value={s.id} key={s.id}>
-                  {s.title} · {s.jobIds.length} runs
-                </option>
-              ))}
-            </select>
+            <SelectPicker
+              label="Session"
+              value={sessionId}
+              onChange={(value) => void load(value)}
+              options={sessions.map((session) => ({ value: session.id, label: `${session.title} · ${session.jobIds.length} runs` }))}
+            />
           </label>
           <details className="session-disclosure">
             <summary>Combine runs into an explicit session</summary>
@@ -517,11 +512,16 @@ export function SessionPanel({ job }: { job: JobView }) {
               </label>
               <label className="narration-field">
                 Video attachments
-                <select value={video} onChange={(e) => setVideo(e.target.value)}>
-                  <option value="silent">Original silent videos</option>
-                  <option value="narrated">Narrated videos (must be ready)</option>
-                  <option value="none">No videos</option>
-                </select>
+                <SelectPicker
+                  label="Video attachments"
+                  value={video}
+                  onChange={setVideo}
+                  options={[
+                    { value: 'silent', label: 'Original silent videos' },
+                    { value: 'narrated', label: 'Narrated videos (must be ready)' },
+                    { value: 'none', label: 'No videos' },
+                  ]}
+                />
               </label>
               <button
                 className="primary narration-button"

@@ -161,6 +161,17 @@ test('Settings, composer, real API and MCP retain the selected native account', 
     // Creating an account needs a name and separate profile; its permanent ID is generated automatically.
     await page.getByRole('button', { name: 'Add account', exact: true }).click();
     const form = page.locator('.provider-instance-form');
+    await form.getByRole('button', { name: /^Provider:/ }).click();
+    const providerPicker = page.getByRole('dialog', { name: 'Provider', exact: true });
+    await expect(providerPicker.getByRole('option', { name: /Cursor/ })).toBeDisabled();
+    if (screenshots) await page.screenshot({ path: join(screenshots, 'provider-picker.png') });
+    await providerPicker.getByRole('combobox').press('ArrowDown');
+    await providerPicker.getByRole('combobox').press('Enter');
+    await expect(form.getByRole('button', { name: 'Provider: Codex / ChatGPT', exact: true })).toBeFocused();
+    await form.getByRole('button', { name: /^Provider:/ }).click();
+    await providerPicker.getByRole('combobox').press('ArrowDown');
+    await providerPicker.getByRole('combobox').press('Enter');
+    await expect(form.getByRole('button', { name: 'Provider: Claude Code', exact: true })).toBeFocused();
     await form.getByLabel('Account name', { exact: false }).fill('Additional Claude');
     await form.getByLabel('Profile directory', { exact: false }).fill(join(dir, 'additional'));
     await form.locator('summary', { hasText: 'Advanced settings' }).click();
@@ -251,7 +262,7 @@ test('Settings, composer, real API and MCP retain the selected native account', 
         page.locator('#model-dialog').evaluate((dialog) => {
           const box = dialog.getBoundingClientRect();
           const list = dialog.querySelector('.model-list')!;
-          const footer = dialog.querySelector('.model-footer')!.getBoundingClientRect();
+          const footer = dialog.querySelector('.picker-footer')!.getBoundingClientRect();
           const composer = document.querySelector('.composer')!.getBoundingClientRect();
           return {
             fits: box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight,
@@ -284,7 +295,25 @@ test('Settings, composer, real API and MCP retain the selected native account', 
     }
     await page.setViewportSize({ width: 1440, height: 1000 });
     if (screenshots) await page.screenshot({ path: join(screenshots, 'settings-model-picker.png') });
-    await page.getByLabel('sonnet effort', { exact: true }).selectOption('low');
+    const effort = page.getByRole('button', { name: /^sonnet effort:/ });
+    await effort.click();
+    const effortMenu = page.getByRole('dialog', { name: 'sonnet effort', exact: true });
+    if (screenshots) await page.screenshot({ path: join(screenshots, 'effort-picker.png') });
+    await effortMenu.getByRole('combobox').fill('low');
+    await effortMenu.getByRole('combobox').press('Enter');
+    await expect(effort).toBeFocused();
+    await expect(effort).toHaveText('low');
+    await expect(page.locator('#model-dialog')).toBeVisible();
+    await effort.click();
+    await effortMenu.getByRole('combobox').press('ArrowDown');
+    await effortMenu.getByRole('combobox').press('Escape');
+    await expect(effortMenu).toHaveCount(0);
+    await expect(effort).toBeFocused();
+    await expect(effort).toHaveText('low');
+    await effort.click();
+    await page.mouse.click(5, 5);
+    await expect(effortMenu).toHaveCount(0);
+    await expect(page.locator('#model-dialog')).toBeVisible();
     await page.locator('#model-dialog').getByRole('button', { name: 'Done', exact: true }).click();
     await expect(page.locator('#model-button')).toHaveAttribute('title', /Personal updated/);
     await page.locator(`input[type="checkbox"][data-select="${testCase.project}-${testCase.id}"]`).check();

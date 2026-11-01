@@ -52,7 +52,7 @@ body {
 }
 button,
 input,
-select {
+.select-trigger {
   font: inherit;
 }
 button {
@@ -76,12 +76,12 @@ select:focus-visible {
   outline-offset: 3px;
 }
 button,
-select,
+.select-trigger,
 input {
   border-radius: 8px;
 }
 input,
-select {
+.select-trigger {
   color: inherit;
   background: transparent;
   border: 1px solid var(--border);
@@ -730,6 +730,7 @@ kbd {
   background: linear-gradient(transparent, var(--bg) 14%);
 }
 .composer {
+  container: composer / inline-size;
   max-width: 780px;
   margin: auto;
   border: 1px solid var(--border);
@@ -770,6 +771,7 @@ kbd {
   color: var(--muted);
   border-radius: 7px;
   min-width: 0;
+  height: 36px;
 }
 .composer-toolbar .control:hover {
   color: var(--text);
@@ -787,16 +789,30 @@ kbd {
   height: 11px;
   color: var(--subtle);
 }
-#worktree {
-  border: 0;
-  padding: 5px 2px;
-  max-width: 220px;
-  width: 100%;
-  font-size: 11px;
-  color: var(--muted);
+.select-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  text-align: left;
+  border: 1px solid var(--border);
+  padding: 8px;
+}
+.select-value {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
   text-overflow: ellipsis;
-  background: var(--surface);
-  cursor: pointer;
+  white-space: nowrap;
+}
+.select-trigger .chevron {
+  margin-left: auto;
+}
+.composer-toolbar .select-trigger {
+  width: 100%;
+  border: 0;
+  background: transparent;
 }
 .worktree-control {
   max-width: 240px;
@@ -805,12 +821,17 @@ kbd {
   min-width: 180px;
   flex: 1 1 200px;
 }
-.worktree-control > svg {
-  width: 13px;
-  height: 13px;
-}
 .composer-toolbar .spacer {
   flex: 1;
+}
+.composer-toolbar > #options-open {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+}
+.composer-toolbar > #run-selected {
+  height: 36px;
+  flex-shrink: 0;
 }
 .primary {
   background: var(--accent);
@@ -1052,7 +1073,7 @@ dialog::backdrop {
   min-width: 0;
 }
 .environment-fields input,
-.environment-fields select {
+.environment-fields .select-trigger {
   width: 100%;
   min-width: 0;
   font-size: 12px;
@@ -1103,10 +1124,10 @@ dialog::backdrop {
   max-width: 200px;
 }
 .composer-toolbar .environment-control {
-  min-width: 160px;
+  min-width: 175px;
   flex: 0 1 180px;
 }
-.environment-control select {
+.environment-control .select-trigger {
   width: 100%;
 }
 .composer-toolbar {
@@ -1133,22 +1154,22 @@ dialog::backdrop {
   border: 1px solid var(--border);
   border-radius: 7px;
 }
-.model-dialog {
+.picker-dialog {
   width: 480px;
   position: fixed;
   inset: auto auto 12px 12px;
   margin: 0;
   overflow: hidden;
 }
-.model-dialog[open] {
+.picker-dialog[open] {
   display: flex;
   flex-direction: column;
 }
-.model-dialog::backdrop {
+.picker-dialog::backdrop {
   background: transparent;
   backdrop-filter: none;
 }
-.model-search {
+.picker-search {
   display: flex;
   flex-shrink: 0;
   align-items: center;
@@ -1157,13 +1178,64 @@ dialog::backdrop {
   gap: 9px;
   color: var(--subtle);
 }
-.model-search input {
+.picker-search input {
   border: 0;
   background: none;
   outline: none;
   padding: 0;
   width: 100%;
   font-size: 12px;
+}
+.select-dialog {
+  max-height: 420px;
+}
+.picker-list {
+  min-height: 0;
+  max-height: 340px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 8px;
+}
+.picker-group-label {
+  padding: 5px 7px 8px;
+  color: var(--subtle);
+  font-size: 10px;
+}
+.picker-option {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 9px 8px;
+  border-radius: 7px;
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: left;
+}
+.picker-option[data-active='true'],
+.picker-option[aria-selected='true'] {
+  background: var(--hover);
+}
+.picker-check {
+  flex: 0 0 14px;
+  color: var(--text);
+}
+.picker-option-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow-wrap: anywhere;
+}
+.picker-option-copy small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.picker-footer > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .model-picker-body {
   display: grid;
@@ -1252,7 +1324,7 @@ dialog::backdrop {
   border-radius: 7px;
   margin-top: 15px;
 }
-.model-footer {
+.picker-footer {
   display: flex;
   flex-shrink: 0;
   gap: 12px;
@@ -1263,7 +1335,7 @@ dialog::backdrop {
   font-size: 10px;
   color: var(--subtle);
 }
-.model-footer button {
+.picker-footer button {
   flex-shrink: 0;
   padding: 4px 8px;
   border-radius: 6px;
@@ -1286,7 +1358,7 @@ dialog::backdrop {
   margin-top: 4px;
 }
 .field input,
-.field select {
+.field .select-trigger {
   width: 100%;
 }
 .field-stacked {
@@ -1421,6 +1493,8 @@ dialog::backdrop {
   .case .run {
     opacity: 1;
   }
+}
+@container composer (max-width: 700px) {
   .composer-toolbar {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 36px auto;
@@ -1448,7 +1522,7 @@ dialog::backdrop {
     grid-row: 2;
     max-width: none;
   }
-  .environment-control select {
+  .environment-control .select-trigger {
     width: 100%;
   }
   .composer-toolbar .spacer {
@@ -1457,11 +1531,6 @@ dialog::backdrop {
   .worktree-control {
     grid-column: 1/-1;
     grid-row: 3;
-    max-width: 100%;
-    padding-top: 0 !important;
-    padding-bottom: 0 !important;
-  }
-  #worktree {
     max-width: 100%;
   }
 }
@@ -1527,7 +1596,7 @@ dialog::backdrop {
 .network-pane .network-search {
   flex-basis: 100%;
 }
-.network-pane .network-filters select {
+.network-pane .network-filters .select-trigger {
   flex: 1;
   min-width: 0;
 }
@@ -1701,7 +1770,7 @@ dialog::backdrop {
   background: var(--bg);
   border-radius: 6px;
 }
-.network-filters select {
+.network-filters .select-trigger {
   max-width: 155px;
   padding: 6px 24px 6px 8px;
   font-size: 10px;
@@ -2098,7 +2167,7 @@ dialog::backdrop {
   .network-filters {
     padding: 0 10px 10px;
   }
-  .network-filters select {
+  .network-filters .select-trigger {
     flex: 1;
     max-width: none;
   }
@@ -2731,7 +2800,7 @@ dialog::backdrop {
   margin-bottom: 18px;
 }
 .provider-instance-form input,
-.provider-instance-form select {
+.provider-instance-form .select-trigger {
   width: 100%;
   font-size: 13px;
   padding: 9px 10px;
@@ -2832,7 +2901,7 @@ dialog::backdrop {
   font-size: 12px;
 }
 .settings-panel .environment-fields input,
-.settings-panel .environment-fields select {
+.settings-panel .environment-fields .select-trigger {
   font-size: 13px;
   padding: 9px 10px;
 }
@@ -2958,7 +3027,7 @@ dialog::backdrop {
   font-size: 12px;
   flex-wrap: wrap;
 }
-.model-effort select {
+.model-effort .select-trigger {
   min-width: 0;
   max-width: 100%;
 }
@@ -3044,7 +3113,7 @@ dialog::backdrop {
   line-height: 1.5;
 }
 .narration-field input,
-.narration-field select {
+.narration-field .select-trigger {
   width: 100%;
   min-width: 0;
   min-height: 40px;
@@ -3276,5 +3345,111 @@ dialog::backdrop {
   .session-markdown {
     padding: 12px;
     font-size: 11px;
+  }
+}
+
+/* Run options keep their actions visible while longer mock configuration scrolls. */
+.run-options-dialog {
+  width: 720px;
+  max-height: min(820px, calc(100dvh - 40px));
+  overflow: hidden;
+}
+.run-options-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+.run-options-dialog > .dialog-head,
+.run-options-dialog > .dialog-actions {
+  flex-shrink: 0;
+  padding: 16px 24px;
+}
+.run-options-dialog > .dialog-body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: 24px;
+}
+.run-options-section,
+.mock-options {
+  display: grid;
+  min-width: 0;
+  gap: 20px;
+}
+.run-options-section + .run-options-section {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+}
+.run-options-section h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.run-options-dialog .field {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 240px);
+  gap: 24px;
+  min-width: 0;
+  padding: 0;
+}
+.run-options-dialog .field-stacked {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+.run-options-dialog .field label {
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.run-options-dialog .field small {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.run-options-dialog .field input,
+.run-options-dialog .field .select-trigger {
+  min-height: 38px;
+}
+.mock-coverage-note {
+  margin: 0;
+  padding: 12px 14px;
+  border-left: 2px solid var(--border);
+  background: var(--surface);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.run-options-dialog .dialog-actions button {
+  flex-shrink: 0;
+}
+#options-dialog textarea {
+  width: 100%;
+  min-width: 0;
+  resize: vertical;
+  font:
+    12px/1.5 ui-monospace,
+    monospace;
+  color: inherit;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+}
+#options-dialog textarea:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 3px;
+}
+@media (max-width: 600px) {
+  .run-options-dialog {
+    max-height: calc(100dvh - 24px);
+  }
+  .run-options-dialog > .dialog-head,
+  .run-options-dialog > .dialog-actions,
+  .run-options-dialog > .dialog-body {
+    padding: 16px;
+  }
+  .run-options-dialog .field {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
   }
 }

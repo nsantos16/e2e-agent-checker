@@ -33,6 +33,7 @@ export function Dialog({
       style={style}
       aria-label={title}
       onCancel={(e) => {
+        e.stopPropagation();
         e.preventDefault();
         onClose();
       }}

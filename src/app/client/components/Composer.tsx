@@ -2,6 +2,7 @@ import { providerInstanceId, targetInstanceId } from '../../../providers/schema.
 import { useWorkspace } from '../context.tsx';
 import { caseKey, modelName } from '../format.ts';
 import { Icon } from './Icon.tsx';
+import { SelectPicker } from './Picker.tsx';
 export function Welcome() {
   const { state: s, actions: store } = useWorkspace();
   const picked = s.cases.filter((c) => s.selected.has(caseKey(c)));
@@ -125,37 +126,47 @@ export function Composer() {
             </span>
             <Icon name="chevron" className="chevron" />
           </button>
-          <div className="control environment-control">
-            <select
+          <div className="environment-control">
+            <SelectPicker
               id="environment"
-              aria-label="Test environment"
-              title={environment?.baseUrl ?? 'Run a local worktree'}
+              label="Test environment"
+              className="control"
+              icon="browser"
+              composer
+              title={
+                environment
+                  ? `${environment.name}${environment.baseUrl ? ` · ${environment.baseUrl}` : ' · Run a local worktree'}`
+                  : 'Select an environment'
+              }
               value={s.environmentId}
-              onChange={(e) => store.chooseEnvironment(e.target.value)}
-            >
-              {s.environments.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.name}
-                </option>
-              ))}
-            </select>
+              onChange={store.chooseEnvironment}
+              placeholder="No environments found"
+              disabled={!s.environments.length}
+              options={s.environments.map((e) => ({
+                value: e.id,
+                label: e.name,
+                description: e.baseUrl ?? 'Run a local worktree',
+              }))}
+            />
           </div>
-          <div className="control worktree-control" title="Worktree to verify" hidden={environment?.kind === 'hosted'}>
-            <Icon name="branch" />
-            <select
+          <div className="worktree-control" hidden={environment?.kind === 'hosted'}>
+            <SelectPicker
               id="worktree"
-              aria-label="Worktree to verify"
+              label="Worktree to verify"
+              className="control"
+              icon="branch"
+              composer
               value={s.worktree}
+              disabled={!s.worktrees.length}
               title={worktree ? `${worktree.branch}\n${worktree.path}\n${worktree.subject}` : 'Select a worktree'}
-              onChange={(e) => store.chooseWorktree(e.target.value)}
-            >
-              {s.worktrees.map((w) => (
-                <option key={w.path} value={w.path}>
-                  {w.branch}
-                  {w.slot ? ` · :${w.slot.port}` : ''}
-                </option>
-              ))}
-            </select>
+              onChange={store.chooseWorktree}
+              placeholder={s.worktrees.length ? 'Select a worktree' : 'No worktrees found'}
+              options={s.worktrees.map((w) => ({
+                value: w.path,
+                label: `${w.branch}${w.slot ? ` · :${w.slot.port}` : ''}`,
+                description: `${w.path}${w.subject ? ` · ${w.subject}` : ''}`,
+              }))}
+            />
           </div>
           <span className="spacer" />
           <button
@@ -175,6 +186,7 @@ export function Composer() {
       </div>
       <div className="dock-note">
         <span id="composer-hint">
+          {s.mockEnabled ? 'Mocked frontend · ' : ''}
           {s.selected.size && ready.length
             ? `${s.selected.size} case${s.selected.size === 1 ? '' : 's'} × ${ready.length} model${ready.length === 1 ? '' : 's'} · ${count} run${count === 1 ? '' : 's'}`
             : 'Reuse saved spec or author a new one'}

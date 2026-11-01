@@ -1,3 +1,4 @@
+import { SelectPicker } from './Picker.tsx';
 import { useEffect, useState } from 'react';
 import { useWorkspace } from '../context.tsx';
 import { errorMessage } from '../api.ts';
@@ -14,16 +15,18 @@ export function SidebarSettings() {
       <h3>Organize the sidebar</h3>
       <div className="field field-stacked">
         <label htmlFor="sidebar-grouping">Group cases and runs</label>
-        <select
+        <SelectPicker
           id="sidebar-grouping"
+          label="Group cases and runs"
           value={s.sidebarGrouping}
-          onChange={(e) => store.setSidebarGrouping(e.target.value as SidebarGrouping)}
-        >
-          <option value="project-status">Project folders + status sections</option>
-          <option value="project">Project folders</option>
-          <option value="status">Active / Working sections</option>
-          <option value="none">Flat list</option>
-        </select>
+          onChange={(value) => store.setSidebarGrouping(value as SidebarGrouping)}
+          options={[
+            { value: 'project-status', label: 'Project folders + status sections' },
+            { value: 'project', label: 'Project folders' },
+            { value: 'status', label: 'Active / Working sections' },
+            { value: 'none', label: 'Flat list' },
+          ]}
+        />
       </div>
       <p className="muted">
         Pinned items stay at the top. Settled items stay in their own section. Project folders show item counts and an indicator for ongoing

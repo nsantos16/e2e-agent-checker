@@ -117,7 +117,9 @@ When the skill is available in your client's skill list, you can invoke `$e2e-ve
 
 Agents author native cases through MCP; the UI's **+** imports Qase cases. Cases appear in the UI after refresh. Select the case, feature worktree, environment/user and model, then run it to watch the browser, inspect the network side panel, and review the replay video. Qase is optional. A hosted run tests the deployed build, so deploy your feature there first or select its local worktree.
 
-The skill covers duplicate-case discovery, case creation/revision checks, bounded waiting, failure diagnosis and evidence reporting. Saved-spec replay avoids new model calls when the spec still covers the behavior; changed expectations require fresh verification. Publishing evidence to a PR remains an explicit request.
+The skill chooses coverage from the requested proof. Live-backend runs remain the default; optional backend-derived mocks suit frontend work on migrations/endpoints not yet in staging, controlled error/permission/data states, and repeatable UI regressions. For example: “Use `$e2e-verify-feature` to check this frontend against the backend worktree at `/work/backend-feature`; its migration is not in staging yet.” The skill locates relevant source/schema inputs and reports mocked coverage separately from real backend verification. See [mock-run guidance](.agents/skills/e2e-verify-feature/references/backend-mocks.md).
+
+It also covers duplicate-case discovery, case creation/revision checks, bounded waiting, failure diagnosis and evidence reporting. Saved-spec replay avoids new model calls when the spec still covers the behavior; changed expectations or relevant contracts require fresh verification. Publishing evidence to a PR remains an explicit request.
 
 ## Use it from the shell
 

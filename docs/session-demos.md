@@ -119,3 +119,7 @@ Official API details revalidated 2026-11-01:
 - [GPT-Realtime-2.1 Mini](https://developers.openai.com/api/docs/models/gpt-realtime-2.1-mini): $0.60/M input text, $0.06/M cached input text, $2.40/M output text, $20/M output audio.
 - [Realtime WebSockets](https://developers.openai.com/api/docs/guides/voice-websockets?api=realtime) and [Realtime conversations](https://developers.openai.com/api/docs/guides/realtime-conversations): session/item/response events and PCM output workflow.
 - [Text to speech](https://developers.openai.com/api/docs/guides/text-to-speech): synthetic-voice disclosure and the deprecation of older speech models; Realtime models require a different endpoint/workflow.
+
+## Mocked coverage
+
+Backend-derived browser suites appear as **Mocked frontend coverage** in session summaries, with per-scenario results, assumptions and unavailable contracts. They establish frontend behavior under the supplied responses, not real backend execution. The silent replay combines every scenario; per-scenario traces and timelines are retained. Voice generation for the combined suite currently lacks a consolidated timeline and remains unavailable; ordinary live-run narration is unchanged. See [mock suites](backend-mock-suites.md).

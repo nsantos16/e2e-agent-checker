@@ -1,3 +1,4 @@
+import { mockInputSchema } from './mock-contract.ts';
 import { Effect, Semaphore } from 'effect';
 import { deadline, runEffect, sdk } from './runtime/effect.ts';
 import { runMain } from './runtime/main.ts';
@@ -269,6 +270,7 @@ const fixes: Record<string, string> = {
   CREDENTIAL_UNAVAILABLE: 'Check the credential references in Settings and the checker process environment or 1Password connection.',
   LOGIN_FAILED: 'Check the selected test user and target environment in Settings.',
   INVALID_INPUT: 'Check the tool schema and provide the required fields.',
+  SOURCE_CHANGED: 'Relevant backend/schema inputs changed after submission. Inspect the new source and submit a new run.',
   NOT_FOUND: 'Use list_jobs or list_cases to discover an existing ID.',
   ARTIFACT_MISSING: 'Use get_evidence to see available artifacts; a running job may not have captured them yet.',
   FRAME_UNAVAILABLE: 'Wait for browser startup; older runs may not contain frames.',
@@ -377,6 +379,11 @@ const limits = z
   })
   .optional();
 const common = {
+  mockSuite: mockInputSchema
+    .optional()
+    .describe(
+      'Backend-derived browser mock mode: explicit backend root, scoped source/schema files and caller-approved live requests. Empty browser session; frontend-only coverage.',
+    ),
   sessionId: sessionIdSchema.optional(),
   worktreePath: z.string().min(1).optional(),
   environmentId: environmentId.default('local'),
@@ -411,10 +418,18 @@ register(
   {
     environmentId: environmentId.default('local'),
     userId: environmentId.optional(),
+    coverage: z.enum(['live', 'mocked']).default('live'),
   },
-  async ({ environmentId, userId }) => {
+  async ({ environmentId, userId, coverage }) => {
     const [checks, providers, settings] = await Promise.all([
-      api('/api/doctor?' + new URLSearchParams({ environmentId, ...(userId ? { userId } : {}) })),
+      api(
+        '/api/doctor?' +
+          new URLSearchParams({
+            environmentId,
+            coverage,
+            ...(userId ? { userId } : {}),
+          }),
+      ),
       api('/api/providers'),
       api('/api/config'),
     ]);
@@ -590,7 +605,7 @@ register(
 );
 register(
   'verify_case',
-  'Pin the selected native account and model, then run a compatible saved spec or author with qualified stabilization/final replay evidence. confirmationReplay requires an independent final execution. forceFresh requests new authoring. Then wait_jobs.',
+  'Pin the selected native account and model, then run a compatible saved spec or author with qualified stabilization/final replay evidence. confirmationReplay requires an independent final execution. forceFresh requests new authoring. mockSuite inspects scoped backend sources and schemas, derives isolated browser mocks and assertions, and records mocked frontend coverage. Then wait_jobs.',
   { ...common, ...caseRef, target: targetSchema.optional() },
   async ({ worktreePath, caseId, qaseCaseId, project, target, ...rest }) =>
     submitted(
@@ -687,6 +702,8 @@ register(
         'historical-report',
         'manifest',
         'summary',
+        'mock-suite',
+        'mock-sources',
         'attempt',
         'results',
         'spec',

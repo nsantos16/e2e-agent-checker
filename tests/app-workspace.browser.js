@@ -139,6 +139,7 @@
         users: [{ id: 'test-user', name: 'Local tester', usernameRef: 'env://LOCAL_USERNAME', passwordRef: 'env://LOCAL_PASSWORD' }],
       },
     ];
+    window.fixtureWorktrees = [{ path: '/test/tree', branch: 'feature/verification', subject: 'Test' }];
     window.fetch = async (path, options) => {
       if (path === '/api/settings/voice')
         return Response.json({
@@ -194,13 +195,7 @@
           : path === '/api/cases'
             ? window.fixtureCases
             : path === '/api/worktrees'
-              ? [
-                  {
-                    path: '/test/tree',
-                    branch: 'feature/verification',
-                    subject: 'Test',
-                  },
-                ]
+              ? window.fixtureWorktrees
               : path.startsWith('/api/providers')
                 ? providers
                 : path === '/api/jobs'
@@ -232,6 +227,23 @@
       const proto = input.tagName === 'SELECT' ? w.HTMLSelectElement.prototype : w.HTMLInputElement.prototype;
       Object.getOwnPropertyDescriptor(proto, 'value').set.call(input, value);
     };
+    const openPicker = async (selector) => {
+      const trigger = $(selector);
+      trigger.focus();
+      trigger.click();
+      await settle();
+      const menu = d.getElementById(trigger.getAttribute('aria-controls'));
+      if (!menu?.open) throw new Error(`Picker did not open: ${selector}`);
+      return menu;
+    };
+    const chooseOption = async (selector, value) => {
+      const menu = await openPicker(selector);
+      const option = [...menu.querySelectorAll('[role="option"]')].find((option) => option.dataset.value === value);
+      if (!option || option.disabled) throw new Error(`Option unavailable: ${selector} ${value}`);
+      option.click();
+      await settle();
+      assert(!menu.isConnected && d.activeElement === $(selector), `${selector} applies a choice and returns focus to its trigger`);
+    };
     await waitFor(() => $('#model-label')?.textContent === 'Model A' && [...w.fixtureTimers.values()].some((t) => t.ms === 5000));
     assert(!$('#jobs .job').hidden && $('#jobs video'), 'Direct selection loads a run absent from the recent list');
     w.hideJobFromList = false;
@@ -239,6 +251,100 @@
     await settle();
     await w.tick(2000);
     assert(!$('.topbar #providers') && !$('#settings-dialog')?.open, 'Connection setup is outside the main workspace');
+    for (const width of [1280, 900, 760, 641, 640, 390, 320]) {
+      frame.style.width = `${width}px`;
+      await settle();
+      const toolbar = $('.composer-toolbar').getBoundingClientRect();
+      const controls = ['#model-button', '.environment-control', '.worktree-control', '#options-open', '#run-selected']
+        .map((selector) => $(selector).getBoundingClientRect());
+      assert(
+        controls.every((box) => box.left >= toolbar.left && box.right <= toolbar.right && box.top >= toolbar.top && box.bottom <= toolbar.bottom),
+        `Composer controls stay inside the toolbar at ${width}px`,
+      );
+      assert(
+        Math.max(...controls.map((box) => box.height)) - Math.min(...controls.map((box) => box.height)) <= 1,
+        `Environment, worktree and action controls have consistent heights at ${width}px`,
+      );
+      assert(
+        controls.every((a, i) => controls.slice(i + 1).every((b) =>
+          a.right <= b.left || a.left >= b.right || a.bottom <= b.top || a.top >= b.bottom)),
+        `Environment and worktree pickers do not overlap adjacent controls at ${width}px`,
+      );
+      const selectedLabel = $('#environment .select-value');
+      assert(
+        selectedLabel.clientWidth >= selectedLabel.scrollWidth,
+        `Local development stays readable at ${width}px`,
+      );
+    }
+    frame.style.width = '1280px';
+    const worktrees = w.fixtureWorktrees;
+    w.fixtureWorktrees = [];
+    await w.tick(10000);
+    assert(
+      $('#worktree').disabled && $('#worktree .select-value').textContent === 'No worktrees found',
+      'An empty worktree catalog shows an explanatory disabled option',
+    );
+    w.fixtureWorktrees = worktrees;
+    await w.tick(10000);
+    assert(!$('#worktree').disabled && $('#worktree').value === '/test/tree', 'Worktree discovery restores the enabled picker');
+    w.fixtureWorktrees = [
+      ...worktrees,
+      { path: '/test/second-checkout', branch: 'feature/verification', subject: 'Another checkout of the same branch' },
+      ...Array.from({ length: 18 }, (_, i) => ({
+        path: `/test/checkout-${i}`,
+        branch: `feature/${'long-branch-name-'.repeat(5)}${i}`,
+        subject: 'A long branch and path must wrap inside the menu',
+      })),
+    ];
+    await w.tick(10000);
+    for (const [width, height] of [[1280, 800], [539, 700], [390, 640], [320, 568], [844, 390]]) {
+      frame.style.width = `${width}px`;
+      frame.style.height = `${height}px`;
+      await settle();
+      const menu = await openPicker('#worktree');
+      const box = menu.getBoundingClientRect();
+      const list = menu.querySelector('.picker-list');
+      const footer = menu.querySelector('.picker-footer').getBoundingClientRect();
+      assert(
+        box.left >= 0 && box.right <= w.innerWidth && box.top >= 0 && box.bottom <= w.innerHeight &&
+          box.bottom <= $('.composer').getBoundingClientRect().top - 7 && menu.scrollWidth <= menu.clientWidth,
+        `Worktree menu fits above the composer at ${width}×${height}`,
+      );
+      assert(
+        list.scrollHeight > list.clientHeight && list.getBoundingClientRect().bottom <= footer.top + 1,
+        `Long worktree lists scroll separately from the footer at ${width}×${height}`,
+      );
+      menu.querySelector('.picker-footer button').click();
+      await settle();
+    }
+    frame.style.width = '1280px';
+    frame.style.height = '800px';
+    const treeMenu = await openPicker('#worktree');
+    const treeSearch = treeMenu.querySelector('input');
+    assert(d.activeElement === treeSearch, 'Worktree picker focuses search when opened');
+    setInput(treeSearch, 'no-such-worktree');
+    treeSearch.dispatchEvent(new w.Event('input', { bubbles: true }));
+    await settle();
+    assert(treeMenu.querySelector('[role="status"]')?.textContent === 'No matching options', 'Picker search explains an empty result');
+    setInput(treeSearch, 'second-checkout');
+    treeSearch.dispatchEvent(new w.Event('input', { bubbles: true }));
+    await settle();
+    assert(
+      treeMenu.querySelectorAll('[role="option"]').length === 1 && treeMenu.textContent.includes('/test/second-checkout'),
+      'Worktree search distinguishes identical branch names by path',
+    );
+    treeSearch.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
+    treeSearch.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await settle();
+    assert(
+      $('#worktree').value === '/test/second-checkout' && d.activeElement === $('#worktree') && !treeMenu.isConnected,
+      'Keyboard selection applies the filtered worktree and restores focus',
+    );
+    await w.tick(10000);
+    assert($('#worktree').value === '/test/second-checkout', 'Refreshing the catalog retains the selected worktree');
+    await chooseOption('#worktree', '/test/tree');
+    w.fixtureWorktrees = worktrees;
+    await w.tick(10000);
     w.fixtureCases.push({ project: 'LOCAL', id: 1, title: 'New draft', steps: 0, suite: 'Native', status: 'draft' });
     await w.tick(5000);
     assert(
@@ -314,33 +420,36 @@
       w.fixtureEnvironments.find((e) => e.id === 'staging').users.length === 2,
       'Settings saves a hosted environment with multiple test users',
     );
-    $('#environment').value = 'staging';
-    $('#environment').dispatchEvent(new w.Event('change', { bubbles: true }));
+    $('[data-close="settings-dialog"]').click();
     await settle();
+    await chooseOption('#environment', 'staging');
     assert(
-      $('.worktree-control').hidden && $('#role').options.length === 2 && $('#role').value === 'admin',
+      $('.worktree-control').hidden && $('#role').value === 'admin',
       'Hosted selection uses only that environment’s users and hides worktree selection',
     );
-    const savedWorktree = $('#worktree').value;
-    $('#worktree').value = '';
-    $('#worktree').dispatchEvent(new w.Event('change', { bubbles: true }));
-    await settle();
-    await settle();
+    w.fixtureWorktrees = [];
+    await w.tick(10000);
     assert(!$('#run-selected').disabled, 'Hosted verification does not require a local worktree');
-    $('#role').value = 'viewer';
-    $('#role').dispatchEvent(new w.Event('change', { bubbles: true }));
+    $('#options-open').click();
     await settle();
-    $('#environment').value = 'local';
-    $('#environment').dispatchEvent(new w.Event('change', { bubbles: true }));
+    const users = await openPicker('#role');
+    assert(users.querySelectorAll('[role="option"]').length === 2, 'Test-user picker contains only users in the selected environment');
+    users.querySelector('[data-value="viewer"]').click();
     await settle();
+    assert($('#options-dialog').open && d.activeElement === $('#role'), 'Nested picker closes without dismissing Run options');
+    $('[data-close="options-dialog"]').click();
+    await settle();
+    await chooseOption('#environment', 'local');
     assert(
       $('#role').value === 'test-user' && !$('.worktree-control').hidden,
       'Changing environments resets the test user to a valid member',
     );
-    $('#environment').value = 'staging';
-    $('#environment').dispatchEvent(new w.Event('change', { bubbles: true }));
-    await settle();
+    await chooseOption('#environment', 'staging');
     assert($('#role').value === 'viewer', 'Each environment remembers its own test-user selection');
+    $('#settings-open').click();
+    await settle();
+    $('[data-edit-environment="staging"]').click();
+    await settle();
     frame.style.width = '390px';
     await new Promise((resolve) => setTimeout(resolve, 30));
     const settingsRect = $('#settings-dialog').getBoundingClientRect();
@@ -355,18 +464,65 @@
     await settle();
     await waitFor(() => !w.fixtureEnvironments.some((e) => e.id === 'staging') && $('#environment').value === 'local');
     assert($('#role').value === 'test-user', 'Deleting a selected environment falls back to the local profile');
-    $('#worktree').value = savedWorktree;
-    $('#worktree').dispatchEvent(new w.Event('change', { bubbles: true }));
-    await settle();
-    await settle();
+    w.fixtureWorktrees = worktrees;
+    await w.tick(10000);
     $('[data-close="settings-dialog"]').click();
     await settle();
     $('#options-open').click();
     await settle();
     assert($('#authoring').value === 'auto', 'Run options default to compatible saved-spec reuse');
-    $('#authoring').value = 'fresh';
-    $('#authoring').dispatchEvent(new w.Event('change', { bubbles: true }));
-    await settle();
+    assert($('#coverage-mode').value === 'live', 'Run options default to the live backend');
+    await chooseOption('#coverage-mode', 'mocked');
+    for (const [width, height] of [
+      [1280, 800],
+      [539, 700],
+      [390, 640],
+      [320, 568],
+    ]) {
+      frame.style.width = `${width}px`;
+      frame.style.height = `${height}px`;
+      await settle();
+      const dialog = $('#options-dialog');
+      const body = dialog.querySelector('.dialog-body');
+      const rect = dialog.getBoundingClientRect();
+      const head = dialog.querySelector('.dialog-head').getBoundingClientRect();
+      const content = body.getBoundingClientRect();
+      const footer = dialog.querySelector('.dialog-actions').getBoundingClientRect();
+      assert(
+        rect.left >= 0 &&
+          rect.right <= w.innerWidth &&
+          rect.top >= 0 &&
+          rect.bottom <= w.innerHeight &&
+          dialog.scrollWidth <= dialog.clientWidth &&
+          body.scrollWidth <= body.clientWidth,
+        `Mock options fit the ${width}px viewport without horizontal overflow`,
+      );
+      assert(
+        content.top >= head.bottom - 1 &&
+          content.bottom <= footer.top + 1 &&
+          footer.bottom <= rect.bottom &&
+          footer.top >= 0 &&
+          footer.bottom <= w.innerHeight,
+        `Run options keep the header, scrolling form and footer separate at ${width}px`,
+      );
+      for (const field of dialog.querySelectorAll('.field')) {
+        const label = field.querySelector('label').getBoundingClientRect();
+        const control = field.querySelector('input, .select-trigger, textarea');
+        const box = control.getBoundingClientRect();
+        assert(
+          label.right <= box.left || label.bottom <= box.top || label.left >= box.right || label.top >= box.bottom,
+          `${control.id} does not overlap its label at ${width}px`,
+        );
+        if (control.classList.contains('select-trigger')) {
+          const text = control.querySelector('.select-value');
+          assert(text.scrollWidth <= text.clientWidth, `${control.id} shows the selected option without clipping at ${width}px`);
+        }
+      }
+    }
+    frame.style.width = '1280px';
+    frame.style.height = '800px';
+    await chooseOption('#coverage-mode', 'live');
+    await chooseOption('#authoring', 'fresh');
     $('[data-close="options-dialog"]').click();
     await settle();
     $('#run-selected').click();
@@ -468,6 +624,7 @@
     );
     assert($('#jobs video') === video, 'Live diagnostics updates preserve replay player identity');
     const change = async (selector, value, event = 'change') => {
+      if ($(selector).classList.contains('select-trigger')) return chooseOption(selector, value);
       setInput($(selector), value);
       $(selector).dispatchEvent(new w.Event(event, { bubbles: true }));
       await settle();

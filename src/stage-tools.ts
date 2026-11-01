@@ -1,4 +1,6 @@
 import { Effect, Exit, Scope, Semaphore } from 'effect';
+import { mockSuiteSchema } from './mock-contract.ts';
+import { validateMockSuite, compileMockSpec, mockSemantics, type SourceSnapshot } from './mock-sources.ts';
 import { runEffect, sdk } from './runtime/effect.ts';
 import { constants, existsSync, readFileSync, realpathSync, writeFileSync, mkdirSync, mkdtempSync } from 'node:fs';
 import { open } from 'node:fs/promises';
@@ -25,6 +27,8 @@ import { childEnvironment } from './environments.ts';
 
 const root = new URL('..', import.meta.url).pathname;
 export type StageConfig = {
+  mockSources?: string;
+  mockCase?: string;
   browserConfig?: string;
   actionsPath?: string;
   readFiles?: string[];
@@ -192,6 +196,8 @@ const makeStageToolsEffect = (config: StageConfig, signal: AbortSignal) =>
         await handle.close();
       }
     };
+    const sources = config.mockSources ? readJson<SourceSnapshot>(config.mockSources)! : undefined;
+    let sourceRead = false;
     const tools = [
       networkTool,
       detailTool,
@@ -210,14 +216,18 @@ const makeStageToolsEffect = (config: StageConfig, signal: AbortSignal) =>
         inputSchema: z.toJSONSchema(readsSchema),
       },
       {
-        name: 'write_spec',
-        description: 'Replace the single generated Playwright spec with the provided source.',
-        inputSchema: {
-          type: 'object',
-          properties: { source: { type: 'string' } },
-          required: ['source'],
-          additionalProperties: false,
-        },
+        name: sources ? 'write_mock_suite' : 'write_spec',
+        description: sources
+          ? 'Validate and save a source-derived mock suite. Read the source bundle first. After first execution only locator repairs are accepted; never weaken expected behavior or fixtures.'
+          : 'Replace the single generated Playwright spec with the provided source.',
+        inputSchema: sources
+          ? z.toJSONSchema(z.object({ suite: mockSuiteSchema }).strict())
+          : {
+              type: 'object',
+              properties: { source: { type: 'string' } },
+              required: ['source'],
+              additionalProperties: false,
+            },
       },
       {
         name: 'try_spec',
@@ -240,7 +250,9 @@ const makeStageToolsEffect = (config: StageConfig, signal: AbortSignal) =>
           if (name === networkTool.name) return networkResult(args);
           if (name === 'read_input') {
             const path = allowedPath(readSchema.parse(args).path);
-            return text(await read(path, combined));
+            const content = await read(path, combined);
+            if (config.mockSources && path === realpathSync(config.mockSources)) sourceRead = true;
+            return text(content);
           }
           if (name === 'read_inputs') {
             const paths = readsSchema.parse(args).paths;
@@ -250,7 +262,9 @@ const makeStageToolsEffect = (config: StageConfig, signal: AbortSignal) =>
             const results = await Promise.allSettled(
               paths.map(async (requested) => {
                 const path = allowedPath(requested);
-                return { path, text: await read(path, combined) };
+                const content = await read(path, combined);
+                if (config.mockSources && path === realpathSync(config.mockSources)) sourceRead = true;
+                return { path, text: content };
               }),
             );
             const inputs = results.map((result, i) => {
@@ -295,7 +309,19 @@ const makeStageToolsEffect = (config: StageConfig, signal: AbortSignal) =>
               render,
             );
           }
-          if (name === 'write_spec') {
+          if (name === 'write_mock_suite' && sources) {
+            if (!sourceRead) throw new Error('Read the backend/source bundle before deriving mocks');
+            const suite = validateMockSuite(args.suite, sources, readJson(config.mockCase!)!);
+            const lock = readJson<{ semantics: string }>(join(config.runDir!, 'mock/locked.json'));
+            if (lock && lock.semantics !== mockSemantics(suite))
+              throw new Error('ASSERTIONS_LOCKED: only locator repairs are permitted after execution');
+            if (realpathSync(dirname(requestedSpec)) !== specParent || (existsSync(spec) && realpathSync(spec) !== spec))
+              throw new Error('Spec path changed');
+            atomicJson(join(config.runDir!, 'mock/suite.json'), suite);
+            writeFileSync(spec, compileMockSpec(suite, sources.input));
+            return text('Mock suite saved; fixtures validated. Use try_spec for every scenario.');
+          }
+          if (name === 'write_spec' && !sources) {
             if (typeof args.source !== 'string' || args.source.length > 200_000) throw new Error('Invalid spec source');
             if (realpathSync(dirname(requestedSpec)) !== specParent || (existsSync(spec) && realpathSync(spec) !== spec))
               throw new Error('Spec path changed');
@@ -306,6 +332,49 @@ const makeStageToolsEffect = (config: StageConfig, signal: AbortSignal) =>
             if (attempts >= (config.maxAttempts ?? 8)) throw new Error('BUDGET_EXCEEDED: no more stabilization attempts');
             attempts++;
             writeFileSync(join(config.runDir!, 'codify/attempts.json'), JSON.stringify({ attempts }));
+            if (sources) {
+              const suite = validateMockSuite(readJson(join(config.runDir!, 'mock/suite.json')), sources, readJson(config.mockCase!)!);
+              atomicJson(join(config.runDir!, 'mock/locked.json'), {
+                semantics: mockSemantics(suite),
+              });
+              const c = config.evidenceContext!;
+              const { replayMockSuiteEffect } = await import('./mock-replay.ts');
+              const { CheckerLive } = await import('./runtime/services.ts');
+              const result = await runEffect(
+                replayMockSuiteEffect(
+                  {
+                    runDir: config.runDir!,
+                    label: `mock-attempt-${attempts}`,
+                    specDir: dirname(spec),
+                    specFile: basename(spec),
+                    base: c.base,
+                    slot: c.slot,
+                    role: c.role,
+                    signal: combined,
+                  },
+                  suite,
+                ).pipe(Effect.provide(CheckerLive)),
+                combined,
+              );
+              atomicJson(join(config.runDir!, 'mock/last-attempt.json'), {
+                ...result,
+                specHash: hashFile(spec),
+              });
+              return text(
+                JSON.stringify({
+                  attempt: attempts,
+                  status: result.status,
+                  scenarios: result.scenarios.map((s) => ({
+                    id: s.id,
+                    status: s.status,
+                    error: s.error,
+                    steps: s.steps,
+                    traffic: s.traffic,
+                    dom: s.dom,
+                  })),
+                }),
+              );
+            }
             const attemptsDir = join(config.runDir!, 'codify/attempts');
             mkdirSync(attemptsDir, { recursive: true });
             const artifactDir = mkdtempSync(join(attemptsDir, 'attempt.'));
@@ -335,6 +404,7 @@ const makeStageToolsEffect = (config: StageConfig, signal: AbortSignal) =>
                 env: {
                   ...process.env,
                   E2E_OBSERVATION_RUN_DIR: config.runDir!,
+                  E2E_MOCK_SCENARIO: '',
                   ...(config.evidenceContext
                     ? {
                         E2E_MANAGED_ATTEMPT: '1',

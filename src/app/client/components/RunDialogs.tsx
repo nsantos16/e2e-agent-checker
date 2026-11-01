@@ -2,66 +2,161 @@ import { useState } from 'react';
 import { useWorkspace } from '../context.tsx';
 import { errorMessage } from '../api.ts';
 import { Dialog, DialogHeader } from './Dialog.tsx';
+import { SelectPicker } from './Picker.tsx';
 export function RunOptions({ open }: { open: boolean }) {
   const { state: s, actions: store } = useWorkspace();
   const close = () => store.patch({ dialog: null });
   return (
-    <Dialog open={open} id="options-dialog" className="settings-dialog" title="Run options" onClose={close}>
+    <Dialog open={open} id="options-dialog" className="run-options-dialog" title="Run options" onClose={close}>
       <DialogHeader id="options-dialog" onClose={close}>
         Run options
       </DialogHeader>
       <div className="dialog-body">
-        <div className="field">
-          <label htmlFor="authoring">
-            Saved specs<small>Every run tests the selected target and captures new evidence.</small>
-          </label>
-          <select
-            id="authoring"
-            value={s.forceFresh ? 'fresh' : 'auto'}
-            onChange={(e) => store.patch({ forceFresh: e.target.value === 'fresh' })}
-          >
-            <option value="auto">Reuse a compatible spec</option>
-            <option value="fresh">Force fresh authoring</option>
-          </select>
-        </div>
-        <div className="field">
-          <label htmlFor="role">
-            Test user<small>Users belong to the selected environment. Shared accounts run in sequence.</small>
-          </label>
-          <select id="role" value={s.userId} onChange={(e) => store.chooseUser(e.target.value)}>
-            {store.environment()?.users.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="field">
-          <label htmlFor="timeout">
-            Time limit<small>Minutes per run, including setup.</small>
-          </label>
-          <input
-            id="timeout"
-            type="number"
-            value={Number.isNaN(s.timeout) ? '' : s.timeout}
-            min="1"
-            max="60"
-            onChange={(e) => store.patch({ timeout: e.target.valueAsNumber })}
-          />
-        </div>
-        <div className="field">
-          <label htmlFor="attempts">
-            Test attempts<small>Maximum attempts to stabilize the spec.</small>
-          </label>
-          <input
-            id="attempts"
-            type="number"
-            value={Number.isNaN(s.attempts) ? '' : s.attempts}
-            min="1"
-            max="8"
-            onChange={(e) => store.patch({ attempts: e.target.valueAsNumber })}
-          />
-        </div>
+        <section className="run-options-section" aria-label="Coverage">
+          <div className="field">
+            <label htmlFor="coverage-mode">
+              Coverage
+              <small>Mock mode checks frontend behavior using responses derived from backend source.</small>
+            </label>
+            <SelectPicker
+              id="coverage-mode"
+              label="Coverage"
+              value={s.mockEnabled ? 'mocked' : 'live'}
+              onChange={(value) => store.patch({ mockEnabled: value === 'mocked' })}
+              options={[
+                { value: 'live', label: 'Live backend', description: 'Verify against the selected backend.' },
+                { value: 'mocked', label: 'Backend-derived mocks', description: 'Check frontend behavior with controlled responses.' },
+              ]}
+            />
+          </div>
+          {s.mockEnabled && (
+            <div className="mock-options">
+              <p className="mock-coverage-note">
+                Each scenario starts with an empty session. Authentication APIs must also be mocked. This does not execute or prove the real
+                backend.
+              </p>
+              <div className="field field-stacked">
+                <label htmlFor="mock-backend">Backend source directory</label>
+                <input
+                  id="mock-backend"
+                  value={s.mockBackendRoot}
+                  onChange={(e) => store.patch({ mockBackendRoot: e.target.value })}
+                  placeholder="/absolute/path/to/backend"
+                />
+              </div>
+              <div className="field field-stacked">
+                <label htmlFor="mock-sources">
+                  Relevant backend files
+                  <small>Routes, handlers, services, permissions and data models. Relative paths, one per line.</small>
+                </label>
+                <textarea
+                  id="mock-sources"
+                  rows={4}
+                  value={s.mockSourceFiles}
+                  onChange={(e) => store.patch({ mockSourceFiles: e.target.value })}
+                />
+              </div>
+              <div className="field field-stacked">
+                <label htmlFor="mock-schemas">
+                  Schema files
+                  <small>Relative paths, one per line. Leave empty when unavailable; the suite reports that limitation.</small>
+                </label>
+                <textarea
+                  id="mock-schemas"
+                  rows={3}
+                  value={s.mockSchemaFiles}
+                  onChange={(e) => store.patch({ mockSchemaFiles: e.target.value })}
+                />
+              </div>
+              <div className="field field-stacked">
+                <label htmlFor="mock-frontend">
+                  Relevant frontend files (optional)
+                  <small>Paths relative to the selected worktree, for locating controls.</small>
+                </label>
+                <textarea
+                  id="mock-frontend"
+                  rows={3}
+                  value={s.mockFrontendFiles}
+                  onChange={(e) => store.patch({ mockFrontendFiles: e.target.value })}
+                />
+              </div>
+              <div className="field field-stacked">
+                <label htmlFor="mock-live">
+                  Allowed live requests (JSON)
+                  <small>
+                    Explicit method, URL, resourceTypes and reason. A final * permits a URL prefix. All other requests are blocked.
+                  </small>
+                </label>
+                <textarea
+                  id="mock-live"
+                  rows={6}
+                  value={s.mockAllowedLive}
+                  onChange={(e) => store.patch({ mockAllowedLive: e.target.value })}
+                />
+              </div>
+            </div>
+          )}
+        </section>
+        <section className="run-options-section" aria-labelledby="run-execution-heading">
+          <h3 id="run-execution-heading">Execution</h3>
+          <div className="field">
+            <label htmlFor="authoring">
+              Saved specs
+              <small>Every run tests the selected target and captures new evidence.</small>
+            </label>
+            <SelectPicker
+              id="authoring"
+              label="Saved specs"
+              value={s.forceFresh ? 'fresh' : 'auto'}
+              onChange={(value) => store.patch({ forceFresh: value === 'fresh' })}
+              options={[
+                { value: 'auto', label: 'Reuse a compatible spec' },
+                { value: 'fresh', label: 'Force fresh authoring' },
+              ]}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="role">
+              Test user
+              <small>Users belong to the selected environment. Shared accounts run in sequence.</small>
+            </label>
+            <SelectPicker
+              id="role"
+              label="Test user"
+              value={s.userId}
+              onChange={store.chooseUser}
+              options={store.environment()?.users.map((u) => ({ value: u.id, label: u.name })) ?? []}
+              placeholder="No test users configured"
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="timeout">
+              Time limit<small>Minutes per run, including setup.</small>
+            </label>
+            <input
+              id="timeout"
+              type="number"
+              value={Number.isNaN(s.timeout) ? '' : s.timeout}
+              min="1"
+              max="60"
+              onChange={(e) => store.patch({ timeout: e.target.valueAsNumber })}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="attempts">
+              Test attempts
+              <small>Maximum attempts to stabilize the spec.</small>
+            </label>
+            <input
+              id="attempts"
+              type="number"
+              value={Number.isNaN(s.attempts) ? '' : s.attempts}
+              min="1"
+              max="8"
+              onChange={(e) => store.patch({ attempts: e.target.valueAsNumber })}
+            />
+          </div>
+        </section>
       </div>
       <div className="dialog-actions">
         <span>Applied to each case × model combination.</span>
