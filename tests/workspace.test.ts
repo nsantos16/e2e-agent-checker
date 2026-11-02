@@ -18,6 +18,29 @@ const job = (id: string): JobView => ({
 const target: Target = { provider: 'codex', model: 'fixture', authMode: 'subscription' };
 const turn = () => new Promise((resolve) => setTimeout(resolve, 0));
 
+test('shared UI lifecycle and commands never fall back to local execution APIs', async () => {
+  const calls: string[] = [];
+  const workspace = createWorkspace(
+    async <T>(path: string) => {
+      calls.push(path);
+      return [] as T;
+    },
+    { localExecution: false },
+  );
+  const stop = workspace.start();
+  try {
+    assert.equal(workspace.getSnapshot().ready, true);
+    assert.equal(workspace.getSnapshot().activeJob, null);
+    assert.deepEqual(workspace.getSnapshot().targets, []);
+    await workspace.run(['shared-case']);
+    await assert.rejects(workspace.refreshCases(), /Local execution is unavailable/);
+    assert.deepEqual(calls, []);
+    assert.match(workspace.getSnapshot().error, /local app/);
+  } finally {
+    stop();
+  }
+});
+
 test('React workspace submits hosted case/model selections and prunes archived cases', async () => {
   const submitted: any[] = [];
   let cases = [{ project: 'QA', id: 1, revision: 'case-1', title: 'Fixture', steps: 1, status: 'active' }];
@@ -102,7 +125,7 @@ const stagingEnvironment = {
 };
 
 test('an older environment refresh cannot undo a newly saved environment selection', async () => {
-  const catalog = deferred<typeof localEnvironment[]>();
+  const catalog = deferred<(typeof localEnvironment)[]>();
   let first = true;
   const workspace = createWorkspace(async <T>() => {
     if (!first) return [localEnvironment] as T;
@@ -124,7 +147,7 @@ test('an older environment refresh cannot undo a newly saved environment selecti
 });
 
 test('delayed startup configuration cannot replace a newer environment selection', async () => {
-  const config = deferred<{ roles: string[]; environments: typeof localEnvironment[] }>();
+  const config = deferred<{ roles: string[]; environments: (typeof localEnvironment)[] }>();
   const workspace = createWorkspace(async <T>(path: string) => (path === '/api/config' ? await config.promise : []) as T);
   const stop = workspace.start();
   try {

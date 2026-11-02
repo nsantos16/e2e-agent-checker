@@ -1,5 +1,7 @@
 # Regression checks
 
+The independent team service has [PostgreSQL, TanStack DB and browser checks](../docs/team-foundation.md#verification-and-remaining-gates). Set `TEAM_TEST_DATABASE_URL` to a disposable PostgreSQL instance with CREATEDB permission, then run `npm run test:team` and `npm run test:team:browser`. Each suite owns and drops its own test database. The identity provider is a fixture; live Clerk verification is a separate staging gate.
+
 Run `npm run check`, `npm test`, `npm run build`, and `npm run test:browser`. The browser runner serves the production UI on a disposable local port and runs the workspace (202 checks), playback (12 checks), and management (26 checks) suites in headless Chromium. Install the repository's Playwright Chromium first if needed (`npx playwright install chromium`). The suites use isolated fixture APIs and do not change your cases, jobs or settings or call models.
 
 ## Saved-spec reuse

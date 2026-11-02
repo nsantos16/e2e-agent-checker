@@ -34,6 +34,8 @@ Evidence qualification, confirmation replay, provenance and format compatibility
 
 React components, frontend builds and development: [React frontend](docs/react-frontend.md).
 
+Team web implementation: [standalone API, Clerk, PostgreSQL and TanStack DB setup](docs/team-foundation.md). The first milestone-1 slice integrates shared cases and login-session controls into the existing chat/thread UI. Cases appear in the sidebar, and case/account controls open in dialogs. The main page shows shared runs using the existing run cards, sidebar search and bottom composer. User attribution and the Started by picker extend those controls; run details keep the same thread layout. Worker execution and automatic status/evidence synchronization remain pending; local execution continues through `npm run app`.
+
 ## Quick start (any dev)
 
 ```sh

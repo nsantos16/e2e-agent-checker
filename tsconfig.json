@@ -12,5 +12,5 @@
     "erasableSyntaxOnly": true
   },
   "include": ["src/**/*.ts", "tests/**/*.ts"],
-  "exclude": ["src/app/client"]
+  "exclude": ["src/app/client", "src/team/client"]
 }

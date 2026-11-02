@@ -3,8 +3,8 @@ import { createWorkspace, type Workspace, type WorkspaceState } from './workspac
 // Components depend on state and actions; the provider owns subscriptions and runtime lifecycle.
 type WorkspaceContextValue = { state: WorkspaceState; actions: Omit<Workspace, 'getSnapshot' | 'subscribe' | 'start'> };
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
-export function WorkspaceProvider({ children }: { children: ReactNode }) {
-  const [workspace] = useState(createWorkspace);
+export function WorkspaceProvider({ children, localExecution = true }: { children: ReactNode; localExecution?: boolean }) {
+  const [workspace] = useState(() => createWorkspace(undefined, { localExecution }));
   const state = useSyncExternalStore(workspace.subscribe, workspace.getSnapshot);
   useEffect(() => workspace.start(), [workspace]);
   return <WorkspaceContext value={{ state, actions: workspace }}>{children}</WorkspaceContext>;

@@ -1,0 +1,21 @@
+FROM node:24-bookworm-slim AS build
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY tsconfig.json tsconfig.client.json tsconfig.team.json vite.team.config.ts ./
+# The team frontend reuses the existing app components and their shared contracts.
+# Only the independent team API and built browser assets enter the runtime image.
+COPY src ./src
+RUN npx tsc --noEmit && npm run team:check && npm run team:build && npm prune --omit=dev
+
+FROM node:24-bookworm-slim
+ENV NODE_ENV=production TEAM_HOST=0.0.0.0 TEAM_PORT=4200 TEAM_SERVE_UI=true
+WORKDIR /app
+COPY --from=build --chown=node:node /app/package.json ./package.json
+COPY --from=build --chown=node:node /app/node_modules ./node_modules
+COPY --from=build --chown=node:node /app/dist/team ./dist/team
+COPY --from=build --chown=node:node /app/src/team/contracts.ts ./src/team/contracts.ts
+COPY --from=build --chown=node:node /app/src/team/server ./src/team/server
+USER node
+EXPOSE 4200
+CMD ["node", "src/team/server/main.ts"]
