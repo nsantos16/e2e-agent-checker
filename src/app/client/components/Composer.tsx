@@ -58,7 +58,7 @@ export function Welcome({ selection }: { selection?: ReactNode } = {}) {
     </div>
   );
 }
-export function Composer({ unavailableReason, selectionLabel }: { unavailableReason?: string; selectionLabel?: string } = {}) {
+export function Composer({ unavailableReason, selectionLabel, onChooseCases }: { unavailableReason?: string; selectionLabel?: string; onChooseCases?: () => void } = {}) {
   const { state: s, actions: store } = useWorkspace();
   const ready = s.forceFresh ? store.readyTargets() : s.targets,
     count = s.selected.size * ready.length,
@@ -85,6 +85,7 @@ export function Composer({ unavailableReason, selectionLabel }: { unavailableRea
             onClick={() => {
               store.showTab('cases');
               store.patch({ sidebarOpen: true });
+              onChooseCases?.();
               requestAnimationFrame(() => document.getElementById('search')?.focus());
             }}
           >

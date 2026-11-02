@@ -21,8 +21,8 @@ type PageState = {
   loading: boolean;
   error: string | null;
 };
-export const runPageScope = (userId?: string, after?: string) =>
-  `${userId ?? ''}:${after ?? ''}`;
+export const runPageScope = (userId?: string, after?: string, search = '') =>
+  JSON.stringify([userId ?? '', after ?? '', search]);
 
 // No Query cache: the identity-scoped DB collections own run and user records.
 export function createRunsStore(api: TeamApi, identityKey: string) {
@@ -122,12 +122,12 @@ export function createRunsStore(api: TeamApi, identityKey: string) {
         else pins.delete(id);
       };
     },
-    async loadPage(userId?: string, after?: string) {
+    async loadPage(userId?: string, after?: string, search = '') {
       const current = ++generation;
       pageAbort?.abort();
       pageAbort = new AbortController();
       const signal = AbortSignal.any([lifetime.signal, pageAbort.signal]);
-      const scope = runPageScope(userId, after);
+      const scope = runPageScope(userId, after, search);
       publish({
         ...(scope === page.scope
           ? page
@@ -139,6 +139,7 @@ export function createRunsStore(api: TeamApi, identityKey: string) {
       try {
         await ready;
         const params = new URLSearchParams({
+          search,
           limit: '25',
           ...(userId ? { userId } : {}),
           ...(after ? { after } : {}),

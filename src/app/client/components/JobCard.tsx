@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useWorkspace } from '../context.tsx';
 import { fileUrl } from '../api.ts';
 import { dollars, duration, modelName, number, outcomeLabel, STAGES, terminal } from '../format.ts';
@@ -6,6 +6,42 @@ import type { JobView } from '../types.ts';
 import { Icon } from './Icon.tsx';
 import { ObservationPanel } from './NetworkInspector.tsx';
 import { DemoPanel, SessionPanel } from './Demos.tsx';
+// The same run heading/summary is used by local execution and shared run history.
+export function JobSummary({
+  label, title, state, children, toggleId, expanded, onToggle,
+}: {
+  label: string;
+  title: ReactNode;
+  state: string;
+  children: ReactNode;
+  toggleId?: string;
+  expanded?: boolean;
+  onToggle?: () => void;
+}) {
+  return (
+    <div className="job-summary">
+      <div
+        className="job-head"
+        data-toggle={toggleId}
+        role={onToggle ? 'button' : undefined}
+        tabIndex={onToggle ? 0 : undefined}
+        aria-expanded={onToggle ? expanded : undefined}
+        onClick={onToggle}
+        onKeyDown={onToggle ? (event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            onToggle();
+          }
+        } : undefined}
+      >
+        <span className="id">{label}</span>
+        <span className="title">{title}</span>
+        <span className={`chip ${state}`}>{outcomeLabel[state] ?? state}</span>
+      </div>
+      {children}
+    </div>
+  );
+}
 export function JobCard({ job: j }: { job: JobView }) {
   const { state: s, actions: store } = useWorkspace();
   const [busy, setBusy] = useState(false);
@@ -42,27 +78,14 @@ export function JobCard({ job: j }: { job: JobView }) {
   };
   return (
     <div className="job" data-job={j.id} hidden={!active}>
-      <div className="job-summary">
-        <div
-          className="job-head"
-          data-toggle={j.id}
-          role="button"
-          tabIndex={0}
-          aria-expanded={open}
-          onClick={() => void store.toggleExpanded(j.id).catch(store.report)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              void store.toggleExpanded(j.id).catch(store.report);
-            }
-          }}
-        >
-          <span className="id">
-            {j.project}-{j.caseId}
-          </span>
-          <span className="title">{j.title ?? `${j.project}-${j.caseId}`}</span>
-          <span className={`chip ${state}`}>{outcomeLabel[state] ?? state}</span>
-        </div>
+      <JobSummary
+        label={`${j.project}-${j.caseId}`}
+        title={j.title ?? `${j.project}-${j.caseId}`}
+        state={state}
+        toggleId={j.id}
+        expanded={open}
+        onToggle={() => void store.toggleExpanded(j.id).catch(store.report)}
+      >
         <div className="job-sub">
           <span>{j.environment ? j.environment.name + ' · ' + j.environment.userName : `${j.project}-${j.caseId}`}</span>
           <span>
@@ -189,7 +212,7 @@ export function JobCard({ job: j }: { job: JobView }) {
             </button>
           )}
         </div>
-      </div>
+      </JobSummary>
       {j.cacheClearedAt && (
         <p className="cache-expired">
           Run files were deleted by your storage retention policy on {new Date(j.cacheClearedAt).toLocaleDateString()}. The result summary

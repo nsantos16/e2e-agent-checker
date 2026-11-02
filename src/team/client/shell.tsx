@@ -33,7 +33,8 @@ export function TeamShell() {
     actions.showTab(isCases ? 'cases' : 'history');
   }, [actions, isCases]);
   useEffect(() => {
-    const refresh = () => void runs.loadPage(search.userId, search.runAfter);
+    const refresh = () =>
+      void runs.loadPage(search.userId, search.runAfter, search.runSearch);
     refresh();
     window.addEventListener('focus', refresh);
     const timer = setInterval(refresh, 15000);
@@ -41,7 +42,7 @@ export function TeamShell() {
       clearInterval(timer);
       window.removeEventListener('focus', refresh);
     };
-  }, [runs, search.userId, search.runAfter]);
+  }, [runs, search.userId, search.runAfter, search.runSearch]);
   const page = useSyncExternalStore(cases.subscribe, cases.getSnapshot);
   const live = useLiveQuery({
     query: (q) => q.from({ item: cases.collection }),
@@ -52,12 +53,14 @@ export function TeamShell() {
   const selected = records.filter(
     (row) => state.selected.has(row.id) && row.status === 'active',
   );
-  const [query, setQuery] = useState(search.search);
+  const activeSearch =
+    state.sidebarTab === 'history' ? (search.runSearch ?? '') : search.search;
+  const [query, setQuery] = useState(activeSearch);
   const typing = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => {
     clearTimeout(typing.current);
-    setQuery(search.search);
-  }, [search.search, search.after]);
+    setQuery(activeSearch);
+  }, [activeSearch, state.sidebarTab]);
   useEffect(() => () => clearTimeout(typing.current), []);
   useEffect(() => {
     const refresh = () => {
@@ -93,15 +96,21 @@ export function TeamShell() {
   }, [actions, navigate]);
   const applySearch = (value: string, replace = false) => {
     clearTimeout(typing.current);
-    actions.showTab('cases');
-    void navigate({ to: '/cases', search: { search: value }, replace });
+    if (state.sidebarTab === 'history') {
+      void navigate({
+        to: '/',
+        search: { search: '', userId: search.userId, runSearch: value },
+        replace,
+      });
+    } else {
+      void navigate({ to: '/cases', search: { search: value }, replace });
+    }
   };
   return (
     <App
       onNewVerification={home}
       content={isCases ? undefined : isRun ? <Outlet /> : <RunsDashboard />}
       viewTitle={isCases ? undefined : isRun ? 'Run details' : 'Runs'}
-      showComposer={isCases}
       executionUnavailable="Run verifications in the local app. Team worker connection is not available yet."
       selectionLabel={selected.length === 1 ? selected[0].title : undefined}
       selection={
@@ -146,44 +155,39 @@ export function TeamShell() {
             <Icon name="plus" />
           </Link>
         ) : null,
-        search:
-          state.sidebarTab === 'history' ? (
-            <Link
-              className="team-dashboard-link"
-              to="/"
-              search={{ search: '', userId: search.userId }}
-            >
-              Runs dashboard
-            </Link>
-          ) : (
-            <form
-              className="search-wrap"
-              onSubmit={(event) => {
-                event.preventDefault();
-                applySearch(query);
+        search: (
+          <form
+            className="search-wrap"
+            onSubmit={(event) => {
+              event.preventDefault();
+              applySearch(query);
+            }}
+          >
+            <Icon name="search" />
+            <input
+              id="search"
+              type="search"
+              aria-label="Search cases or runs"
+              placeholder={
+                state.sidebarTab === 'history'
+                  ? 'Search runs…'
+                  : 'Search cases…'
+              }
+              maxLength={200}
+              value={query}
+              onChange={(event) => {
+                const value = event.target.value;
+                setQuery(value);
+                clearTimeout(typing.current);
+                typing.current = setTimeout(
+                  () => applySearch(value, true),
+                  250,
+                );
               }}
-            >
-              <Icon name="search" />
-              <input
-                id="search"
-                type="search"
-                aria-label="Search cases or runs"
-                placeholder="Search cases…"
-                maxLength={200}
-                value={query}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setQuery(value);
-                  clearTimeout(typing.current);
-                  typing.current = setTimeout(
-                    () => applySearch(value, true),
-                    250,
-                  );
-                }}
-              />
-              <kbd>⌘ K</kbd>
-            </form>
-          ),
+            />
+            <kbd>⌘ K</kbd>
+          </form>
+        ),
         cases: (
           <div aria-label="Shared cases" role="region" aria-busy={page.loading}>
             {page.error && (
@@ -263,7 +267,10 @@ export function TeamShell() {
         history: (
           <>
             {runPage.rows.map((run) => (
-              <div className="history-item" key={run.id}>
+              <div
+                className={`history-item ${pathname === `/runs/${run.id}` ? 'active' : ''}`}
+                key={run.id}
+              >
                 <Link
                   className="history-open"
                   to="/runs/$runId"

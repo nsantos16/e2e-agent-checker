@@ -9,6 +9,8 @@ import { chromium, expect } from '@playwright/test';
 import { teamFixture } from './team-fixtures.ts';
 import { caseDraftSchema } from '../src/team/contracts.ts';
 import { verifyRunsDashboard } from './team-runs-browser.ts';
+import { createCase } from '../src/team/server/cases.ts';
+import { resolveActor } from '../src/team/server/auth.ts';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const output = root + '/dist/team-test';
@@ -179,17 +181,20 @@ try {
   await page.getByLabel('Test identity').selectOption('member');
   await page.getByRole('button', { name: 'Close', exact: true }).click();
 
+  // Seed pagination through the same repository, without spending the browser's
+  // HTTP rate limit on setup. Case writes through the UI are exercised above.
+  const seedActor = await resolveActor(
+    f.db,
+    f.identities.get('member')!,
+    f.config.clerkOrganizationId,
+  );
   for (let i = 0; i < 27; i++) {
-    const created = await f.app.inject({
-      method: 'POST',
-      url: '/api/team/cases',
-      headers: { authorization: 'Bearer member' },
-      payload: {
-        id: randomUUID(),
-        data: { title: `Page item ${String(i).padStart(2, '0')}` },
-      },
+    await createCase(f.db, seedActor, {
+      id: randomUUID(),
+      data: caseDraftSchema.parse({
+        title: `Page item ${String(i).padStart(2, '0')}`,
+      }),
     });
-    assert.equal(created.statusCode, 201);
   }
   await page.getByLabel('Search cases or runs').fill('Page item');
   await page.getByLabel('Search cases or runs').press('Enter');

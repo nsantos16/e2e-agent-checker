@@ -140,6 +140,7 @@ export const updateRunRequest = z
   })
   .strict();
 export const runListRequest = z.object({
+  search: z.string().trim().max(200).default(''),
   userId: z.uuid().optional(),
   after: z.string().max(300).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(25),

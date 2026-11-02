@@ -1,187 +1,6 @@
-@import "../../app/client/styles.css";
+@import '../../app/client/styles.css';
 
 /* Team controls extend the existing app; its shell, typography and themes are shared. */
-.team-dashboard-link {
-  display: block;
-  padding: 12px 16px;
-  color: var(--muted);
-  font-size: 12px;
-}
-.history-open[aria-current="page"] {
-  background: var(--surface);
-}
-.team-runs {
-  padding: 10px 0 24px;
-}
-.team-runs-header,
-.team-runs-caption,
-.team-run-main {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-.team-runs h1 {
-  margin: 6px 0;
-  font-size: 28px;
-  letter-spacing: -0.7px;
-}
-.team-runs-header p,
-.team-runs-caption > span {
-  color: var(--muted);
-  font-size: 12px;
-}
-.team-runs h2,
-.team-run-summary h2 {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-}
-.team-action {
-  border: 1px solid var(--border);
-  padding: 8px 12px;
-  font-size: 12px;
-}
-.team-run-filters {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 10px;
-  margin: 24px 0;
-}
-.team-user-filter {
-  display: grid;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--muted);
-  min-width: 200px;
-  max-width: 100%;
-}
-.team-run-filters select {
-  color: var(--text);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  padding: 8px 10px;
-  font: inherit;
-  min-width: 0;
-  width: 100%;
-}
-.team-run-stats {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  margin: 0 0 28px;
-}
-.team-run-stats > div {
-  padding: 16px;
-}
-.team-run-stats > div + div {
-  border-left: 1px solid var(--line);
-}
-.team-run-stats dt {
-  font-size: 11px;
-  color: var(--muted);
-}
-.team-run-stats dd {
-  font-size: 25px;
-  margin: 8px 0 0;
-  font-variant-numeric: tabular-nums;
-}
-.team-run-list {
-  list-style: none;
-  padding: 0;
-  margin: 14px 0 0;
-}
-.team-run-list > li {
-  border-top: 1px solid var(--line);
-  padding: 18px 0;
-}
-.team-run-main > a {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text);
-  overflow-wrap: anywhere;
-}
-.team-run-main .chip {
-  flex-shrink: 0;
-}
-.team-run-meta {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px 16px;
-  margin-top: 10px;
-  font-size: 11px;
-  color: var(--muted);
-}
-.team-run-meta time {
-  margin-left: auto;
-}
-.team-run-user {
-  display: inline-flex;
-  gap: 7px;
-  align-items: center;
-  overflow-wrap: anywhere;
-}
-.team-avatar {
-  display: inline-grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  flex: 0 0 22px;
-  border: 1px solid var(--border);
-  border-radius: 50%;
-  font-size: 9px;
-  color: var(--text);
-  background: var(--surface);
-}
-.team-runs-empty {
-  padding: 42px 16px;
-  border: 1px dashed var(--border);
-  border-radius: 10px;
-  margin-top: 18px;
-}
-.team-run-error {
-  color: var(--red);
-}
-.team-back {
-  display: inline-block;
-  color: var(--muted);
-  margin-bottom: 24px;
-  font-size: 12px;
-}
-.team-run-thread .job-head {
-  cursor: default;
-}
-.team-run-thread h1 {
-  margin: 0;
-  font-size: 15px;
-  overflow-wrap: anywhere;
-}
-.team-run-thread .run-metrics strong {
-  font-size: 13px;
-  overflow-wrap: anywhere;
-}
-.team-run-summary {
-  padding: 20px;
-  border-top: 1px solid var(--line);
-}
-.team-run-summary p {
-  white-space: pre-wrap;
-  line-height: 1.7;
-  overflow-wrap: anywhere;
-}
-.team-run-summary small,
-.team-run-note {
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.6;
-}
-.team-run-note {
-  padding: 12px 20px;
-}
 .team-new-case {
   margin-left: auto;
   display: inline-flex;
@@ -350,32 +169,6 @@
   padding: 4px;
 }
 @media (max-width: 600px) {
-  .team-runs-header {
-    align-items: flex-start;
-  }
-  .team-run-stats {
-    grid-template-columns: repeat(2, 1fr);
-  }
-  .team-run-stats > div:nth-child(3) {
-    border-left: 0;
-  }
-  .team-run-stats > div:nth-child(n + 3) {
-    border-top: 1px solid var(--line);
-  }
-  .team-runs-caption {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 6px;
-  }
-  .team-run-meta time {
-    margin-left: 0;
-  }
-  .team-user-filter {
-    width: 100%;
-  }
-  .team-run-thread .job-head {
-    flex-wrap: wrap;
-  }
   .team-panel .form-row {
     grid-template-columns: 1fr;
   }
@@ -386,4 +179,39 @@
   .team-panel {
     padding: 16px;
   }
+}
+
+/* Shared history uses the original run cards and picker controls. */
+.history-open,
+.case-copy .title {
+  color: inherit;
+  text-decoration: none;
+}
+.team-run-overview > h1 {
+  margin: 0 0 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.team-run-controls {
+  padding: 0;
+  border: 0;
+  margin: 12px 0;
+  flex-wrap: wrap;
+}
+.team-run-overview > .metrics {
+  margin-bottom: 24px;
+}
+.team-run-title {
+  color: inherit;
+  text-decoration: none;
+}
+.team-run-title:hover {
+  text-decoration: underline;
+}
+.team-back {
+  display: inline-block;
+  margin-bottom: 20px;
+  color: var(--muted);
+  font-size: 12px;
 }

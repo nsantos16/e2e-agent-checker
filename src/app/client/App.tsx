@@ -17,7 +17,6 @@ export function App({
   onNewVerification,
   content,
   viewTitle,
-  showComposer = true,
 }: {
   sidebar?: SidebarExtension;
   selection?: ReactNode;
@@ -27,7 +26,6 @@ export function App({
   onNewVerification?: () => void;
   content?: ReactNode;
   viewTitle?: string;
-  showComposer?: boolean;
 } = {}) {
   const { state: s, actions: store } = useWorkspace();
   const scroll = useRef<HTMLDivElement>(null);
@@ -107,7 +105,7 @@ export function App({
               </div></>}
             </div>
           </div>
-          {showComposer && <Composer unavailableReason={executionUnavailable} selectionLabel={selectionLabel} />}
+          <Composer unavailableReason={executionUnavailable} selectionLabel={selectionLabel} onChooseCases={() => sidebar?.onTabChange?.('cases')} />
         </main>
       </div>
       {!executionUnavailable && (

@@ -33,7 +33,7 @@ function decodeCursor(cursor: string) {
 export async function listRuns(
   db: TeamDatabase,
   actor: AuthenticatedActor,
-  input: { userId?: string; after?: string; limit: number },
+  input: { userId?: string; after?: string; search?: string; limit: number },
 ) {
   const cursor = input.after ? decodeCursor(input.after) : undefined;
   return db
@@ -43,6 +43,10 @@ export async function listRuns(
       let scope = tx.selectFrom('runs').where('runs.org_id', '=', actor.orgId);
       if (input.userId)
         scope = scope.where('runs.initiated_by', '=', input.userId);
+      if (input.search)
+        scope = scope.where(
+          sql<boolean>`strpos(lower(concat_ws(' ', data->>'title', data->>'project', data->>'caseLabel', data->>'model')), lower(${input.search})) > 0`,
+        );
       let query = scope
         .innerJoin('users', 'users.id', 'runs.initiated_by')
         .selectAll('runs')
