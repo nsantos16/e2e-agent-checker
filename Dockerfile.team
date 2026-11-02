@@ -3,7 +3,9 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY tsconfig.json tsconfig.client.json tsconfig.team.json vite.team.config.ts ./
-COPY src/team ./src/team
+# The team frontend reuses the existing app components and their shared contracts.
+# Only the independent team API and built browser assets enter the runtime image.
+COPY src ./src
 RUN npx tsc --noEmit && npm run team:check && npm run team:build && npm prune --omit=dev
 
 FROM node:24-bookworm-slim

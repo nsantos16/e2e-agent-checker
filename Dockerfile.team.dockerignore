@@ -6,5 +6,4 @@
 !tsconfig.team.json
 !vite.team.config.ts
 !src
-!src/team
-!src/team/**
+!src/**
