@@ -5,6 +5,7 @@ import { tanstackRouter } from '@tanstack/router-plugin/vite';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { teamFixture } from './team-fixtures.ts';
+import { seedTeamRuns } from './team-run-fixtures.ts';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const output = root + '/dist/team-review';
@@ -26,6 +27,7 @@ await build({
 const fixture = await teamFixture({ staticRoot: output });
 try {
   await fixture.initialize();
+  await seedTeamRuns(fixture);
   for (let i = 1; i <= 28; i++) {
     const result = await fixture.app.inject({
       method: 'POST',

@@ -78,3 +78,85 @@ export type CaseDraft = z.infer<typeof caseDraftSchema>;
 export type Actor = z.infer<typeof actorSchema>;
 export type Role = z.infer<typeof roleSchema>;
 export const canEdit = (role: Role) => role !== 'viewer';
+
+// Shared metadata only. Publishing a record does not schedule local execution.
+export const runDataSchema = z
+  .object({
+    title: z.string().trim().min(1).max(300),
+    project: z
+      .string()
+      .regex(/^[A-Z0-9_]{1,32}$/)
+      .default('LOCAL'),
+    caseLabel: z.string().max(100).default(''),
+    status: z.enum([
+      'queued',
+      'running',
+      'cancelling',
+      'done',
+      'failed',
+      'cancelled',
+      'interrupted',
+    ]),
+    outcome: z
+      .enum(['pass', 'fail', 'blocked', 'codify-failed'])
+      .nullable()
+      .default(null),
+    provider: z.string().max(100).default(''),
+    model: z.string().max(200).default(''),
+    environmentName: z.string().max(200).default(''),
+    summary: z.string().max(12000).default(''),
+    startedAt: z.iso.datetime().nullable().default(null),
+    finishedAt: z.iso.datetime().nullable().default(null),
+  })
+  .strict()
+  .refine((run) => run.outcome === null || run.status === 'done', {
+    message: 'Only a completed run can have a verification outcome.',
+    path: ['outcome'],
+  })
+  .refine(
+    (run) =>
+      !run.startedAt || !run.finishedAt || run.finishedAt >= run.startedAt,
+    {
+      message: 'A run cannot finish before it starts.',
+      path: ['finishedAt'],
+    },
+  );
+export const runUserSchema = z.object({ id: z.uuid(), name: z.string() });
+export const teamRunSchema = runDataSchema.safeExtend({
+  id: z.uuid(),
+  orgId: z.uuid(),
+  initiatedBy: runUserSchema,
+  revision: z.number().int().positive(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+});
+export const createRunRequest = z
+  .object({ id: z.uuid(), data: runDataSchema })
+  .strict();
+export const updateRunRequest = z
+  .object({
+    expectedRevision: z.number().int().positive(),
+    data: runDataSchema,
+  })
+  .strict();
+export const runListRequest = z.object({
+  userId: z.uuid().optional(),
+  after: z.string().max(300).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(25),
+});
+export const runStatsSchema = z.object({
+  total: z.number().int().nonnegative(),
+  active: z.number().int().nonnegative(),
+  passed: z.number().int().nonnegative(),
+  failed: z.number().int().nonnegative(),
+});
+export const runPageSchema = z.object({
+  items: z.array(teamRunSchema),
+  users: z.array(runUserSchema),
+  stats: runStatsSchema,
+  nextCursor: z.string().nullable(),
+});
+export type RunData = z.infer<typeof runDataSchema>;
+export type TeamRun = z.infer<typeof teamRunSchema>;
+export type RunUser = z.infer<typeof runUserSchema>;
+export type RunStats = z.infer<typeof runStatsSchema>;

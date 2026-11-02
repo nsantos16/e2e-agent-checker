@@ -11,6 +11,9 @@ export type SidebarExtension = {
   caseActions: ReactNode;
   footer: ReactNode;
   historyEmpty: ReactNode;
+  history?: ReactNode;
+  historyCount?: number;
+  onTabChange?: (tab: 'cases' | 'history') => void;
 };
 export function Sidebar({ extension, onNewVerification }: { extension?: SidebarExtension; onNewVerification?: () => void } = {}) {
   const { state: s, actions: store } = useWorkspace();
@@ -41,7 +44,7 @@ export function Sidebar({ extension, onNewVerification }: { extension?: SidebarE
           aria-selected={s.sidebarTab === 'cases'}
           aria-controls="case-panel"
           data-tab="cases"
-          onClick={() => store.showTab('cases')}
+          onClick={() => { store.showTab('cases'); extension?.onTabChange?.('cases'); }}
         >
           Cases <span id="case-count">{extension?.caseCount ?? s.cases.length}</span>
         </button>
@@ -51,9 +54,9 @@ export function Sidebar({ extension, onNewVerification }: { extension?: SidebarE
           aria-selected={s.sidebarTab === 'history'}
           aria-controls="history-panel"
           data-tab="history"
-          onClick={() => store.showTab('history')}
+          onClick={() => { store.showTab('history'); extension?.onTabChange?.('history'); }}
         >
-          Runs <span id="history-count">{visibleJobs.length || ''}</span>
+          Runs <span id="history-count">{extension?.historyCount ?? (visibleJobs.length || '')}</span>
         </button>
         {extension ? (
           extension.caseActions
@@ -158,7 +161,7 @@ export function Sidebar({ extension, onNewVerification }: { extension?: SidebarE
         </div>
         <div id="history-panel" role="tabpanel" aria-labelledby="history-tab" hidden={s.sidebarTab !== 'history'}>
           <div id="history">
-            {jobs.length ? (
+            {extension?.history ?? (jobs.length ? (
               <SidebarGroups
                 items={jobs.map((value) => ({ kind: 'run', value }))}
                 render={(item) => {
@@ -189,7 +192,7 @@ export function Sidebar({ extension, onNewVerification }: { extension?: SidebarE
               />
             ) : (
               <div className="empty">{extension?.historyEmpty ?? 'Your verification runs will appear here.'}</div>
-            )}
+            ))}
           </div>
         </div>
       </div>

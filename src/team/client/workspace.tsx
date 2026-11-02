@@ -4,6 +4,7 @@ import { DbProvider } from '@tanstack/react-db';
 import type { Actor } from '../contracts.ts';
 import type { TeamApi } from './api.ts';
 import { createCasesStore } from './cases-store.ts';
+import { createRunsStore } from './runs-store.ts';
 import { WorkspaceContext, type Workspace } from './context.tsx';
 import { routeTree } from './routeTree.gen.ts';
 import { WorkspaceProvider } from '../../app/client/context.tsx';
@@ -34,11 +35,13 @@ export function WorkspaceApp({
     onAccessLost,
     accountControls,
     cases: createCasesStore(api, `${actor.userId}:${actor.orgId}`),
+    runs: createRunsStore(api, `${actor.userId}:${actor.orgId}`),
   }));
   const [router] = useState(createTeamRouter);
   useEffect(
     () => () => {
       void workspace.cases.dispose();
+      void workspace.runs.dispose();
     },
     [workspace],
   );

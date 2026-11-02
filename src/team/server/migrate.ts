@@ -11,7 +11,7 @@ export async function migrate(pool: Pool) {
     await client.query(
       'CREATE TABLE IF NOT EXISTS checker.migrations (name text PRIMARY KEY, sha256 text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())',
     );
-    for (const name of ['001.sql']) {
+    for (const name of ['001.sql', '002.sql']) {
       const sql = await readFile(
         new URL(`./migrations/${name}`, import.meta.url),
         'utf8',

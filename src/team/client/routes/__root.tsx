@@ -6,6 +6,8 @@ export const Route = createRootRoute({
   validateSearch: z.object({
     search: z.string().max(200).catch(''),
     after: z.uuid().optional().catch(undefined),
+    userId: z.uuid().optional().catch(undefined),
+    runAfter: z.string().max(300).optional().catch(undefined),
     caseId: z
       .union([z.uuid(), z.literal('new')])
       .optional()

@@ -1,4 +1,4 @@
 import { createFileRoute } from '@tanstack/react-router';
 
-// The existing thread/composer is the home view, with no admin-page redirect.
+// The shared shell renders the runs dashboard at home, inside the original UI.
 export const Route = createFileRoute('/')({ component: () => null });

@@ -15,6 +15,9 @@ export function App({
   selectionLabel,
   overlays,
   onNewVerification,
+  content,
+  viewTitle,
+  showComposer = true,
 }: {
   sidebar?: SidebarExtension;
   selection?: ReactNode;
@@ -22,6 +25,9 @@ export function App({
   selectionLabel?: string;
   overlays?: ReactNode;
   onNewVerification?: () => void;
+  content?: ReactNode;
+  viewTitle?: string;
+  showComposer?: boolean;
 } = {}) {
   const { state: s, actions: store } = useWorkspace();
   const scroll = useRef<HTMLDivElement>(null);
@@ -29,7 +35,7 @@ export function App({
   const worktree = s.worktrees.find((w) => w.path === s.worktree);
   const running = s.jobs.filter((j) => j.status === 'running').length,
     queued = s.jobs.filter((j) => j.status === 'queued').length;
-  const title = job ? `${job.project}-${job.caseId}` : 'New verification';
+  const title = viewTitle ?? (job ? `${job.project}-${job.caseId}` : 'New verification');
   useEffect(() => {
     document.title = title + ' · e2e checker';
   }, [title]);
@@ -84,24 +90,24 @@ export function App({
             <span id="view-title">{title}</span>
             <div className="right">
               <span id="running-count">{running || queued ? `${running} running · ${queued} queued` : ''}</span>
-              <span
+              {!executionUnavailable && <span
                 id="slot-dot"
                 className={`slot-dot ${worktree?.slot?.healthy ? 'up' : ''}`}
                 title={worktree?.slot ? `Dev server on ${worktree.slot.url}` : 'Dev server starts with the run'}
-              />
+              />}
             </div>
           </header>
           <div className="thread-scroll" id="thread-scroll" ref={scroll}>
             <div className="content-column">
-              <Welcome selection={selection} />
+              {content ?? <><Welcome selection={selection} />
               <div id="jobs">
                 {s.jobs.map((j) => (
                   <JobCard key={j.id} job={j} />
                 ))}
-              </div>
+              </div></>}
             </div>
           </div>
-          <Composer unavailableReason={executionUnavailable} selectionLabel={selectionLabel} />
+          {showComposer && <Composer unavailableReason={executionUnavailable} selectionLabel={selectionLabel} />}
         </main>
       </div>
       {!executionUnavailable && (

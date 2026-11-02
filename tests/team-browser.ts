@@ -8,6 +8,7 @@ import { tanstackRouter } from '@tanstack/router-plugin/vite';
 import { chromium, expect } from '@playwright/test';
 import { teamFixture } from './team-fixtures.ts';
 import { caseDraftSchema } from '../src/team/contracts.ts';
+import { verifyRunsDashboard } from './team-runs-browser.ts';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const output = root + '/dist/team-test';
@@ -45,6 +46,7 @@ try {
       unexpectedApi.push(path);
   });
   await page.goto(url + '/');
+  await verifyRunsDashboard(page, f, url);
   await expect(
     page.getByRole('heading', { name: 'What should we verify?' }),
   ).toBeVisible();
@@ -63,7 +65,11 @@ try {
     page.getByRole('button', { name: 'Run', exact: true }),
   ).toBeDisabled();
   await expect(page.getByRole('table')).toHaveCount(0);
-  assert.equal(new URL(page.url()).pathname, '/', 'home remains the thread');
+  assert.equal(
+    new URL(page.url()).pathname,
+    '/cases',
+    'new verification retains the thread',
+  );
   await page.getByRole('link', { name: 'New case', exact: true }).click();
   await page.getByLabel('Title', { exact: true }).fill('Team browser check');
   await page.getByLabel('Status', { exact: true }).selectOption('active');
@@ -219,13 +225,13 @@ try {
   assert.equal(page.url(), detailsUrl);
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'New verification' }).click();
-  await expect(page).toHaveURL(url + '/?search=');
+  await expect(page).toHaveURL(url + '/cases?search=');
   await expect(
     page.getByRole('heading', { name: 'What should we verify?' }),
   ).toBeVisible();
   await page.getByRole('tab', { name: /^Runs/ }).click();
   await expect(
-    page.getByText('Shared run history will appear here', { exact: false }),
+    page.getByRole('heading', { name: 'Runs', exact: true }),
   ).toBeVisible();
   await page.getByRole('tab', { name: /^Cases/ }).click();
   const screenshotRoot = root + '/runs/team-thread-review';
@@ -274,7 +280,7 @@ try {
   assert.equal((await f.app.inject('/api/team/missing')).statusCode, 404);
   assert.equal((await f.app.inject('/account')).statusCode, 200);
   console.log(
-    'Team browser flow passed: original thread/sidebar/composer, desktop/mobile, themes, account dialog, API isolation, create, validation, reload, edit, conflict, history, read-only access, identity disposal, pagination, session revocation and SPA fallback.',
+    'Team browser flow passed: runs dashboard, trusted user attribution, user filtering, totals, paging/reload/history, run threads, empty/error states, mobile, original thread/sidebar/composer, themes, account dialog, API isolation, case edits, conflicts, read-only access, identity disposal and session revocation.',
   );
 } catch (error) {
   console.error({

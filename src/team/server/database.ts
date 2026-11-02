@@ -1,6 +1,6 @@
 import { Pool } from 'pg';
 import { Kysely, PostgresDialect, type Generated } from 'kysely';
-import type { Actor, CaseDraft, Role, TeamCase } from '../contracts.ts';
+import type { Actor, CaseDraft, Role, TeamCase, RunData } from '../contracts.ts';
 
 export interface Database {
   organizations: { id: string; clerk_org_id: string; name: string };
@@ -37,6 +37,15 @@ export interface Database {
     case_id: string;
     revision: number;
     body: TeamCase;
+  };
+  runs: {
+    id: string;
+    org_id: string;
+    initiated_by: string;
+    data: RunData;
+    revision: number;
+    created_at: Date;
+    updated_at: Date;
   };
   audit_events: {
     id: string;

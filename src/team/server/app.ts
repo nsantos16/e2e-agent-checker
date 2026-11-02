@@ -11,6 +11,9 @@ import {
   createCaseRequest,
   updateCaseRequest,
   roleSchema,
+  runListRequest,
+  createRunRequest,
+  updateRunRequest,
 } from '../contracts.ts';
 import { resolveActor, type IdentityProvider } from './auth.ts';
 import type { TeamConfig } from './config.ts';
@@ -19,6 +22,7 @@ import { ApiError, forbidden } from './errors.ts';
 import { createCase, getCase, listCases, updateCase } from './cases.ts';
 import { serveTeamBuild } from './static.ts';
 import { lockActorAccess } from './access.ts';
+import { getRun, listRuns, publishRun } from './runs.ts';
 
 export async function createTeamApp(options: {
   db: TeamDatabase;
@@ -39,38 +43,32 @@ export async function createTeamApp(options: {
   await app.register(rateLimit, { max: 120, timeWindow: '1 minute' });
   app.setErrorHandler((error, request, reply) => {
     if (error instanceof z.ZodError)
-      return reply
-        .code(400)
-        .send({
-          code: 'INVALID_INPUT',
-          error: 'Check the submitted fields.',
-          issues: error.issues.map(({ path, message }) => ({ path, message })),
-        });
+      return reply.code(400).send({
+        code: 'INVALID_INPUT',
+        error: 'Check the submitted fields.',
+        issues: error.issues.map(({ path, message }) => ({ path, message })),
+      });
     if (error instanceof ApiError)
       return reply
         .code(error.status)
         .send({ code: error.code, error: error.message });
     const status = (error as { statusCode?: number }).statusCode;
     if (status && status >= 400 && status < 500)
-      return reply
-        .code(status)
-        .send({
-          code: 'INVALID_REQUEST',
-          error:
-            status === 429
-              ? 'Too many requests. Try again shortly.'
-              : 'Invalid request.',
-        });
+      return reply.code(status).send({
+        code: 'INVALID_REQUEST',
+        error:
+          status === 429
+            ? 'Too many requests. Try again shortly.'
+            : 'Invalid request.',
+      });
     request.log.error(
       { code: (error as { code?: string }).code },
       'Team request failed',
     );
-    return reply
-      .code(500)
-      .send({
-        code: 'INTERNAL_ERROR',
-        error: 'The request could not be completed.',
-      });
+    return reply.code(500).send({
+      code: 'INTERNAL_ERROR',
+      error: 'The request could not be completed.',
+    });
   });
   app.addHook('onSend', async (_request, reply) => {
     reply
@@ -85,7 +83,7 @@ export async function createTeamApp(options: {
   app.get('/health/ready', async (_request, reply) => {
     try {
       const result =
-        await sql`select 1 from checker.migrations where name = '001.sql'`.execute(
+        await sql`select 1 from checker.migrations where name = '002.sql'`.execute(
           db,
         );
       if (!result.rows.length)
@@ -237,6 +235,33 @@ export async function createTeamApp(options: {
         );
       });
       api.get('/me', async (request) => actorSchema.parse(request.teamActor));
+      api.get('/runs', async (request) =>
+        listRuns(db, request.teamActor!, runListRequest.parse(request.query)),
+      );
+      api.get('/runs/:id', async (request) =>
+        getRun(
+          db,
+          request.teamActor!,
+          z.object({ id: z.uuid() }).parse(request.params).id,
+        ),
+      );
+      api.post('/runs', async (request, reply) =>
+        reply
+          .code(201)
+          .send(
+            await publishRun(
+              db,
+              request.teamActor!,
+              createRunRequest.parse(request.body),
+            ),
+          ),
+      );
+      api.patch('/runs/:id', async (request) =>
+        publishRun(db, request.teamActor!, {
+          id: z.object({ id: z.uuid() }).parse(request.params).id,
+          ...updateRunRequest.parse(request.body),
+        }),
+      );
       api.get('/cases', async (request) =>
         listCases(db, request.teamActor!, caseListRequest.parse(request.query)),
       );
