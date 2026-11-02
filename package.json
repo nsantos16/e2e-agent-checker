@@ -23,6 +23,7 @@
     "team:dev": "node --env-file-if-exists=.env.team node_modules/vite/bin/vite.js --config vite.team.config.ts",
     "team:build": "vite build --config vite.team.config.ts",
     "team:check": "tsc -p tsconfig.team.json --noEmit",
+    "team:review": "node tests/team-review.ts",
     "test:team": "node --test tests/team-*.test.ts",
     "test:team:browser": "node tests/team-browser.ts"
   },

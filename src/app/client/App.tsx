@@ -1,6 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { useWorkspace } from './context.tsx';
-import { Sidebar } from './components/Sidebar.tsx';
+import { Sidebar, type SidebarExtension } from './components/Sidebar.tsx';
 import { Composer, Welcome } from './components/Composer.tsx';
 import { JobCard } from './components/JobCard.tsx';
 import { ModelPicker } from './components/ModelPicker.tsx';
@@ -8,7 +8,21 @@ import { Settings } from './components/Settings.tsx';
 import { ImportCase, RunOptions } from './components/RunDialogs.tsx';
 import { Icon } from './components/Icon.tsx';
 import { ItemDialogs } from './components/ItemDialogs.tsx';
-export function App() {
+export function App({
+  sidebar,
+  selection,
+  executionUnavailable,
+  selectionLabel,
+  overlays,
+  onNewVerification,
+}: {
+  sidebar?: SidebarExtension;
+  selection?: ReactNode;
+  executionUnavailable?: string;
+  selectionLabel?: string;
+  overlays?: ReactNode;
+  onNewVerification?: () => void;
+} = {}) {
   const { state: s, actions: store } = useWorkspace();
   const scroll = useRef<HTMLDivElement>(null);
   const job = s.jobs.find((j) => j.id === s.activeJob);
@@ -39,6 +53,7 @@ export function App() {
       if (event.key.toLowerCase() === 'n') {
         event.preventDefault();
         store.beginDraft();
+        onNewVerification?.();
       }
       if (event.key.toLowerCase() === 'k') {
         event.preventDefault();
@@ -48,12 +63,12 @@ export function App() {
     };
     document.addEventListener('keydown', keydown);
     return () => document.removeEventListener('keydown', keydown);
-  }, [store]);
+  }, [store, onNewVerification]);
   return (
     <>
       <div className="mobile-scrim" id="sidebar-scrim" onClick={() => store.patch({ sidebarOpen: false })} />
       <div className="app">
-        <Sidebar />
+        <Sidebar extension={sidebar} onNewVerification={onNewVerification} />
         <main className="workspace">
           <header className="topbar">
             <button
@@ -78,7 +93,7 @@ export function App() {
           </header>
           <div className="thread-scroll" id="thread-scroll" ref={scroll}>
             <div className="content-column">
-              <Welcome />
+              <Welcome selection={selection} />
               <div id="jobs">
                 {s.jobs.map((j) => (
                   <JobCard key={j.id} job={j} />
@@ -86,14 +101,19 @@ export function App() {
               </div>
             </div>
           </div>
-          <Composer />
+          <Composer unavailableReason={executionUnavailable} selectionLabel={selectionLabel} />
         </main>
       </div>
-      <ModelPicker key={s.dialog === 'models' ? 'open' : 'closed'} open={s.dialog === 'models'} />
-      <Settings open={s.dialog === 'settings'} />
-      <RunOptions open={s.dialog === 'options'} />
-      <ImportCase open={s.dialog === 'import'} />
-      <ItemDialogs />
+      {!executionUnavailable && (
+        <>
+          <ModelPicker key={s.dialog === 'models' ? 'open' : 'closed'} open={s.dialog === 'models'} />
+          <Settings open={s.dialog === 'settings'} />
+          <RunOptions open={s.dialog === 'options'} />
+          <ImportCase open={s.dialog === 'import'} />
+          <ItemDialogs />
+        </>
+      )}
+      {overlays}
     </>
   );
 }

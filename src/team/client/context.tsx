@@ -1,4 +1,4 @@
-import { createContext, useContext } from 'react';
+import { createContext, useContext, type ReactNode } from 'react';
 import type { Actor } from '../contracts.ts';
 import type { CasesStore } from './cases-store.ts';
 import type { TeamApi } from './api.ts';
@@ -7,6 +7,7 @@ export type Workspace = {
   cases: CasesStore;
   api: TeamApi;
   onAccessLost: () => void;
+  accountControls?: ReactNode;
 };
 export const WorkspaceContext = createContext<Workspace | null>(null);
 export const useWorkspace = () => {

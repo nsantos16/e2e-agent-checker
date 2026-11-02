@@ -1,8 +1,7 @@
-import { createFileRoute, Link } from '@tanstack/react-router';
+import { createFileRoute } from '@tanstack/react-router';
 import { useLiveQuery, eq } from '@tanstack/react-db';
 import { useForm } from '@tanstack/react-form';
-import { useTable } from '@tanstack/react-table';
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
 import {
   canEdit,
@@ -11,174 +10,30 @@ import {
   type TeamCase,
 } from '../../contracts.ts';
 import { useWorkspace } from '../context.tsx';
+import { Dialog } from '../../../app/client/components/Dialog.tsx';
 
-export const Route = createFileRoute('/cases')({
-  validateSearch: z.object({
-    search: z.string().max(200).catch(''),
-    after: z.uuid().optional().catch(undefined),
-    caseId: z
-      .union([z.uuid(), z.literal('new')])
-      .optional()
-      .catch(undefined),
-  }),
-  component: Cases,
-});
+export const Route = createFileRoute('/cases')({ component: Cases });
 function Cases() {
-  const { cases, actor } = useWorkspace();
+  const { cases } = useWorkspace();
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
-  const page = useSyncExternalStore(cases.subscribe, cases.getSnapshot);
-  const live = useLiveQuery({
-    query: (q) => q.from({ item: cases.collection }),
-  });
-  const rows = (live.data ?? []).filter((row) => page.ids.includes(row.id));
-  useEffect(() => {
-    const refresh = () => {
-      void cases.loadPage(search.search, search.after);
-    };
-    refresh();
-    window.addEventListener('focus', refresh);
-    const timer = window.setInterval(refresh, 15000);
-    return () => {
-      clearInterval(timer);
-      window.removeEventListener('focus', refresh);
-    };
-  }, [cases, search.search, search.after]);
-  const table = useTable({
-    features: {},
-    data: rows,
-    getRowId: (row) => row.id,
-    columns: [
-      {
-        accessorKey: 'title',
-        header: 'Case',
-        cell: (cell) => (
-          <Link
-            to="/cases"
-            search={{ ...search, caseId: cell.row.original.id }}
-          >
-            {cell.row.original.title}
-          </Link>
-        ),
-      },
-      { accessorKey: 'project', header: 'Project' },
-      { accessorKey: 'status', header: 'Status' },
-      { accessorKey: 'revision', header: 'Revision' },
-    ],
-  });
+  const close = () => {
+    void navigate({ search: { ...search, caseId: undefined } });
+    void cases.loadPage(search.search, search.after);
+  };
+  if (!search.caseId) return null;
   return (
-    <>
-      <header className="page-heading">
-        <div>
-          <p className="eyebrow">Shared catalog</p>
-          <h1>Cases</h1>
-          <p>Create and review the checks your team runs.</p>
-        </div>
-        {canEdit(actor.role) && (
-          <Link
-            className="button primary"
-            to="/cases"
-            search={{ ...search, caseId: 'new' }}
-          >
-            New case
-          </Link>
-        )}
-      </header>
-      <form
-        className="search"
-        onSubmit={(event) => {
-          event.preventDefault();
-          const data = new FormData(event.currentTarget);
-          void navigate({
-            search: { search: String(data.get('search') ?? '') },
-          });
-        }}
-      >
-        <label htmlFor="case-search">Find a case</label>
-        <div>
-          <input
-            id="case-search"
-            name="search"
-            key={search.search}
-            defaultValue={search.search}
-            placeholder="Search titles"
-            maxLength={200}
-          />
-          <button>Search</button>
-        </div>
-      </form>
-      {page.error && (
-        <p className="error" role="alert">
-          {page.error}{' '}
-          <button
-            onClick={() => void cases.loadPage(search.search, search.after)}
-          >
-            Retry
-          </button>
-        </p>
-      )}
-      <div className="table-wrap" aria-busy={page.loading}>
-        <table>
-          <thead>
-            {table.getHeaderGroups().map((group) => (
-              <tr key={group.id}>
-                {group.headers.map((header) => (
-                  <th key={header.id}>
-                    <table.FlexRender header={header} />
-                  </th>
-                ))}
-              </tr>
-            ))}
-          </thead>
-          <tbody>
-            {table.getRowModel().rows.map((row) => (
-              <tr key={row.id}>
-                {row.getAllCells().map((cell) => (
-                  <td key={cell.id}>
-                    <table.FlexRender cell={cell} />
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {!rows.length && (
-          <p className="empty">
-            {page.loading
-              ? 'Loading cases…'
-              : page.error
-                ? 'Cases could not be loaded.'
-                : 'No cases found. Create a case or adjust your search.'}
-          </p>
-        )}
+    <Dialog
+      id="team-case-dialog"
+      className="team-dialog"
+      title={search.caseId === 'new' ? 'New case' : 'Case details'}
+      open
+      onClose={close}
+    >
+      <div className="team-panel">
+        <CasePanel key={search.caseId} id={search.caseId} onDone={close} />
       </div>
-      <div className="pagination">
-        <span>{rows.length} cases on this page</span>
-        {search.after && (
-          <Link to="/cases" search={{ search: search.search }}>
-            First page
-          </Link>
-        )}
-        {page.nextCursor && (
-          <Link
-            to="/cases"
-            search={{ search: search.search, after: page.nextCursor }}
-          >
-            Next page
-          </Link>
-        )}
-      </div>
-      {search.caseId && (
-        <CasePanel
-          key={search.caseId}
-          id={search.caseId}
-          onDone={() => {
-            void navigate({ search: { ...search, caseId: undefined } });
-            void cases.loadPage(search.search, search.after);
-          }}
-        />
-      )}
-    </>
+    </Dialog>
   );
 }
 function CasePanel({ id, onDone }: { id: string; onDone: () => void }) {

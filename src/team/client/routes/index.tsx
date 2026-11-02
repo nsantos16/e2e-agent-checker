@@ -1,6 +1,4 @@
-import { createFileRoute, redirect } from '@tanstack/react-router';
-export const Route = createFileRoute('/')({
-  beforeLoad: () => {
-    throw redirect({ to: '/cases', search: { search: '' } });
-  },
-});
+import { createFileRoute } from '@tanstack/react-router';
+
+// The existing thread/composer is the home view, with no admin-page redirect.
+export const Route = createFileRoute('/')({ component: () => null });

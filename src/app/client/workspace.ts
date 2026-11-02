@@ -45,7 +45,7 @@ export type WorkspaceState = {
   theme: string;
   ready: boolean;
 };
-export function createWorkspace(request: Api = api) {
+export function createWorkspace(request: Api = api, { localExecution = true } = {}) {
   const savedTargets = preferences.json<unknown>('run-targets', []);
   const savedGroups = preferences.json<unknown>('collapsed-groups', []);
   const targets = Array.isArray(savedTargets)
@@ -99,6 +99,9 @@ export function createWorkspace(request: Api = api) {
     theme: preferences.get('theme') === 'light' ? 'light' : 'dark',
     ready: false,
   };
+  // Shared mode supplies its domain collections separately. Never load local
+  // identities, targets or history into an authenticated team workspace.
+  if (!localExecution) Object.assign(state, { targets: [], activeJob: null, environmentId: '', worktree: '' });
   const listeners = new Set<() => void>();
   let controller = new AbortController();
   let started = false;
@@ -115,6 +118,7 @@ export function createWorkspace(request: Api = api) {
     if (!controller.signal.aborted && !(error instanceof Error && error.name === 'AbortError')) patch({ error: errorMessage(error) });
   };
   const call: Api = async <T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> => {
+    if (!localExecution) throw new Error('Local execution is unavailable in this workspace.');
     const currentSignal = signal ? AbortSignal.any([controller.signal, signal]) : controller.signal;
     currentSignal.throwIfAborted();
     const result = await request<T>(path, body, currentSignal);
@@ -131,6 +135,7 @@ export function createWorkspace(request: Api = api) {
     return promise;
   };
   const updateUrl = (id: string | null) => {
+    if (!localExecution) return;
     if (typeof location === 'undefined' || !/^https?:$/.test(location.protocol)) return;
     const url = new URL(location.href);
     if (id) url.searchParams.set('job', id);
@@ -274,7 +279,7 @@ export function createWorkspace(request: Api = api) {
       patch({ worktrees, worktree: worktrees.some((w) => w.path === state.worktree) ? state.worktree : (worktrees[0]?.path ?? '') });
     });
   const beginDraft = (clear = true) => {
-    preferences.set('active-job', null);
+    if (localExecution) preferences.set('active-job', null);
     updateUrl(null);
     patch({ activeJob: null, expanded: new Set(), ...(clear ? { selected: new Set<string>() } : {}), sidebarTab: 'cases', search: '' });
   };
@@ -408,6 +413,10 @@ export function createWorkspace(request: Api = api) {
     }
   };
   const run = async (keys = [...state.selected]) => {
+    if (!localExecution) {
+      patch({ error: 'Run verifications from the local app until a worker is connected.' });
+      return;
+    }
     if (state.submitting) return;
     if (!keys.length) {
       report(new Error('Select at least one case.'));
@@ -639,42 +648,44 @@ export function createWorkspace(request: Api = api) {
             if (!document.hidden) void task().catch(report);
           }, ms),
         );
-      void (async () => {
-        await Promise.all([
-          (async () => {
-            const version = environmentVersion;
-            const config = await call<{
-              environments?: Environment[];
-              roles: string[];
-            }>('/api/config');
-            if (generation === epoch && version === environmentVersion)
-              setEnvironments(
-                config.environments ?? [
-                  { id: 'local', name: 'Local development', kind: 'worktree', users: config.roles.map((id) => ({ id, name: id })) },
-                ],
-              );
-          })(),
-          refreshCases(),
-          refreshWorktrees(),
-          refreshProviders(),
-          refreshJobs(),
-        ]);
-        if (generation !== epoch) return;
-        if (state.activeJob) {
-          try {
-            await selectJob(state.activeJob);
-          } catch (error) {
-            beginDraft();
-            report(error);
+      if (!localExecution) patch({ ready: true });
+      else
+        void (async () => {
+          await Promise.all([
+            (async () => {
+              const version = environmentVersion;
+              const config = await call<{
+                environments?: Environment[];
+                roles: string[];
+              }>('/api/config');
+              if (generation === epoch && version === environmentVersion)
+                setEnvironments(
+                  config.environments ?? [
+                    { id: 'local', name: 'Local development', kind: 'worktree', users: config.roles.map((id) => ({ id, name: id })) },
+                  ],
+                );
+            })(),
+            refreshCases(),
+            refreshWorktrees(),
+            refreshProviders(),
+            refreshJobs(),
+          ]);
+          if (generation !== epoch) return;
+          if (state.activeJob) {
+            try {
+              await selectJob(state.activeJob);
+            } catch (error) {
+              beginDraft();
+              report(error);
+            }
           }
-        }
-        if (generation !== epoch) return;
-        patch({ ready: true });
-        poll(refreshJobs, 2000);
-        poll(refreshCases, 5000);
-        poll(refreshEnvironments, 10000);
-        poll(refreshWorktrees, 10000);
-      })().catch(report);
+          if (generation !== epoch) return;
+          patch({ ready: true });
+          poll(refreshJobs, 2000);
+          poll(refreshCases, 5000);
+          poll(refreshEnvironments, 10000);
+          poll(refreshWorktrees, 10000);
+        })().catch(report);
       return () => {
         started = false;
         generation++;

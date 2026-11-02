@@ -1,53 +1,28 @@
-import { createRootRoute, Link, Outlet } from '@tanstack/react-router';
-import { useWorkspace } from '../context.tsx';
+import { createRootRoute, Link } from '@tanstack/react-router';
+import { z } from 'zod';
+import { TeamShell } from '../shell.tsx';
+
 export const Route = createRootRoute({
-  component: Layout,
+  validateSearch: z.object({
+    search: z.string().max(200).catch(''),
+    after: z.uuid().optional().catch(undefined),
+    caseId: z
+      .union([z.uuid(), z.literal('new')])
+      .optional()
+      .catch(undefined),
+  }),
+  component: TeamShell,
   notFoundComponent: () => (
-    <main>
-      <h1>Page not found</h1>
-      <Link to="/cases" search={{ search: '' }}>
-        Open cases
+    <div className="team-route-message" role="alert">
+      Page not found.{' '}
+      <Link to="/" search={{ search: '' }}>
+        Return to your workspace
       </Link>
-    </main>
+    </div>
   ),
-  errorComponent: ({ error, reset }) => (
-    <main role="alert">
-      <h1>Could not open this page</h1>
-      <p>{error instanceof Error ? error.message : 'Please try again.'}</p>
-      <button onClick={reset}>Try again</button>
-    </main>
+  errorComponent: ({ reset }) => (
+    <div className="team-route-message" role="alert">
+      Could not open this view. <button onClick={reset}>Try again</button>
+    </div>
   ),
 });
-function Layout() {
-  const { actor } = useWorkspace();
-  return (
-    <div className="workspace">
-      <aside>
-        <Link className="brand" to="/cases" search={{ search: '' }}>
-          Checker<span>Team workspace</span>
-        </Link>
-        <nav>
-          <Link
-            to="/cases"
-            search={{ search: '' }}
-            activeProps={{ className: 'active' }}
-          >
-            Cases
-          </Link>
-          <Link to="/account" activeProps={{ className: 'active' }}>
-            Account
-          </Link>
-        </nav>
-        <div className="identity">
-          <strong>{actor.organizationName}</strong>
-          <span>
-            {actor.name} · {actor.role}
-          </span>
-        </div>
-      </aside>
-      <main className="content">
-        <Outlet />
-      </main>
-    </div>
-  );
-}

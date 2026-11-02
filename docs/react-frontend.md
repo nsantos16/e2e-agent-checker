@@ -35,6 +35,12 @@ Existing preferences, case and environment formats, URLs and MCP tool schemas re
 
 The implementation follows `vercel-composition-patterns` and `vercel-react-best-practices`: state ownership in a provider, explicit feature components, children-based composition, parallel independent reads, shared polling, stable keys, scoped cleanup and derived values calculated during rendering.
 
+## Shared team integration
+
+The team entrypoint reuses `App`, `Sidebar`, `Welcome`, `Composer`, `Dialog` and the existing stylesheet. It supplies shared sidebar content and dialogs through composition; it does not define a second application layout. TanStack Router owns search/pagination and case/account deep links. `/` stays on the original thread workspace. Clerk gates access and supplies organization/account controls inside the Account dialog.
+
+TanStack DB owns shared case records. The existing workspace provider retains transient presentation state in shared mode, with local API startup/polling and execution disabled. No remembered local run/provider selection is loaded. The team browser regression asserts that all domain requests use `/api/team`, verifies identity disposal and permission enforcement against PostgreSQL, and covers the preserved shell, selection, dialog history, themes and responsive layout. Local execution, settings and evidence playback continue through the unchanged local entrypoint and their existing regression suites.
+
 ## Verification
 
 The browser scripts in `tests/` load the built React app in isolated frames with fixture APIs and preferences. They operate real controls and manually trigger polling; they do not depend on UI globals or internal render functions. The workspace suite covers desktop/mobile layouts, environment CRUD, model selection, network inspection, keyboard behavior and safe text rendering. The playback suite checks DOM identity across polling, evidence updates and new runs.

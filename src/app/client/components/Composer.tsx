@@ -3,7 +3,8 @@ import { useWorkspace } from '../context.tsx';
 import { caseKey, modelName } from '../format.ts';
 import { Icon } from './Icon.tsx';
 import { SelectPicker } from './Picker.tsx';
-export function Welcome() {
+import type { ReactNode } from 'react';
+export function Welcome({ selection }: { selection?: ReactNode } = {}) {
   const { state: s, actions: store } = useWorkspace();
   const picked = s.cases.filter((c) => s.selected.has(caseKey(c)));
   return (
@@ -33,36 +34,38 @@ export function Welcome() {
             )}
       </div>
       <div id="selection-preview">
-        {!!picked.length && (
-          <div className="selected-preview">
-            <div className="eyebrow">Ready to verify</div>
-            {picked.map((c) => (
-              <div key={caseKey(c)} className="selected-case">
-                <small>{caseKey(c)}</small>
-                <span>{c.title}</span>
-                <button
-                  className="icon-btn"
-                  data-remove-case={caseKey(c)}
-                  aria-label={`Remove ${caseKey(c)}`}
-                  onClick={() => store.selectCase(caseKey(c))}
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
+        {selection ??
+          (!!picked.length && (
+            <div className="selected-preview">
+              <div className="eyebrow">Ready to verify</div>
+              {picked.map((c) => (
+                <div key={caseKey(c)} className="selected-case">
+                  <small>{caseKey(c)}</small>
+                  <span>{c.title}</span>
+                  <button
+                    className="icon-btn"
+                    data-remove-case={caseKey(c)}
+                    aria-label={`Remove ${caseKey(c)}`}
+                    onClick={() => store.selectCase(caseKey(c))}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          ))}
       </div>
     </div>
   );
 }
-export function Composer() {
+export function Composer({ unavailableReason, selectionLabel }: { unavailableReason?: string; selectionLabel?: string } = {}) {
   const { state: s, actions: store } = useWorkspace();
   const ready = s.forceFresh ? store.readyTargets() : s.targets,
     count = s.selected.size * ready.length,
     environment = store.environment();
   const worktree = s.worktrees.find((w) => w.path === s.worktree);
   const disabled =
+    !!unavailableReason ||
     !count ||
     ready.length !== s.targets.length ||
     !environment ||
@@ -85,9 +88,10 @@ export function Composer() {
               requestAnimationFrame(() => document.getElementById('search')?.focus());
             }}
           >
-            {s.selected.size
-              ? `${s.selected.size} case${s.selected.size === 1 ? '' : 's'} selected${s.selected.size === 1 ? ' · ' + [...s.selected][0] : ''}`
-              : 'Choose cases from the sidebar'}
+            {selectionLabel ??
+              (s.selected.size
+                ? `${s.selected.size} case${s.selected.size === 1 ? '' : 's'} selected${s.selected.size === 1 ? ' · ' + [...s.selected][0] : ''}`
+                : 'Choose cases from the sidebar')}
           </button>
           <button
             id="clear-selection"
@@ -103,6 +107,7 @@ export function Composer() {
         <div className="composer-toolbar">
           <button
             id="model-button"
+            disabled={!!unavailableReason}
             className="control"
             aria-haspopup="dialog"
             aria-controls="model-dialog"
@@ -171,6 +176,7 @@ export function Composer() {
           <span className="spacer" />
           <button
             id="options-open"
+            disabled={!!unavailableReason}
             className="icon-btn"
             aria-label="Run options"
             title="Run options"
@@ -186,10 +192,14 @@ export function Composer() {
       </div>
       <div className="dock-note">
         <span id="composer-hint">
-          {s.mockEnabled ? 'Mocked frontend · ' : ''}
-          {s.selected.size && ready.length
-            ? `${s.selected.size} case${s.selected.size === 1 ? '' : 's'} × ${ready.length} model${ready.length === 1 ? '' : 's'} · ${count} run${count === 1 ? '' : 's'}`
-            : 'Reuse saved spec or author a new one'}
+          {unavailableReason ?? (
+            <>
+              {s.mockEnabled ? 'Mocked frontend · ' : ''}
+              {s.selected.size && ready.length
+                ? `${s.selected.size} case${s.selected.size === 1 ? '' : 's'} × ${ready.length} model${ready.length === 1 ? '' : 's'} · ${count} run${count === 1 ? '' : 's'}`
+                : 'Reuse saved spec or author a new one'}
+            </>
+          )}
         </span>
         <span>⌘ Enter to run</span>
       </div>

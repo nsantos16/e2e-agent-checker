@@ -2,6 +2,10 @@
 
 This is the first implementation slice of [milestone 1](research/team-web-roadmap.md): an independent checker API, PostgreSQL persistence, Clerk authentication, and a shared case workspace. Verification, worktrees, provider subscriptions, recording and demos continue to run locally.
 
+The team client mounts the existing `src/app/client/App.tsx`, sidebar, thread, composer, dialogs and stylesheet. Shared cases appear in the existing sidebar; editing and account-session controls open in dialogs. Clerk gates this same workspace and its organization/account controls live in the Account dialog. The authenticated home route is `/`, and direct case links still work. The separate table dashboard and its layout/style definitions have been removed.
+
+Shared case data comes directly from TanStack DB; selected IDs, dialogs and theme remain transient presentation state. The shared UI does not query local provider/worktree/job APIs or reuse a remembered local identity or run. Team execution and shared run history remain unavailable until the worker/run milestones are implemented; controls state that limitation. `npm run app` retains the existing local execution, settings and evidence flows.
+
 Milestone 1 is **in progress**. Live Clerk admission/revocation and hosted staging have not been verified. Shared verification-session/run metadata, artifact metadata and a complete historical import are still pending. A sign-in session on the Account page is a Clerk login session, not a verification session.
 
 ## Runtime boundaries
@@ -10,7 +14,7 @@ Milestone 1 is **in progress**. Live Clerk admission/revocation and hosted stagi
 | --- | --- |
 | `src/team/server` | Fastify API, Clerk verification, application permissions, transactions, migrations and provisioning CLI |
 | `src/team/contracts.ts` | Browser-safe Zod contracts; internal UUIDs in domain records |
-| `src/team/client` | React/Vite, TanStack Router, DB, Form and Table; case list/editor and account sessions |
+| `src/team/client` | Existing React/Vite app components and styles, TanStack Router/DB/Form; shared sidebar cases and case/account dialogs |
 | `Dockerfile.team` | Independent Node 24 image with the API and built SPA; no worker entrypoint or target-backend source/configuration |
 
 The API accepts Clerk bearer session tokens, restricts the active organization and trusted frontend origin, and checks current Clerk session and organization membership on every request. Clerk failure denies access. This adds provider traffic for the small pilot; measure limits and latency before expanding.
@@ -25,11 +29,11 @@ Signed deletion webhooks create durable user/membership tombstones, even before 
 
 Each case write stores the canonical organization-scoped case, an application version and an attributed audit event in one transaction. Creates use a caller-generated UUID as an idempotency key; different content under the same key conflicts. Edits require the previously read revision. Write transactions recheck and lock user, membership and session access. API callers cannot supply their own author or organization.
 
-The frontend uses a **direct TanStack DB adapter**, pinned to `@tanstack/react-db` `1.0.0-rc.1.1`. Checker application data uses no Query cache, Query hook or Query collection adapter. DB owns case records and live queries. Form and Table handle editing and presentation; Router owns URL filters and selection; Clerk owns authentication. React state holds transient controls and the account view's provider-owned session response. Clerk brings `query-core` transitively for its SDK internals; checker domain state does not use it.
+The frontend uses a **direct TanStack DB adapter**, pinned to `@tanstack/react-db` `1.0.0-rc.1.1`. Checker application data uses no Query cache, Query hook or Query collection adapter. DB owns case records and live queries. Form handles editing; Router owns URL filters and selection; Clerk owns authentication. React state holds transient controls and the account view's provider-owned session response. Clerk brings `query-core` transitively for its SDK internals; checker domain state does not use it.
 
 Authorized HTTP pages refresh on focus and every 15 seconds. Optimistic edits settle against server-confirmed revisions; failures roll back. Older snapshots cannot replace newer rows. Page IDs/cursors describe a partial result set, not the whole catalog. Retention is bounded to 250 cached rows while protecting open/pending cases. Identity changes abort requests and dispose collections; late responses cannot restore them. Revisioned SSE synchronization follows in milestone 2.
 
-The editor supports title, project, status, description and ordered action/result steps. Other case fields survive edits and are supported by the API. Active cases require meaningful steps. Archived cases remain in this initial list; hard deletion and broader catalog controls are deferred.
+The case dialog supports title, project, status, description and ordered action/result steps. Other case fields survive edits and are supported by the API. Active cases require meaningful steps. Archived cases remain in this initial list; hard deletion and broader catalog controls are deferred.
 
 ## Local setup
 
@@ -84,6 +88,14 @@ TEAM_TEST_DATABASE_URL="$CHECKER_TEST_DB_URL" npm run test:team
 TEAM_TEST_DATABASE_URL="$CHECKER_TEST_DB_URL" npm run test:team:browser
 ```
 
-The database suite checks actual transactions, team isolation, roles, conflicts, idempotency, migrations, signed webhook tombstones, session ownership/revocation, API restart and a case import. Collection tests cover confirmation/rollback, stale responses, pagination and identity disposal. The browser runner builds a test-only entrypoint outside the production bundle and uses the real API/database with an injected identity provider. It verifies edits, validation, conflicts, deep links/reload/history, pagination, read-only access, identity disposal and current-session revocation. These checks do not prove live Clerk login.
+The database suite checks actual transactions, team isolation, roles, conflicts, idempotency, migrations, signed webhook tombstones, session ownership/revocation, API restart and a case import. Collection tests cover confirmation/rollback, stale responses, pagination and identity disposal. The browser runner verifies the reused thread/sidebar/composer, desktop/mobile layouts and themes, modal navigation and the absence of local-runtime API requests in shared mode. It builds a test-only entrypoint outside the production bundle and uses the real API/database with an injected identity provider. It verifies edits, validation, conflicts, deep links/reload/history, pagination, read-only access, identity disposal and current-session revocation. These checks do not prove live Clerk login.
+
+For a persistent local browser review without Clerk credentials, use the same disposable PostgreSQL instance:
+
+```sh
+TEAM_TEST_DATABASE_URL="$CHECKER_TEST_DB_URL" npm run team:review
+```
+
+Open `http://127.0.0.1:4210/` (override the port with `TEAM_REVIEW_PORT`). This builds the production workspace with a test-only identity selector, uses the real API and database, and seeds 28 `e2e-agent-seed-*` cases for pagination. Switch between member, viewer and signed out to inspect access behavior. The visible banner identifies the authentication fixture. The server binds to loopback; stopping it drops its randomly named review database. This entrypoint is excluded from the production image and does not exercise Clerk sign-in.
 
 Remaining milestone-1 gates: test real invitations and expired/revoked tokens; measure Clerk-side removal/revocation with an existing token; prove reconciliation after provider failures; add shared verification-session/run and artifact metadata; rehearse session-preserving imports; deploy private staging in the selected host/region and verify with two developers. Worker enrollment/execution and shared artifact uploads follow the roadmap.

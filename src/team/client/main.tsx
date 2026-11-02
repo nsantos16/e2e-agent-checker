@@ -54,10 +54,10 @@ function SessionWorkspace() {
       });
     return () => controller.abort();
   }, [api, identity, isLoaded, isSignedIn, orgId, retry]);
-  if (!isLoaded) return <p className="message">Loading sign-in…</p>;
+  if (!isLoaded) return <p className="team-message">Loading sign-in…</p>;
   if (!isSignedIn)
     return (
-      <main className="login">
+      <main className="team-login">
         <h1>Your team’s verification workspace</h1>
         <p>Shared cases and results. Execution on your own machine.</p>
         <SignIn routing="hash" />
@@ -65,16 +65,20 @@ function SessionWorkspace() {
     );
   return (
     <>
-      <div className="account">
-        <OrganizationSwitcher hidePersonal />
-        <UserButton />
-      </div>
+      {(state?.identity !== identity || !state?.actor) && (
+        <div className="team-account-controls">
+          <OrganizationSwitcher hidePersonal />
+          <UserButton />
+        </div>
+      )}
       {!orgId ? (
-        <p className="message">Choose your team organization to continue.</p>
+        <p className="team-message">
+          Choose your team organization to continue.
+        </p>
       ) : state?.identity !== identity ? (
-        <p className="message">Opening your workspace…</p>
+        <p className="team-message">Opening your workspace…</p>
       ) : state.error ? (
-        <div className="message" role="alert">
+        <div className="team-message" role="alert">
           <p>{state.error}</p>
           <button
             onClick={() => {
@@ -86,11 +90,19 @@ function SessionWorkspace() {
           </button>
         </div>
       ) : state.actor ? (
-        <Suspense fallback={<p className="message">Opening your workspace…</p>}>
+        <Suspense
+          fallback={<p className="team-message">Opening your workspace…</p>}
+        >
           <WorkspaceApp
             key={`${identity}:${state.actor.role}`}
             actor={state.actor}
             api={api}
+            accountControls={
+              <>
+                <OrganizationSwitcher hidePersonal />
+                <UserButton />
+              </>
+            }
             onAccessLost={() =>
               setState((current) =>
                 current?.identity === identity
@@ -127,15 +139,15 @@ async function mount() {
     root.render(
       <ClerkProvider
         publishableKey={clerkPublishableKey}
-        signInFallbackRedirectUrl="/cases"
-        signUpFallbackRedirectUrl="/cases"
+        signInFallbackRedirectUrl="/"
+        signUpFallbackRedirectUrl="/"
       >
         <SessionWorkspace />
       </ClerkProvider>,
     );
   } catch (error) {
     root.render(
-      <main className="message" role="alert">
+      <main className="team-message" role="alert">
         <h1>Workspace unavailable</h1>
         <p>{(error as Error).message}</p>
         <button onClick={() => location.reload()}>Try again</button>

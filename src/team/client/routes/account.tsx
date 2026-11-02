@@ -2,6 +2,10 @@ import { createFileRoute } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { z } from 'zod';
 import { useWorkspace } from '../context.tsx';
+import {
+  Dialog,
+  DialogHeader,
+} from '../../../app/client/components/Dialog.tsx';
 const sessionsSchema = z.object({
   items: z.array(
     z.object({
@@ -14,7 +18,11 @@ const sessionsSchema = z.object({
 });
 export const Route = createFileRoute('/account')({ component: Account });
 function Account() {
-  const { api, actor, onAccessLost } = useWorkspace();
+  const { api, actor, onAccessLost, accountControls } = useWorkspace();
+  const search = Route.useSearch();
+  const navigate = Route.useNavigate();
+  const close = () =>
+    void navigate({ to: '/', search: { ...search, caseId: undefined } });
   const [sessions, setSessions] = useState<
     z.infer<typeof sessionsSchema>['items']
   >([]);
@@ -50,48 +58,57 @@ function Account() {
     }
   }
   return (
-    <>
-      <header className="page-heading">
-        <div>
-          <p className="eyebrow">Your access</p>
-          <h1>Account</h1>
-          <p>
-            {actor.name} · {actor.role} in {actor.organizationName}
-          </p>
-        </div>
-      </header>
-      <section className="editor">
-        <h2>Sign-in sessions</h2>
-        <p>Revoke access for a browser you no longer use.</p>
-        {error && (
-          <p role="alert" className="error">
-            {error}
-          </p>
+    <Dialog
+      id="team-account-dialog"
+      className="team-dialog"
+      title="Account"
+      open
+      onClose={close}
+    >
+      <DialogHeader id="team-account-dialog" onClose={close}>
+        Account
+      </DialogHeader>
+      <div className="dialog-body team-panel">
+        <p>
+          {actor.name} · {actor.role} in {actor.organizationName}
+        </p>
+        {accountControls && (
+          <div className="team-account-controls">{accountControls}</div>
         )}
-        <ul className="sessions">
-          {sessions.map((session) => (
-            <li key={session.id}>
-              <div>
-                <strong>
-                  {session.status}
-                  {session.current ? ' · This browser' : ''}
-                </strong>
-                <p>
-                  Last active {new Date(session.lastActiveAt).toLocaleString()}
-                </p>
-              </div>
-              {session.status === 'active' && (
-                <button
-                  disabled={!!busy}
-                  onClick={() => void revoke(session.id)}
-                >
-                  {busy === session.id ? 'Revoking…' : 'Revoke session'}
-                </button>
-              )}
-            </li>
-          ))}
-        </ul>
-      </section>
-    </>
+        <section className="editor">
+          <h2>Sign-in sessions</h2>
+          <p>Revoke access for a browser you no longer use.</p>
+          {error && (
+            <p role="alert" className="error">
+              {error}
+            </p>
+          )}
+          <ul className="sessions">
+            {sessions.map((session) => (
+              <li key={session.id}>
+                <div>
+                  <strong>
+                    {session.status}
+                    {session.current ? ' · This browser' : ''}
+                  </strong>
+                  <p>
+                    Last active{' '}
+                    {new Date(session.lastActiveAt).toLocaleString()}
+                  </p>
+                </div>
+                {session.status === 'active' && (
+                  <button
+                    disabled={!!busy}
+                    onClick={() => void revoke(session.id)}
+                  >
+                    {busy === session.id ? 'Revoking…' : 'Revoke session'}
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      </div>
+    </Dialog>
   );
 }
